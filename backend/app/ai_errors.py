@@ -3,6 +3,7 @@ import json
 import httpx
 
 MESSAGES={
+ 'output_limit':'คำตอบถูกตัดเพราะถึงเพดาน output tokens เพิ่มเพดานในการตั้งค่าโมเดล หรือลด Thinking แล้วลองใหม่ ยังไม่ได้บันทึกข้อมูล',
  'turn_limit':'คำขอนี้ใช้จำนวนรอบ AI ถึงขอบเขตแล้ว กรุณาแบ่งงานเป็นคำขอเล็กลง ยังไม่ได้บันทึกข้อมูล',
  'connection':'เชื่อมต่อเครื่อง AI ไม่ได้ ตรวจ IP พอร์ต firewall และให้ Ollama รับการเชื่อมต่อจากเครือข่าย; localhost ใน URL หมายถึง container Smart Finance',
  'dns':'แปลงชื่อหรือใช้ปลายทางไม่ได้ ตรวจ URL/DNS จากเครื่อง Smart Finance และใช้ปลายทางที่อนุญาต',

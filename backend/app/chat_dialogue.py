@@ -14,7 +14,7 @@ from .chat_actions import prepare_review,summary
 
 class TransactionSuggestion(BaseModel):
     model_config=ConfigDict(extra='forbid')
-    intent: Literal['create','clarify','chat']
+    intent: Literal['create','clarify','chat'] = 'create'
     kind: Literal['income','expense','transfer','card_payment'] | None = None
     description: str | None = Field(default=None,min_length=1,max_length=300)
     amount: int | None = Field(default=None,strict=True,gt=0,le=100_000_000_000)
@@ -26,6 +26,7 @@ class TransactionSuggestion(BaseModel):
     reply: str | None = Field(default=None,max_length=1000)
 
 class Suggestion(TransactionSuggestion):
+    intent: Literal['create','clarify','chat'] = Field(...)
     transactions: list[TransactionSuggestion] | None = Field(default=None,min_length=1,max_length=10)
 
 def available(db,c):
@@ -35,7 +36,7 @@ def available(db,c):
     return any(p.kind=='ollama' or cloud for p in db.scalars(select(Provider).where(Provider.workspace_id==c.workspace_id,Provider.task=='chat',Provider.enabled.is_(True))))
 
 def tool():
-    return {'type':'function','function':{'name':'prepare_transaction','description':'Prepare one draft or a batch of up to 10 transactions for one review. For batches set intent=create and transactions to complete item objects (each intent=create); omit single transaction fields. Never include both receipt total and its line items. Prepare for review when the user asks to record money or change an unconfirmed draft. Never confirms or saves money. Ask missing details in ordinary conversation first.','parameters':Suggestion.model_json_schema()}}
+    return {'type':'function','function':{'name':'prepare_transaction','description':'Prepare one draft or a batch of up to 10 transactions for one review. For batches set intent=create and transactions to complete item objects (item intent defaults to create); omit single transaction fields. Never include both receipt total and its line items. Prepare for review when the user asks to record money or change an unconfirmed draft. Never confirms or saves money. Ask missing details in ordinary conversation first.','parameters':Suggestion.model_json_schema()}}
 
 def assistant_instruction(db,wid):
     from .assistant_context import instruction

@@ -13,6 +13,11 @@ class AssistantReply:
 def visible(text):
     return re.sub(r'<think\b[^>]*>.*?(?:</think>|$)','',text,flags=re.S|re.I).strip()
 
+def completion_choice(choice):
+    from .ai_errors import AIRequestError
+    if choice.get("finish_reason")=="length":raise AIRequestError("output_limit")
+    return completion(choice["message"])
+
 def completion(message):
     if not isinstance(message,dict):raise ValueError('Invalid message')
     content=message.get('content') or ''
@@ -59,6 +64,9 @@ def read_stream(response,job):
             if not isinstance(delta,dict):raise ValueError('Invalid delta')
             reason=choice.get('finish_reason')
             if reason is not None:
+                if reason=='length':
+                    from .ai_errors import AIRequestError
+                    raise AIRequestError('output_limit')
                 if reason not in ('stop','tool_calls'):raise ValueError('Incomplete completion')
                 finished=True
             calls=delta.get('tool_calls') or []

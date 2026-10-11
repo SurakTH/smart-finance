@@ -14,7 +14,7 @@ from .ai_settings import settings,target
 from .ai_parameters import parameters
 from .ai_usage import tracked_stream
 from .ai_errors import ensure_response,diagnose,AIRequestError
-from .assistant_response import completion,read_stream
+from .assistant_response import completion,completion_choice,read_stream
 from .assistant_lookup import Lookup
 from .assistant_finance import Read
 from .chat_dialogue import Suggestion
@@ -115,10 +115,15 @@ def evaluate(db,job,p,case,deadline,budget):
                     for chunk in response.iter_bytes():
                         raw+=chunk
                         if len(raw)>256000:raise TestFailed('invalid_arguments')
-                    answer=completion(json.loads(raw)['choices'][0]['message'])
+                    answer=completion_choice(json.loads(raw)['choices'][0])
         name=answer.tool_name
         if not name:
-            if case not in ('balance','monthly'):raise TestFailed('no_tool')
+            if case not in ('balance','monthly'):
+                if repaired:raise TestFailed('no_tool')
+                repaired=True
+                record(job,'review_repair',status='invalid')
+                messages.extend([{'role':'assistant','content':answer.content},{'role':'system','content':'งานเดิมคือเตรียมร่างจากคำขอผู้ใช้และผลเครื่องมือที่ได้รับ หากข้อมูลครบให้เรียก prepare_transaction จริง ห้ามอ้างว่ามีร่างจากข้อความอย่างเดียว หากยังขาดข้อมูลให้อธิบายสิ่งที่ขาด ห้ามเดาจำนวนเงินหรือ ID'}])
+                continue
             required='lookup_workspace' if case=='balance' else 'query_finance'
             if required not in seen:raise TestFailed('no_tool')
             numbers=re.findall(r'\d+(?:\.\d+)?',answer.content.replace(',',''))

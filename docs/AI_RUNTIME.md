@@ -58,3 +58,13 @@ flowchart TD
 - Worker ยังถือ transaction/workspace write lock ระหว่าง inference การอ่านหน้าเว็บไม่รอ lock แล้ว แต่งานเขียนใน workspace เดียวกันอาจรอ งานถัดไปควรแยก inference ออกจาก transaction โดยใช้ durable usage reservation, request ownership/version และตรวจ membership/evidence ใหม่ก่อน commit ไม่ควรปลด lock อย่างเดียว
 - parser ยังรับหนึ่ง tool call ต่อคำตอบ; lookup รวม queries ได้สามรายการ ไม่ได้เพิ่ม parallel tool calls หรือเปิด SQL อิสระ
 - AI Lab เป็น synthetic provider smoke test ส่วน regression บทสนทนาต่อเนื่องทดสอบ runtime จริงกับ HTTP mocks การรับรอง Gemma/Ollama จริงต้องทดสอบจากเครื่องปลายทางและการตั้งค่าของผู้ใช้
+
+## รายงาน Gemma และการแก้ compatibility รอบถัดมา
+
+ผลจริงจากผู้ใช้พบ batch item ขาด `transactions.intent` ซ้ำ จึงให้รายการย่อยใช้ `create` เป็น default ส่วน intent ระดับคำขอยังจำเป็นต้องระบุ ไม่มีการเดายอดหรือ ID และ business validation/confirmation เดิมยังทำงานทั้งหมด
+
+AI Lab ให้โอกาสแก้ prose ที่ไม่ได้เรียก prepare_transaction อีกหนึ่งรอบภายใน call/time budget เดิม ต้องได้ typed draft ที่ตรวจผ่านจริงจึงผ่าน ไม่บันทึกจากข้อความ และไม่เดายอดสลิปจากจำนวนที่โจทย์คาดหวัง
+
+แยก finish_reason=length เป็น output_limit ทั้ง streaming และ JSON responses ของ runtime/lab เพื่อบอกให้ปรับ output tokens/Thinking ได้ตรงจุด ตัวเลข output ที่ estimated ใน diagnostics ใช้เพดานการตั้งค่าสำหรับ reservation ไม่ใช่จำนวน tokens ที่วัดจาก provider จึงแสดงคำอธิบายตรงหน้า UI
+
+รายงานเดิมที่ไม่มีคำตอบ/finish_reason ไม่เพียงพอพิสูจน์ว่ารายเดือนผิดเพราะการแปลงหน่วยหรือข้อความถูกตัด และไม่อาจระบุสาเหตุ transactions invalid ของสลิปได้แน่ชัด การแก้นี้ไม่รับรองว่า Gemma ทุกรุ่นจะผ่านทุกโจทย์ ต้องทดสอบจริงหลังอัปเดต ไม่ผ่อนเกณฑ์ยอดเงินเพื่อทำให้ผลผ่าน

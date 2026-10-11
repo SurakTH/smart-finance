@@ -501,3 +501,9 @@ Browser เพิ่มทดสอบค้นหาบริการ/empty/re
 - สำรอง `finance-20261011T162801Z.dump` และตรวจ restore ใน disposable database ผ่าน จำนวนแถว/configuration snapshots ตรงกันและ journals สมดุล
 - วัด system instruction + initial tool schemas ด้วย workspace ตัวอย่างเดียวกัน: 26,405 → 12,814 UTF-8 bytes ลด 51.5% ไม่ใช่ token/cost/latency benchmark และไม่รวมประวัติ รูป ผลอ่าน หรือชุดเครื่องมือเพิ่มเติม
 - Model regression ใช้ HTTP mocks ยังไม่ได้เรียก Gemma/Ollama ของผู้ใช้จริง Worker ยังถือ workspace write lock ระหว่าง inference; request cap เป็นต่อ processing attempt ไม่ใช่ durable cap หลัง crash ดูข้อจำกัดและแผนต่อที่ AI_RUNTIME.md
+
+## Gemma batch intent และการแยก output limit (11 ตุลาคม 2026)
+
+- Backend **435 passed**, warning Starlette/httpx เดิม 1 รายการ เพิ่ม tests: child intent default โดย root intent ยังคงจำเป็นและ amount strict, lab prose repair ผ่านเมื่อได้ร่างจริงเท่านั้น/ปฏิเสธ prose ซ้ำโดยไม่มีการเขียนข้อมูล, SSE/JSON finish_reason length แยก output_limit
+- Browser **4 passed** desktop/mobile สำหรับ diagnostics และ batch review/แก้/ยืนยัน/กันซ้ำ; TypeScript และ production build ผ่าน backend `9726be4cd910`, web `3411dab6f0e0`; local Compose healthy ไม่มี migration และไม่ได้ deploy Ubuntu
+- ไม่ได้เรียก Gemma จริง ผลทดสอบโมเดลใช้ HTTP mocks ไม่สรุปสาเหตุรายเดือน answer_mismatch หรือสลิป invalid จาก metadata เก่าเพียงอย่างเดียว ไม่เปลี่ยนจำนวนเงินที่คาดหวังเพื่อทำให้ผลผ่าน

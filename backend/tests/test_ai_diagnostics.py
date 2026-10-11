@@ -195,3 +195,46 @@ def test_lab_invalid_lookup_gives_sanitized_feedback_and_one_repair(lab,monkeypa
     assert value['diagnostics']['test']['status']=='passed' and len(calls)==3
     assert any(e.get('issues')==[{'field':'queries.q','code':'string_type'}] for e in value['diagnostics']['events'])
     assert 'PRIVATE' not in json.dumps(value)
+
+
+def test_batch_item_intent_defaults_but_root_intent_required():
+    from app.chat_dialogue import Suggestion
+    from pydantic import ValidationError
+    value=Suggestion.model_validate({'intent':'create','transactions':[{'description':'กาแฟ','amount':8000}]})
+    assert value.transactions[0].intent=='create'
+    with pytest.raises(ValidationError):Suggestion.model_validate({'amount':8000})
+    with pytest.raises(ValidationError):Suggestion.model_validate({'intent':'create','transactions':[{'amount':'8000'}]})
+
+
+def test_lab_repairs_prose_once_without_posting(lab,monkeypatch):
+    c,w,u,b,cid,pid=lab;calls=[]
+    def handler(req):
+        body=json.loads(req.content);calls.append(body)
+        if len(calls)==1:return reply('เตรียมให้แล้ว พิมพ์ ยืนยัน ได้เลย')
+        return httpx.Response(200,json={'choices':[{'message':tool('prepare_transaction',{'intent':'create','transactions':[dict(kind='expense',description='กาแฟ',amount=8000,account_id=CASH,category_id=FOOD)]})}]})
+    transport(monkeypatch,handler);before=counts(w);jid=start(c,b,'followup',pid);run_all()
+    assert result(c,b,jid)['diagnostics']['test']['status']=='passed'
+    assert len(calls)==2 and counts(w)==before
+
+
+def test_lab_does_not_pass_repeated_prose(lab,monkeypatch):
+    c,w,u,b,cid,pid=lab;calls=[]
+    def handler(req):calls.append(1);return reply('เตรียมแล้ว ยืนยันได้เลย')
+    transport(monkeypatch,handler);before=counts(w);jid=start(c,b,'receipt',pid)
+    with SessionLocal.begin() as db:db.get(Provider,pid).supports_images=True
+    run_all()
+    assert result(c,b,jid)['diagnostics']['test']['reason']=='no_tool'
+    assert len(calls)==2 and counts(w)==before
+
+
+def test_output_limit_distinguished_for_stream_and_json():
+    from app.assistant_response import completion_choice,read_stream
+    from app.ai_errors import AIRequestError,diagnose
+    from types import SimpleNamespace
+    with pytest.raises(AIRequestError) as failure:
+        completion_choice({'finish_reason':'length','message':{'content':'partial'}})
+    assert diagnose(failure.value)=='output_limit'
+    class Response:
+        def iter_lines(self):return iter(['data: '+json.dumps({'choices':[{'delta':{},'finish_reason':'length'}]}),''])
+    with pytest.raises(AIRequestError) as failure:read_stream(Response(),SimpleNamespace(task='ai_test'))
+    assert diagnose(failure.value)=='output_limit'

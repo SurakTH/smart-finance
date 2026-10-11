@@ -19,7 +19,8 @@ def assistant(actor,monkeypatch):
     accounts=c.get(b+'/accounts').json();wallet=next(a['id'] for a in accounts if a['kind']=='asset');cat=next(a['id'] for a in accounts if a['kind']=='expense');state={'calls':[],'responses':[]};real=httpx.Client
     def handler(req):
         body=json.loads(req.content);state['calls'].append(body)
-        assert {'query_finance','prepare_correction'}<={t['function']['name'] for t in body['tools']}
+        if 'tools' in body:assert {'query_finance','prepare_correction'}<={t['function']['name'] for t in body['tools']}
+        else:assert 'tool_choice' not in body  # bounded final text-only synthesis
         answer=state['responses'].pop(0)
         if callable(answer):answer=answer(body)
         return httpx.Response(200,json={'choices':[{'message':answer}]})
@@ -138,9 +139,9 @@ def test_model_cannot_correct_unsearched_or_expired_target(assistant):
 
 def test_read_loop_is_bounded(assistant):
     c,w,u,b,cid,wallet,cat,state,post,send=assistant
-    state['responses']=[search(q='กาแฟ')]*4
+    state['responses']=[search(q='กาแฟ')]*3
     r=send('ช่วยค้นหากาแฟหน่อย')
-    assert 'ครบขอบเขต' in r['content'] and len(state['calls'])==4
+    assert 'ครบขอบเขต' in r['content'] and len(state['calls'])==3
     assert not state['responses']
 
 

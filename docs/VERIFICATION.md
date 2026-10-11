@@ -468,3 +468,11 @@ Browser เพิ่มทดสอบค้นหาบริการ/empty/re
 - ตรวจ workspace ที่ archive และสมาชิกที่ถูกนำออกแล้วได้ 404 ตามเดิม ตรวจ mutation dependency ถือ Workspace FOR UPDATE จริงจาก connection อิสระด้วย NOWAIT รวม regression ledger, isolation, membership และปุ่มหยุดทั้งชุด
 - เปลี่ยนเฉพาะ read authorization ไม่เพิ่ม schema migration และไม่ลด write guards การเขียนใน workspace เดียวกันยังอาจรอ inference ไม่ได้ตรวจสาเหตุ RAM/OOM/502/restart บน Ubuntu ของผู้ใช้
 - Backend Docker build และ Compose health ผ่าน; HTTP root 200; browser chat-defaults และ chat-stop ผ่านทั้ง desktop/mobile **4 tests** หลังอัปเดต backend ในเครื่อง ไม่มีการ deploy Ubuntu server
+
+## 2026-10-11 — ยอดเงินรวมและ AI ค้นวน
+
+- PostgreSQL disposable DB: **393 tests passed** ครอบคลุมยอดรวมทุกบัญชีขณะที่แสดงเพียง1แถว, cursor/query scope, บัญชียอด0, opening/expense/income/transfer/card payment/credit expense, หนี้แยกจากเงินและสุทธิ, ไม่ปนยอดอีก workspace และถาม “ต่อ” แล้วอ่านยอดปัจจุบันใหม่
+- ทดสอบคำถาม “ตอนนี้ฉันมีเงินเท่าไร?” ผ่าน MockTransport: lookup balances หนึ่งครั้งแล้วตอบธรรมชาติ, โมเดลขอ balances เดิมซ้ำแล้วตอบด้วยยอดจาก backend ใน2คำขอ, การอ่านชนิดอื่นซ้ำแล้วสรุปด้วย final request ที่ไม่มี tools และกรณีอ่าน3ชุดต่างกันยังมีขอบเขต5คำขอ
+- Final synthesis ไม่ดำเนินการ tools แม้โมเดลส่ง prepare_transaction ที่มีข้อมูลครบกลับมา ไม่มี ChatAction หรือ ledger entry ใหม่ Regression confirmation/tenant isolation/stop/read responsiveness ผ่านทั้งชุด ไม่เพิ่ม migration
+- Tests ไม่ได้เรียก Gemma/Ollama บนเครื่องผู้ใช้ จึงยังต้องลองคุณภาพการเลือก tools ของโมเดลจริง ไม่รับประกันความถูกต้องของข้อความธรรมชาติที่โมเดลสร้างทุกประโยค
+- Backend Docker build/Compose health ผ่าน, root HTTP 200; browser chat-stream/chat-stop **4 tests passed** ทั้ง desktop/mobile ไม่มีการ deploy เครื่องผู้ใช้ Source archive รวมไฟล์ใหม่และตรวจ integrity/runtime secrets

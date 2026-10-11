@@ -123,9 +123,9 @@ def test_repeated_tool_read_cached_but_provider_rounds_remain_bounded(assistant,
     c,w,u,b,cid,wallet,cat,state,post,send=assistant;calls=[];original=module.read
     def track(*args):calls.append(1);return original(*args)
     monkeypatch.setattr(module,'read',track)
-    state['responses']=[tool('lookup_workspace',{'queries':[{'resource':'accounts'}]})]*4
+    state['responses']=[tool('lookup_workspace',{'queries':[{'resource':'accounts'}]})]*3
     r=send('ช่วยดูบัญชีหน่อย')
-    assert len(calls)==1 and len(state['calls'])==4 and 'ครบขอบเขต' in r['content']
+    assert len(calls)==1 and len(state['calls'])==3 and 'ครบขอบเขต' in r['content']
 
 
 def test_all_plan_lookups_and_followup_paging_context(assistant):

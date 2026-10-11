@@ -35,11 +35,12 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
     from .assistant_finance import read
     room=get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id'])
     turns=list(messages)
-    for _ in range(4):
+    def request(final=False):
         check_stop(job,True)
         remaining=deadline-time.monotonic()
         if remaining<=0:raise ValueError('Assistant deadline')
-        body={'model':p.model,'messages':turns,**parameters(p),'tools':assistant_tools(),'tool_choice':'auto','stream':True}
+        body={'model':p.model,'messages':turns,**parameters(p),'stream':True}
+        if not final:body.update(tools=assistant_tools(),tool_choice='auto')
         publish(job,'start')
         with tracked_stream(db,job,p,client,'POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json=body,timeout=httpx.Timeout(min(p.timeout_seconds,remaining),connect=5)) as response:
             ensure_response(response)
@@ -50,12 +51,24 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
                     raw+=chunk
                     if len(raw)>256000:raise ValueError('Response too large')
                 answer=completion(json.loads(raw)['choices'][0]['message'])
+        return answer
+    def finish():
+        from .assistant_balance_reply import fallback,LIMIT_MESSAGE
+        grounded=fallback(getattr(job,'_read_cache',{}))
+        if grounded:return AssistantReply(grounded)
+        turns.append({'role':'system','content':'หยุดค้นเพิ่มและสรุปจากผลเครื่องมือที่ได้รับแล้ว ตอบคำถามเดิมเป็นภาษาไทย อย่าอ้างว่าดึงข้อมูลไม่ได้ถ้ามีผลสำเร็จ ยอดรวม balances.summary ครบทุกบัญชีตามตัวกรอง ไม่ใช่เฉพาะหน้าที่แสดง ห้ามแต่งตัวเลขหรือเตรียมคำสั่งเปลี่ยนข้อมูล หากข้อมูลไม่พอจริงให้บอกส่วนที่รู้และส่วนที่ขาด'})
+        answer=request(final=True)
+        if answer.tool_name:return AssistantReply(LIMIT_MESSAGE)
+        return answer
+    for _ in range(4):
+        answer=request()
         if answer.tool_name not in ('query_finance','lookup_workspace'):return answer
-        if read_budget[0]>=3:return AssistantReply('ฉันค้นข้อมูลครบขอบเขตของข้อความนี้แล้วค่ะ ขอระบุช่วงวัน บัญชี หรือรายการให้แคบลงอีกนิด แล้วฉันจะช่วยต่อ ยังไม่ได้เปลี่ยนข้อมูลนะคะ')
-        read_budget[0]+=1
+        if read_budget[0]>=3:return finish()
         cache=getattr(job,'_read_cache',None)
         if cache is None:cache={};job._read_cache=cache
         key=(answer.tool_name,json.dumps(json.loads(answer.draft),sort_keys=True))
+        if key in cache:return finish()
+        read_budget[0]+=1
         if key not in cache:
             # Finance searches update correction evidence. Invalidate earlier
             # finance reads when changing queries instead of replaying old state.

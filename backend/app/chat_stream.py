@@ -58,7 +58,7 @@ async def events(request,token,wid,cid):
                 raw=item['data']
                 if len(raw)>100000:continue
                 data=json.loads(raw)
-                if data.get('kind') in ('start','delta','done','failed','stopping','cancelled'):
+                if data.get('kind') in ('start','delta','progress','done','failed','stopping','cancelled'):
                     yield frame(data)
             else:
                 yield ': heartbeat\n\n'

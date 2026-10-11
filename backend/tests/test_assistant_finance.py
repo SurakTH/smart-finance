@@ -19,7 +19,7 @@ def assistant(actor,monkeypatch):
     accounts=c.get(b+'/accounts').json();wallet=next(a['id'] for a in accounts if a['kind']=='asset');cat=next(a['id'] for a in accounts if a['kind']=='expense');state={'calls':[],'responses':[]};real=httpx.Client
     def handler(req):
         body=json.loads(req.content);state['calls'].append(body)
-        if 'tools' in body:assert {'query_finance','prepare_correction'}<={t['function']['name'] for t in body['tools']}
+        if 'tools' in body:assert {'query_finance','load_toolkit'}<={t['function']['name'] for t in body['tools']}
         else:assert 'tool_choice' not in body  # bounded final text-only synthesis
         answer=state['responses'].pop(0)
         if callable(answer):answer=answer(body)
@@ -160,6 +160,7 @@ def test_analysis_based_budget_plan_blocks_changed_ledger(assistant):
 def test_correction_validation_rejects_untrusted_patch(assistant,changes):
     c,w,u,b,cid,wallet,cat,state,post,send=assistant;eid=post()
     state['responses']=[search(q='กาแฟ'),tool('prepare_correction',dict(entry_id=eid,changes=changes,reason='แก้ยอด'))]
+    state['responses'].append(state['responses'][-1])  # Invalid drafts get one repair opportunity.
     r=send('ช่วยแก้กาแฟหน่อย')
     assert 'ยังเตรียมการแก้ไขไม่ได้' in r['content']
     with SessionLocal() as db:assert not db.scalar(select(ChatAction).where(ChatAction.conversation_id==cid))
@@ -172,6 +173,7 @@ def test_foreign_account_and_explicit_entry_ids_stay_scoped(assistant):
     with SessionLocal.begin() as db:
         other=create_user(db,uuid.uuid4().hex+'@test.local','secure-test-password');other_w=db.scalar(select(Membership.workspace_id).where(Membership.user_id==other.id));foreign=db.scalar(select(Account.id).where(Account.workspace_id==other_w,Account.kind=='asset'))
     state['responses']=[search(q='กาแฟ'),tool('prepare_correction',dict(entry_id=eid,changes={'account_id':foreign},reason='แก้บัญชี'))]
+    state['responses'].append(state['responses'][-1])
     assert 'ยังเตรียมการแก้ไขไม่ได้' in send('ช่วยแก้บัญชีค่ากาแฟ')['content']
     with SessionLocal.begin() as db:
         reply=read(db,db.get(Conversation,cid),json.dumps(dict(operation='search_transactions',account_id=foreign)),'turn')

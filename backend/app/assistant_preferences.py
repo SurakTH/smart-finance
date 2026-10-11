@@ -61,19 +61,21 @@ def erase_preferences(wid:str,member=Depends(workspace_member),db=Depends(get_db
 def defaults(db,wid,uid,kind,text):
     pref=read(db,wid,uid)
     if not pref['enabled']:return None,None
-    rows={a.id:a for a in db.scalars(select(Account).where(Account.workspace_id==wid))}
     aid=pref.get('expense_account_id' if kind=='expense' else 'income_account_id' if kind=='income' else '')
+    matches=category_matches(db,wid,uid,kind,text)
+    needed=matches|({aid} if aid else set())
+    rows={a.id:a for a in db.scalars(select(Account).where(Account.workspace_id==wid,Account.id.in_(needed)))} if needed else {}
     account=rows.get(aid)
     if account and account.kind not in (('asset','liability') if kind=='expense' else ('asset',)):account=None
-    matches=category_matches(db,wid,uid,kind,text)
-    category=rows[next(iter(matches))] if len(matches)==1 else None
+    category=rows.get(next(iter(matches))) if len(matches)==1 else None
     return account,category
 
 def category_matches(db,wid,uid,kind,text):
     pref=read(db,wid,uid)
     if not pref['enabled']:return set()
-    rows={a.id:a for a in db.scalars(select(Account).where(Account.workspace_id==wid,Account.kind==kind))}
-    return {rule['category_id'] for rule in pref['rules'] if rule['keyword'].strip().casefold() in text.casefold() and rule['category_id'] in rows}
+    ids={rule['category_id'] for rule in pref['rules'] if rule['keyword'].strip().casefold() in text.casefold()}
+    return set(db.scalars(select(Account.id).where(Account.workspace_id==wid,Account.kind==kind,Account.id.in_(ids)))) if ids else set()
+
 
 def prompt(db,wid,uid):
     p=read(db,wid,uid)

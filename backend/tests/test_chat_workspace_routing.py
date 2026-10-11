@@ -19,7 +19,7 @@ def test_all_rooms_use_workspace_priority_fallback_and_cloud_switch(actor,monkey
     calls=[];real=httpx.Client
     def handler(req):
         data=json.loads(req.content);calls.append(data['model'])
-        assert w in data['messages'][0]['content'] and 'ไม่ต้องถามซ้ำ' in data['messages'][0]['content']
+        assert w in data['messages'][0]['content'] and 'ไม่ถาม workspace ซ้ำ' in data['messages'][0]['content']
         if data['model']=='first-cloud':return httpx.Response(503)
         return httpx.Response(200,json={'choices':[{'message':{'content':'สวัสดีค่ะ ใช้พื้นที่ที่เลือกอยู่ได้เลย'}}]})
     monkeypatch.setattr(ai.httpx,'Client',lambda **kw:real(transport=httpx.MockTransport(handler),**kw))

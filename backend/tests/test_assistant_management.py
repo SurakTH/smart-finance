@@ -20,7 +20,10 @@ def secretary(actor,monkeypatch):
     cid=c.post(b+'/conversations',json={}).json()['id'];state={};real=httpx.Client
     def handler(request):
         body=json.loads(request.content)
-        assert {t['function']['name'] for t in body['tools']}=={'prepare_transaction','prepare_management_plan','query_finance','prepare_correction','lookup_workspace'}
+        names={t['function']['name'] for t in body['tools']}
+        assert {'prepare_transaction','query_finance','lookup_workspace','load_toolkit'}<=names
+        if 'prepare_management_plan' not in names:
+            return httpx.Response(200,json={'choices':[{'message':{'tool_calls':[{'type':'function','function':{'name':'load_toolkit','arguments':json.dumps({'toolkit':'management'})}}]}}]})
         state['body']=body
         return httpx.Response(200,json={'choices':[{'message':{'tool_calls':[{'type':'function','function':{'name':'prepare_management_plan','arguments':json.dumps({'operations':state['operations']})}}]}}]})
     monkeypatch.setattr(ai.httpx,'Client',lambda **kw:real(transport=httpx.MockTransport(handler),**kw))

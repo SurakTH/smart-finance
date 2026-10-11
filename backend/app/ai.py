@@ -26,82 +26,10 @@ def mock_proposals(text):
     return [ProposalInput(description=m[1].strip()[:300] or 'ตรวจสอบรายการ',amount=int(Decimal(m[2].replace(',',''))*100),kind='income' if any(w in m[1] for w in ('รายรับ','เงินเดือน','รับเงิน')) else 'expense') for m in matches if 0<Decimal(m[2].replace(',',''))<=1_000_000_000]
 
 def assistant_tools():
-    from .chat_dialogue import tool
-    from .assistant_management import tool as management_tool
-    from .assistant_finance import tools
-    from .assistant_lookup import tool as lookup_tool
-    return [tool(),management_tool(),*tools(),lookup_tool()]
+    from .assistant_tools import all_tools
+    return all_tools()
 
-def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budget):
-    from .assistant_finance import read
-    room=get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id'])
-    turns=list(messages)
-    from .assistant_contract import claims_review,REPAIR,UNPREPARED
-    repaired=False
-    def request(final=False):
-        check_stop(job,True)
-        remaining=deadline-time.monotonic()
-        if remaining<=0:raise ValueError('Assistant deadline')
-        body={'model':p.model,'messages':turns,**parameters(p),'stream':True}
-        if not final:body.update(tools=assistant_tools(),tool_choice='auto')
-        publish(job,'start')
-        with tracked_stream(db,job,p,client,'POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json=body,timeout=httpx.Timeout(min(p.timeout_seconds,remaining),connect=5)) as response:
-            ensure_response(response)
-            if 'text/event-stream' in response.headers.get('content-type',''):answer=read_stream(response,job)
-            else:
-                raw=b''
-                for chunk in response.iter_bytes():
-                    raw+=chunk
-                    if len(raw)>256000:raise ValueError('Response too large')
-                answer=completion(json.loads(raw)['choices'][0]['message'])
-        return answer
-    def finish():
-        from .assistant_balance_reply import fallback,LIMIT_MESSAGE
-        record(job,'synthesis',status='ok')
-        grounded=fallback(getattr(job,'_read_cache',{}))
-        if grounded:return AssistantReply(grounded)
-        turns.append({'role':'system','content':'หยุดค้นเพิ่มและสรุปจากผลเครื่องมือที่ได้รับแล้ว ตอบคำถามเดิมเป็นภาษาไทย อย่าอ้างว่าดึงข้อมูลไม่ได้ถ้ามีผลสำเร็จ ยอดรวม balances.summary ครบทุกบัญชีตามตัวกรอง ไม่ใช่เฉพาะหน้าที่แสดง ห้ามแต่งตัวเลขหรือเตรียมคำสั่งเปลี่ยนข้อมูล หากข้อมูลไม่พอจริงให้บอกส่วนที่รู้และส่วนที่ขาด'})
-        answer=request(final=True)
-        if answer.tool_name:return AssistantReply(LIMIT_MESSAGE)
-        return AssistantReply(UNPREPARED) if claims_review(answer.content) else answer
-    for _ in range(4):
-        answer=request()
-        if not answer.tool_name and claims_review(answer.content):
-            if repaired:return AssistantReply(UNPREPARED)
-            repaired=True;record(job,'review_repair',status='invalid')
-            turns.extend([{'role':'assistant','content':answer.content},{'role':'system','content':REPAIR}])
-            continue
-        if answer.tool_name not in ('query_finance','lookup_workspace'):
-            if answer.tool_name:record(job,'tool',tool=answer.tool_name,status='ok')
-            return answer
-        if read_budget[0]>=3:return finish()
-        cache=getattr(job,'_read_cache',None)
-        if cache is None:cache={};job._read_cache=cache
-        key=(answer.tool_name,json.dumps(json.loads(answer.draft),sort_keys=True))
-        if key in cache:
-            record(job,'tool',tool=answer.tool_name,status='cached')
-            return finish()
-        read_budget[0]+=1
-        if key not in cache:
-            # Finance searches update correction evidence. Invalidate earlier
-            # finance reads when changing queries instead of replaying old state.
-            if answer.tool_name=='query_finance':
-                for old in list(cache):
-                    if old[0]=='query_finance':cache.pop(old)
-            if answer.tool_name=='lookup_workspace':
-                from .assistant_lookup import read as lookup
-                cache[key]=lookup(db,room,answer.draft)
-            else:cache[key]=read(db,room,answer.draft,job.payload.get('user_message_id'))
-        result=cache[key]
-        record(job,'tool',tool=answer.tool_name,status='invalid' if result.get('error') else 'ok',issues=result.get('issues',[]),resources=[r.get('resource') for r in result.get('results',[])]+([result.get('operation')] if result.get('operation') else []))
-        if answer.tool_name=='lookup_workspace':
-            from .assistant_lookup import remember_pages
-            remember_pages(room,answer.draft,result)
-        from .finance_references import collect
-        collect(job,result)
-        turns.append({'role':'assistant','content':None,'tool_calls':[{'id':answer.call_id,'type':'function','function':{'name':answer.tool_name,'arguments':answer.draft}}]})
-        turns.append({'role':'tool','tool_call_id':answer.call_id,'content':json.dumps(result,ensure_ascii=False)})
-    return AssistantReply('ฉันค้นข้อมูลแล้วค่ะ ขอรายละเอียดอีกนิดเพื่อช่วยต่อ ยังไม่ได้เปลี่ยนข้อมูลนะคะ')
+from .assistant_runtime import converse
 
 
 def call_model(db, job):
@@ -132,6 +60,9 @@ def call_model(db, job):
             from .assistant_management import pending_context
             pending=pending_context(db,get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id']))
             if pending:messages.append({'role':'system','content':pending})
+            from .assistant_context import clarification
+            partial=clarification(get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id']))
+            if partial:messages.append({'role':'system','content':partial})
             from .assistant_finance import begin_turn
             search=begin_turn(get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id']),job.payload.get('text',''),job.payload.get('user_message_id'))
             if search:messages.append({'role':'system','content':search})
@@ -176,6 +107,7 @@ def call_model(db, job):
     for provider_index,p in enumerate(providers):
         if provider_index:record(job,'fallback',provider_id=p.id,status='ok')
         check_stop(job,True)
+        if getattr(job,'_assistant_requests',0)>=8:job._last_ai_error='turn_limit';break
         target_stage='dns'
         try:
             url,headers,extensions=target(p)
@@ -187,6 +119,7 @@ def call_model(db, job):
             record(job,'provider_error',provider_id=p.id,error=target_stage,status='failed')
             continue
         for attempt in range(p.retries+1):
+            if getattr(job,'_assistant_requests',0)>=8:job._last_ai_error='turn_limit';break
             check_stop(job,True)
             remaining=deadline-time.monotonic()
             if remaining<=0:break

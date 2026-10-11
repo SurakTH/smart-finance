@@ -492,3 +492,12 @@ Browser เพิ่มทดสอบค้นหาบริการ/empty/re
 - TypeScript และ Docker build ผ่าน backend `90246f993da2`, web `4553313b9e3d`; local Compose healthy หน้าแรก HTTP 200 ไม่มี migration ใหม่
 - สำรอง `finance-20261011T160644Z.dump` และตรวจ restore ใน disposable database ผ่าน: จำนวนแถวและ snapshots รวม diagnostics ตรงกัน ledger สมดุล
 - การเรียกโมเดลใน regression ใช้ HTTP mock ยังไม่ได้ติดต่อ Gemma จริงของผู้ใช้ รายงานเก่าที่ไม่มี arguments ไม่พอระบุว่าช่องใดทำให้ invalid_arguments จึงไม่อ้างว่าพิสูจน์สาเหตุของทั้ง 4 โจทย์บนเครื่องผู้ใช้แล้ว ต้องอัปเดตและรันทดสอบใหม่ ข้อความทวนที่ผู้ใช้ส่งยืนยันว่ามีกรณีโมเดลอ้างว่าร่างพร้อมทั้งที่ backend ไม่มี action; การแก้ไม่อนุญาตให้บันทึกจาก prose
+
+## ปรับโครงสร้าง AI Chat runtime (11 ตุลาคม 2026)
+
+- Backend PostgreSQL disposable database: **431 passed** (warning Starlette/httpx เดิม 1 รายการ) เพิ่ม 10 tests สำหรับ lazy toolkit → review → ยืนยัน, repair ชนิดข้อมูล/ID, invalid reads ไม่กิน successful-read budget, canonical cache, cached evidence หลัง retry, partial draft ที่พ้นหน้าต่างประวัติ/หมดอายุ, batch clarification คงรายการทั้งหมด, bounded account choices และเพดาน 8 คำขอร่วมกับ retries/fallback
+- Browser Chrome Playwright **10 passed** (desktop 5/mobile 5): diagnostics, typed confirmation/correction, batch/duplicate protection, stop/late output และ streaming/progress/reconnect/room switching ตรวจภาพ live answer มือถือและข้อความสถานะด้วย assertions; ไม่ได้ตรวจทุกหน้าของแอปใหม่
+- TypeScript และ production Docker build ผ่าน backend `1431bde29eff`, web `e0768ea8da2d`; local Compose healthy หน้าแรก HTTP 200 ไม่มี migration ใหม่ ไม่ deploy Ubuntu server
+- สำรอง `finance-20261011T162801Z.dump` และตรวจ restore ใน disposable database ผ่าน จำนวนแถว/configuration snapshots ตรงกันและ journals สมดุล
+- วัด system instruction + initial tool schemas ด้วย workspace ตัวอย่างเดียวกัน: 26,405 → 12,814 UTF-8 bytes ลด 51.5% ไม่ใช่ token/cost/latency benchmark และไม่รวมประวัติ รูป ผลอ่าน หรือชุดเครื่องมือเพิ่มเติม
+- Model regression ใช้ HTTP mocks ยังไม่ได้เรียก Gemma/Ollama ของผู้ใช้จริง Worker ยังถือ workspace write lock ระหว่าง inference; request cap เป็นต่อ processing attempt ไม่ใช่ durable cap หลัง crash ดูข้อจำกัดและแผนต่อที่ AI_RUNTIME.md

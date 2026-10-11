@@ -16,6 +16,7 @@ test('live previews escape text, reconnect safely, clear on room change and load
  await emit({kind:'start',job_id:'one'});await expect(page.locator('.thinking')).toContainText('กำลังเตรียมคำตอบ');
  await expect.poll(()=>log.evaluate(el=>el.scrollHeight-el.clientHeight)).toBeGreaterThan(400);
  await log.evaluate(el=>{el.scrollTop=el.scrollHeight-el.clientHeight-240;el.dispatchEvent(new Event('scroll'));});const thinkingTop=await log.evaluate(el=>el.scrollTop);
+ await emit({kind:'progress',job_id:'one',stage:'lookup'});await expect(page.locator('.stream-notice')).toContainText('กำลังค้นข้อมูล');
  await emit({kind:'delta',job_id:'one',snapshot:true,text:'ส่วนแรก <img src=x onerror=alert(1)>'});await expect(page.locator('.live-answer')).toContainText('ส่วนแรก');await expect(page.locator('.live-answer img')).toHaveCount(0);await emit({kind:'delta',job_id:'one',text:' และส่วนถัดไป'});await expect(page.locator('.live-answer')).toContainText('และส่วนถัดไป');
  await expect.poll(()=>log.evaluate(el=>el.scrollTop)).toBeCloseTo(thinkingTop,0);
  await page.locator('.live-answer').screenshot({path:`../artifacts/chat-stream-${info.project.name}.png`});
@@ -29,6 +30,7 @@ test('live previews escape text, reconnect safely, clear on room change and load
  // Retry replaces, rather than merges, the failed provider's partial output.
  await emit({kind:'start',job_id:'one'});await emit({kind:'delta',job_id:'one',text:'คำตอบใหม่'});await expect(page.locator('.live-answer')).not.toContainText('ส่วนแรก');
  let persisted='persisted-answer';await page.route('**/conversations/'+room.id+'/messages/page*',route=>route.fulfill({json:{items:[{id:persisted,role:'assistant',content:'คำตอบใหม่ที่บันทึกแล้ว',attachment_id:null}],has_older:false,has_newer:false}}));await emit({kind:'done',job_id:'one'});await expect(page.locator('.message.assistant').filter({hasText:'คำตอบใหม่ที่บันทึกแล้ว'})).toBeVisible();await expect(page.locator('.live-answer')).toHaveCount(0);
+ await emit({kind:'progress',job_id:'one',stage:'repairing'});await expect(page.locator('.stream-notice')).toHaveCount(0);
  await emit({kind:'delta',job_id:'one',snapshot:true,text:'late duplicate'});await expect(page.locator('.live-answer')).toHaveCount(0);
  await emit({kind:'start',job_id:'poll-before-done'});await emit({kind:'delta',job_id:'poll-before-done',snapshot:true,text:'คำตอบที่กำลังมาถึงประวัติ'});
  persisted='persisted-answer-2';await expect(page.locator('#chat-message-persisted-answer-2')).toBeVisible();await expect(page.locator('.live-answer')).toHaveCount(0);

@@ -116,6 +116,7 @@ def test_real_pubsub_previews_before_commit_and_done_after_commit(actor,pg_only,
                     event=sub.get_message(ignore_subscribe_messages=True,timeout=.2)
                     if not event:continue
                     data=json.loads(event['data']);kinds.append(data['kind'])
+                    if data['kind']=='progress':assert data['stage']=='thinking' and set(data)=={'kind','job_id','stage'}
                     if data['kind']=='delta' and not release.is_set():
                         with SessionLocal() as db:
                             assert not db.scalar(select(Message.id).where(Message.conversation_id==room,Message.role=='assistant'))
@@ -127,5 +128,5 @@ def test_real_pubsub_previews_before_commit_and_done_after_commit(actor,pg_only,
                         break
             finally:release.set()
             future.result(timeout=10)
-        assert kinds==['start','delta','delta','done']
+        assert kinds==['start','progress','delta','delta','done']
     finally:sub.close()

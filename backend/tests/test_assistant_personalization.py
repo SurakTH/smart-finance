@@ -82,7 +82,7 @@ def test_ai_prompt_personal_defaults_fill_omissions_without_autopost(actor,monke
         return draft(value)
     transport(monkeypatch,handler)
     say(c,b,cid,'ช่วยจดกาแฟ 200');assert run_once()
-    assert any('ความชอบส่วนตัว' in str(m['content']) for m in calls[0]['messages'])
+    assert not any(s['account_id'] in str(m['content']) for m in calls[0]['messages'] if m['role']=='system')
     assert 'กรุณาตรวจสอบ' in c.get(b+f'/conversations/{cid}/messages').json()[-1]['content'] and count(w)==0
 
 

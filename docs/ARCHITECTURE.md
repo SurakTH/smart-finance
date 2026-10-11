@@ -57,3 +57,10 @@ Chat uploads use a separate authenticated multipart endpoint. Each message refer
 Before extraction creates shared Inbox evidence, image access requires the owning conversation or the uploader's pending job. Inbox proposals and their receipt evidence are shared workspace finance data, as disclosed beside the chat composer. Deleting a conversation cancels its pending jobs and removes history; shared receipt evidence is retained. Orphan attachment retention remains pending.
 
 Open chat rooms poll history independently of whether a pending job was observed, covering a worker that completes between the initial history request and the job refresh. Room polling cancels stale responses when the active room changes.
+
+
+### Demand-driven Web Assistant reads
+
+Configured Web Chat starts with bounded text history and workspace/date instructions, without eager account balances or management-plan snapshots. `lookup_workspace` uses server-bound tenant and room owner, strict typed resource/filter allowlists, literal name search and UUID keyset pages (10 default,20 max,3 resources/batch). Personal preferences are owner-scoped and keyword-filtered. `query_finance` uses active journals only, cursor pages of10 and366-day maximum ranges. Valid anchors must exist inside the current tenant and filters. Page state lives in the existing room context for15minutes and is included only on relevant follow-ups.
+
+AI monthly reports use dedicated SQL totals and streamed group/budget hashing; output retains top20 rows per group plus complete group counts. No dashboard balances/daily/recent feed is computed. Full fingerprints include groups outside display limits, so stale analytical plans still fail confirmation. Read results are cached only in the job object for that turn. Provider calls/retries remain metered and bounded. Current attachments or short explicit/receipt-clarification follow-ups within15minutes may send image bytes, rather than automatically sending recent images with unrelated chat. This is bounded retrieval, not automatic long-term memory or a large-data latency guarantee.

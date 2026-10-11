@@ -127,7 +127,7 @@ def test_prompt_text_budget_and_unique_images(actor,monkeypatch):
     run(c,w,b,cid,'สวัสดีค่ะ')
     messages=calls[0]['messages'];turns=[m for m in messages if m['role']!='system']
     images=[part for m in turns if isinstance(m['content'],list) for part in m['content'] if part['type']=='image_url']
-    assert len(images)==1 and len(turns)<=7
+    assert len(images)==0 and len(turns)<=7
     assert sum(len(m['content']) for m in turns if isinstance(m['content'],str))<=24000
 
 

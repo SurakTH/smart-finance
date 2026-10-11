@@ -1,6 +1,6 @@
 import time
 import uuid
-from sqlalchemy import String, Integer, BigInteger, Text, ForeignKey, ForeignKeyConstraint, UniqueConstraint, CheckConstraint, LargeBinary, JSON
+from sqlalchemy import Index, String, Integer, BigInteger, Text, ForeignKey, ForeignKeyConstraint, UniqueConstraint, CheckConstraint, LargeBinary, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 from .db import Base
 
@@ -55,7 +55,7 @@ class Account(Base):
     workspace_id: Mapped[str] = mapped_column(ForeignKey('workspaces.id'), index=True)
     name: Mapped[str] = mapped_column(String(100))
     kind: Mapped[str] = mapped_column(String(12))
-    __table_args__ = (UniqueConstraint('id','workspace_id'), CheckConstraint("kind IN ('asset','liability','income','expense','equity')"))
+    __table_args__ = (Index('ix_accounts_workspace_kind_cursor','workspace_id','kind','id'), UniqueConstraint('id','workspace_id'), CheckConstraint("kind IN ('asset','liability','income','expense','equity')"))
 
 class Entry(Base):
     __tablename__ = 'entries'
@@ -69,7 +69,7 @@ class Entry(Base):
     occurred_on: Mapped[str] = mapped_column(String(10))
     created_at: Mapped[int] = mapped_column(BigInteger, default=now)
     created_by: Mapped[str] = mapped_column(ForeignKey('users.id'))
-    __table_args__ = (UniqueConstraint('id','workspace_id'), UniqueConstraint('workspace_id','idempotency_key'), CheckConstraint('amount > 0'), CheckConstraint("kind IN ('opening','income','expense','transfer','card_payment')"))
+    __table_args__ = (Index('ix_entries_workspace_cursor','workspace_id','occurred_on','created_at','id'), UniqueConstraint('id','workspace_id'), UniqueConstraint('workspace_id','idempotency_key'), CheckConstraint('amount > 0'), CheckConstraint("kind IN ('opening','income','expense','transfer','card_payment')"))
 
 class Line(Base):
     __tablename__ = 'lines'
@@ -78,7 +78,7 @@ class Line(Base):
     entry_id: Mapped[str] = mapped_column(String(36))
     account_id: Mapped[str] = mapped_column(String(36))
     signed_amount: Mapped[int] = mapped_column(BigInteger)
-    __table_args__ = (ForeignKeyConstraint(['entry_id','workspace_id'], ['entries.id','entries.workspace_id']), ForeignKeyConstraint(['account_id','workspace_id'], ['accounts.id','accounts.workspace_id']), CheckConstraint('signed_amount != 0'))
+    __table_args__ = (Index('ix_lines_workspace_account_entry','workspace_id','account_id','entry_id'), Index('ix_lines_workspace_entry_account','workspace_id','entry_id','account_id'), ForeignKeyConstraint(['entry_id','workspace_id'], ['entries.id','entries.workspace_id']), ForeignKeyConstraint(['account_id','workspace_id'], ['accounts.id','accounts.workspace_id']), CheckConstraint('signed_amount != 0'))
 
 class Proposal(Base):
     __tablename__ = 'proposals'
@@ -132,7 +132,7 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[int] = mapped_column(BigInteger, default=lambda: time.time_ns()//1_000_000)
     attachment_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    __table_args__ = (ForeignKeyConstraint(['conversation_id','workspace_id'], ['conversations.id','conversations.workspace_id']), ForeignKeyConstraint(['attachment_id','workspace_id'], ['attachments.id','attachments.workspace_id'], name='fk_message_attachment_workspace'))
+    __table_args__ = (Index('ix_messages_workspace_conversation_cursor','workspace_id','conversation_id','created_at','id'), ForeignKeyConstraint(['conversation_id','workspace_id'], ['conversations.id','conversations.workspace_id']), ForeignKeyConstraint(['attachment_id','workspace_id'], ['attachments.id','attachments.workspace_id'], name='fk_message_attachment_workspace'))
 
 class AssistantPreference(Base):
     __tablename__='assistant_preferences'
@@ -260,7 +260,7 @@ class Goal(Base):
     created_by: Mapped[str] = mapped_column(ForeignKey('users.id'))
     idempotency_key: Mapped[str] = mapped_column(String(36))
     fingerprint: Mapped[str] = mapped_column(String(64))
-    __table_args__ = (UniqueConstraint('id','workspace_id'),UniqueConstraint('workspace_id','idempotency_key'),
+    __table_args__ = (Index('ix_goals_workspace_cursor','workspace_id','id'), UniqueConstraint('id','workspace_id'),UniqueConstraint('workspace_id','idempotency_key'),
         CheckConstraint('target > 0 AND target <= 100000000000'),CheckConstraint('archived IN (0,1)'),CheckConstraint('version > 0'))
 
 class GoalMovement(Base):
@@ -299,7 +299,7 @@ class RecurringRule(Base):
     created_by: Mapped[str] = mapped_column(ForeignKey('users.id'))
     idempotency_key: Mapped[str] = mapped_column(String(36))
     fingerprint: Mapped[str] = mapped_column(String(64))
-    __table_args__ = (UniqueConstraint('id','workspace_id'),UniqueConstraint('workspace_id','idempotency_key'),
+    __table_args__ = (Index('ix_recurring_workspace_cursor','workspace_id','id'), UniqueConstraint('id','workspace_id'),UniqueConstraint('workspace_id','idempotency_key'),
         ForeignKeyConstraint(['account_id','workspace_id'],['accounts.id','accounts.workspace_id']),
         ForeignKeyConstraint(['category_id','workspace_id'],['accounts.id','accounts.workspace_id']),
         CheckConstraint("kind IN ('income','expense')"),CheckConstraint("frequency IN ('daily','weekly','monthly')"),

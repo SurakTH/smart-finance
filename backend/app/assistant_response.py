@@ -26,7 +26,7 @@ def completion(message):
     if not isinstance(tool,dict):raise ValueError('Invalid tool')
     function=tool.get('function',{})
     if not isinstance(function,dict):raise ValueError('Invalid function')
-    if tool.get('type','function')!='function' or function.get('name') not in ('prepare_transaction','prepare_management_plan','query_finance','prepare_correction'):raise ValueError('Unknown tool')
+    if tool.get('type','function')!='function' or function.get('name') not in ('prepare_transaction','prepare_management_plan','query_finance','prepare_correction','lookup_workspace'):raise ValueError('Unknown tool')
     arguments=function.get('arguments')
     if not isinstance(arguments,str) or len(arguments)>16000:raise ValueError('Invalid arguments')
     identifier=tool.get('id') or 'call_sf_read'

@@ -1,5 +1,17 @@
 # ผลตรวจสอบ Smart Finance
 
+
+## AI ค้นข้อมูลตามงานและแบ่งหน้า (11 ตุลาคม 2026)
+
+- PostgreSQL disposable database: backend ทั้งชุด **348 passed** (เพิ่ม16เคสจาก332; warning Starlette/httpx เดิม1รายการ) ตรวจ tools→lookup→draft→plainยืนยัน, strict schema, literal wildcard, cursorภายในtenant/filter, ข้อมูลแยกuser/workspace, ยอดbalanceจากledger, เป้า/งบ/รายการประจำ, หน้าถัดไป/หมดอายุ/บริบทที่ไม่เกี่ยวข้อง, cacheและread budget
+- เริ่มคุยใน workspace ที่มีบัญชีเพิ่ม120รายการ: system contextไม่รวมชื่อ/ID/ยอดทุกบัญชี และไม่เรียกdashboard/answer_reportล่วงหน้า การแบ่งหน้าบัญชี47รายการและรายการเงิน23รายการได้ครบ ไม่มีซ้ำ รองรับวัน/เวลาซ้ำ
+- รายงาน24หมวด/24งบ: ยอดเดือน/เดือนก่อน/งบ/ใช้เกินเท่ารายงานเต็ม รายละเอียดส่งสูงสุด20แถว จำนวนจริง24; แก้งบที่อยู่นอก20แถวทำให้fingerprintเปลี่ยน การทวนแผนอิงการวิเคราะห์ยังปฏิเสธเมื่อledgerเปลี่ยน
+- รูปปัจจุบัน/ตอบบัญชีหลังส่งรูปยังเก็บหลักฐานเมื่อทวนและยืนยัน ไม่ส่งรูปย้อนหลังกับคำทักทาย คำถามยอด หรือข้อความสั้นที่ไม่เกี่ยวกับสลิป; รูปfollow-upหมดอายุ15นาที
+- Chrome Playwright **16 passed** (desktop8/mobile8): การยืนยัน/แก้รายการ/กันซ้ำ, batch, workspace default, Markdown, streaming, ถามข้อมูลที่ขาด, ประวัติ, personal preferences/evidence/budget และตั้งค่าAI ใช้สาธิต/HTTP mock ตามแต่ละเคส ไม่ใช้API keyจริง
+- Docker backend/worker/migrate buildผ่าน (`c3bd7457bb79`), migration `assistant_reads`, webเดิมที่ไม่มีการเปลี่ยน frontendยังใช้งานได้ หน้าแรกHTTP200; ไม่ได้แก้ .env หรือ deploy Ubuntu VM
+- สำรองหลังmigration `finance-20261011T140557Z.dump` และกู้คืนลงฐานdisposableผ่าน จำนวนแถว/snapshotsตรงและjournal debit=credit; source archive209ไฟล์ผ่านintegrity/runtime-secret scan
+- ขอบเขต: ผลทดสอบนี้ยืนยันความถูกต้อง/ขนาดผลลัพธ์และความปลอดภัย ไม่ใช่benchmarkหลายล้านรายการ ไม่รับรองlatency/token savingsกับproviderจริงหรือคุณภาพการเลือกtools ยังไม่มีprecomputed aggregates, vector search, memory summarization หรือTelegram native tool loopใหม่
+
 ## เลขาส่วนตัว: ความจำ ข้อมูลที่ขาด หลักฐานรายงาน และงบ AI (11 ตุลาคม 2026)
 
 - PostgreSQL ฐาน disposable ชุดรวม **332 passed** (เพิ่ม18เคส; 1 Starlette/httpx deprecation warning เดิม) ชุดเฉพาะ personalization/dialogue/natural/configuration **68 passed** ตรวจบัญชีเริ่มต้น/กฎหมวดข้ามห้อง, explicit override, ยอดที่ยังขาด, กฎชนกัน, version conflict, ปิด/ล้าง, ยืนยันความจำไม่ยืนยันเงิน และข้อมูลแยก user+workspace จริง

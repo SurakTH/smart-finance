@@ -484,3 +484,11 @@ Browser เพิ่มทดสอบค้นหาบริการ/empty/re
 - TypeScript typecheck และ Docker build backend/worker/migrate/web ผ่าน backend `e5571883a6fb`, web `e0e65ea5e10b`; local Compose healthy, migration `ai_diagnostics`, หน้าแรก HTTP 200
 - สำรอง `finance-20261011T153150Z.dump` และกู้คืนใน disposable database ผ่าน ตรวจจำนวนแถว snapshots รวม `jobs.diagnostics`/expiry และ journals สมดุล
 - ไม่ได้ทดสอบ Ollama/Gemma หรือ Cloud provider ของผู้ใช้จริง ไม่ deploy Ubuntu server ผล lab เป็นการตรวจโจทย์ตัวอย่าง ไม่ใช่การรับรองคุณภาพทั่วไป งาน AI ยังใช้ workspace write lock เดิม และผล diagnostics ปรากฏหลัง job commit
+
+## แก้ข้อความยืนยันที่ไม่มีร่าง และ lab lookup (11 ตุลาคม 2026)
+
+- Backend PostgreSQL disposable database: **421 passed** (เพิ่ม 12 เคส; warning Starlette/httpx เดิม 1 รายการ) ครอบคลุมโมเดลทวนเป็น prose → ขอแก้ → draft จริง → plain ยืนยันครั้งเดียว, ปฏิเสธ prose ซ้ำ, ถามรายงานไม่กลายเป็น draft, กู้ห้อง legacy ที่ยืนยันแล้วไม่มี action, schema lookup แบบ inline, q/null/empty optional fields, error field metadata ไม่รั่ว input, lab อ่าน preferences/ยอดและโอกาสแก้คำสั่งหนึ่งรอบภายในเพดานเดิม
+- Browser Chrome Playwright **8 passed** (คอม 4/มือถือ 4): diagnostics แสดงชื่อช่องผิด, ยืนยัน/แก้รายการเดี่ยว, batch/กันซ้ำ และหยุด AI; ตรวจภาพเฉพาะ AI lab บนมือถือ ไม่มี horizontal overflow
+- TypeScript และ Docker build ผ่าน backend `90246f993da2`, web `4553313b9e3d`; local Compose healthy หน้าแรก HTTP 200 ไม่มี migration ใหม่
+- สำรอง `finance-20261011T160644Z.dump` และตรวจ restore ใน disposable database ผ่าน: จำนวนแถวและ snapshots รวม diagnostics ตรงกัน ledger สมดุล
+- การเรียกโมเดลใน regression ใช้ HTTP mock ยังไม่ได้ติดต่อ Gemma จริงของผู้ใช้ รายงานเก่าที่ไม่มี arguments ไม่พอระบุว่าช่องใดทำให้ invalid_arguments จึงไม่อ้างว่าพิสูจน์สาเหตุของทั้ง 4 โจทย์บนเครื่องผู้ใช้แล้ว ต้องอัปเดตและรันทดสอบใหม่ ข้อความทวนที่ผู้ใช้ส่งยืนยันว่ามีกรณีโมเดลอ้างว่าร่างพร้อมทั้งที่ backend ไม่มี action; การแก้ไม่อนุญาตให้บันทึกจาก prose

@@ -396,7 +396,11 @@ def send_message(wid: str, cid: str, data: ChatInput, member: Membership = Depen
     user_message=Message(workspace_id=wid,conversation_id=cid,role='user',content=data.text,created_at=message_time(db,wid,cid))
     db.add(user_message);db.flush()
     from .chat_actions import handle
-    reply=handle(db,c,member.user_id,data.text,data.review_message_id,allow_model_dialogue=True)
+    from .assistant_contract import recovery_request
+    recovery=recovery_request(db,c,member.user_id,data.text)
+    from .chat_dialogue import available
+    if recovery and not available(db,c):recovery=None
+    reply=None if recovery else handle(db,c,member.user_id,data.text,data.review_message_id,allow_model_dialogue=True)
     if reply is not None:
         message=Message(workspace_id=wid,conversation_id=cid,role='assistant',content=reply,created_at=message_time(db,wid,cid))
         db.add(message);db.flush()
@@ -405,7 +409,7 @@ def send_message(wid: str, cid: str, data: ChatInput, member: Membership = Depen
         return {'job_id':None}
     from .chat_actions import begin_request
     begin_request(db,c,member.user_id)
-    job = enqueue(db,wid,member.user_id,'chat',{'conversation_id':cid,'text':data.text,'routing':'workspace','user_message_id':user_message.id})
+    job = enqueue(db,wid,member.user_id,'chat',{'conversation_id':cid,'text':recovery.content if recovery else data.text,'routing':'workspace','user_message_id':user_message.id,**({'repair_review':True,'source_user_message_id':recovery.id} if recovery else {})})
     return {'job_id':job.id}
 
 @app.post('/workspaces/{wid}/conversations/{cid}/images')

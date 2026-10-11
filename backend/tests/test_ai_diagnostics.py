@@ -163,3 +163,35 @@ def test_sandbox_respects_budget_before_network(lab,monkeypatch):
     monkeypatch.setattr('app.ai_sandbox.target',lambda p:('https://example.test/v1',{},{}))
     jid=start(c,b,'balance',pid);run_all()
     assert result(c,b,jid)['diagnostics']['test']['reason']=='budget' and calls==[]
+
+@pytest.mark.parametrize('case',['balance','transaction','followup','receipt'])
+def test_lab_accepts_empty_optional_lookup_fields_and_default_discovery(lab,monkeypatch,case):
+    c,w,u,b,cid,pid=lab;calls=[]
+    def handler(req):
+        body=json.loads(req.content);calls.append(body)
+        assert len(body['tools'])==2
+        if len(calls)==1:
+            query={'resource':'balances' if case=='balance' else 'preferences','q':None,'kind':'','month':'','cursor':'','limit':None}
+            answer=tool('lookup_workspace',{'queries':[query]})
+        elif case=='balance':answer={'content':'ยอดเงิน 1,234.56 บาทค่ะ'}
+        else:answer=tool('prepare_transaction',dict(intent='create',kind='expense',description='กาแฟ',amount=12500 if case=='receipt' else 8000,account_id=CASH,category_id=FOOD))
+        return httpx.Response(200,json={'choices':[{'message':answer}]})
+    transport(monkeypatch,handler);before=counts(w);jid=start(c,b,case,pid);run_all()
+    assert result(c,b,jid)['diagnostics']['test']['status']=='passed' and counts(w)==before
+
+
+def test_lab_invalid_lookup_gives_sanitized_feedback_and_one_repair(lab,monkeypatch):
+    c,w,u,b,cid,pid=lab;calls=[]
+    def handler(req):
+        body=json.loads(req.content);calls.append(body)
+        if len(calls)==1:answer=tool('lookup_workspace',{'queries':[{'resource':'balances','q':['PRIVATE']} ]})
+        elif len(calls)==2:
+            feedback=json.loads(body['messages'][-1]['content'])
+            assert feedback['issues']==[{'field':'queries.q','code':'string_type'}] and 'PRIVATE' not in json.dumps(feedback)
+            answer=tool('lookup_workspace',{'queries':[{'resource':'balances'}]})
+        else:answer={'content':'ยอดเงิน 1,234.56 บาท'}
+        return httpx.Response(200,json={'choices':[{'message':answer}]})
+    transport(monkeypatch,handler);jid=start(c,b);run_all();value=result(c,b,jid)
+    assert value['diagnostics']['test']['status']=='passed' and len(calls)==3
+    assert any(e.get('issues')==[{'field':'queries.q','code':'string_type'}] for e in value['diagnostics']['events'])
+    assert 'PRIVATE' not in json.dumps(value)

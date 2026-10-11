@@ -6,6 +6,7 @@ import re
 import time
 import httpx
 from PIL import Image,ImageDraw
+from pydantic import ValidationError
 from sqlalchemy import select
 from . import config
 from .models import Provider
@@ -47,18 +48,21 @@ def context(case):
 def lookup(raw):
     values=Lookup.model_validate_json(raw);results=[]
     for query in values.queries:
-        if query.cursor or query.month:raise TestFailed('invalid_arguments')
-        if query.resource in ('accounts','categories','balances'):
-            items=[dict(id=CASH,name='เงินสด',kind='asset')] if query.resource!='categories' else [dict(id=FOOD,name='อาหาร',kind='expense')]
-            if query.kind:items=[x for x in items if x['kind']==query.kind]
-            if query.q:items=[x for x in items if query.q.strip().casefold() in x['name'].casefold()]
-            row=dict(resource=query.resource,items=items,returned=len(items),has_more=False,next_cursor=None)
-            if query.resource=='balances':
-                if query.q or query.kind:raise TestFailed('invalid_arguments')
-                row['summary']=dict(assets_satang=123456,liabilities_satang=23456,net_satang=100000,account_count=2,complete=True,scope={'q':'','kind':None})
-                row['items'][0]['balance_satang']=123456
-            results.append(row)
-        else:raise TestFailed('wrong_tool')
+        if query.cursor or (query.month and query.resource!='budgets') or (query.kind and query.resource not in ('accounts','categories','balances')):raise TestFailed('invalid_arguments')
+        if query.resource=='preferences':
+            results.append(dict(resource='preferences',enabled=True,expense_account_id=CASH,income_account_id=CASH,rules=[dict(keyword='กาแฟ',category_id=FOOD)],has_more=False));continue
+        if query.resource not in ('accounts','categories','balances'):
+            results.append(dict(resource=query.resource,items=[],returned=0,has_more=False,next_cursor=None));continue
+        items=[dict(id=CASH,name='เงินสด',kind='asset',balance_satang=123456),dict(id='33333333-3333-4333-8333-333333333333',name='บัตรตัวอย่าง',kind='liability',balance_satang=23456)] if query.resource!='categories' else [dict(id=FOOD,name='อาหาร',kind='expense')]
+        if query.kind:
+            if query.kind not in (('income','expense') if query.resource=='categories' else ('asset','liability')):raise TestFailed('invalid_arguments')
+            items=[x for x in items if x['kind']==query.kind]
+        if query.q:items=[x for x in items if query.q.strip().casefold() in x['name'].casefold()]
+        row=dict(resource=query.resource,items=items[:query.limit],returned=len(items[:query.limit]),has_more=False,next_cursor=None)
+        if query.resource=='balances':
+            assets=sum(x['balance_satang'] for x in items if x['kind']=='asset');debt=sum(x['balance_satang'] for x in items if x['kind']=='liability')
+            row['summary']=dict(assets_satang=assets,liabilities_satang=debt,net_satang=assets-debt,account_count=len(items),complete=True,scope={'q':query.q.strip(),'kind':query.kind})
+        results.append(row)
     return dict(source='workspace_backend',unit='THB_satang',results=results)
 
 def query_finance(raw):
@@ -70,7 +74,10 @@ def query_finance(raw):
 
 def check_draft(raw,case):
     value=Suggestion.model_validate_json(raw)
-    if value.transactions or value.intent!='create' or value.kind!='expense' or str(value.account_id)!=CASH or str(value.category_id)!=FOOD or not value.description or value.occurred_on!=today():raise TestFailed('invalid_arguments')
+    if value.transactions:
+        if len(value.transactions)!=1 or any(getattr(value,k) is not None for k in ('kind','description','amount','account_id','category_id','occurred_on')):raise TestFailed('invalid_arguments')
+        value=value.transactions[0]
+    if value.intent!='create' or value.kind!='expense' or str(value.account_id)!=CASH or str(value.category_id)!=FOOD or not value.description or value.occurred_on not in (None,today()):raise TestFailed('invalid_arguments')
     if value.amount!=(12500 if case=='receipt' else 8000):raise TestFailed('wrong_amount')
     return True
 
@@ -81,12 +88,25 @@ def evaluate(db,job,p,case,deadline,budget):
     try:
         if p.encrypted_key:headers['Authorization']='Bearer '+config.cipher().decrypt(p.encrypted_key.encode()).decode()
     except Exception:raise AIRequestError('key_invalid') from None
-    messages=context(case);seen=set();reads=0
+    messages=context(case);seen=set();reads=0;last_failure=None;repaired=False
+    names={'lookup_workspace','query_finance'} if case in ('balance','monthly') else {'lookup_workspace','prepare_transaction'}
+    tools=[t for t in assistant_tools() if t['function']['name'] in names]
+    def feedback(answer,error):
+        nonlocal last_failure,repaired
+        reason=error.reason if isinstance(error,TestFailed) else 'invalid_arguments'
+        from .tool_arguments import issues
+        fields=issues(error) if isinstance(error,ValidationError) else []
+        record(job,'tool',tool=answer.tool_name,status='invalid',issues=fields)
+        last_failure=reason
+        if repaired:raise TestFailed(reason)
+        repaired=True
+        result=dict(error=reason,issues=fields,message='แก้คำสั่งตาม schema และโจทย์เดิม เว้นช่องที่ไม่ใช้ ค้น ID ด้วย lookup_workspace; จำนวนเป็นสตางค์ ห้ามเดา ID หรือจำนวนจากคำตอบตัวเอง')
+        messages.extend([{'role':'assistant','content':None,'tool_calls':[{'id':answer.call_id,'type':'function','function':{'name':answer.tool_name,'arguments':answer.draft}}]},{'role':'tool','tool_call_id':answer.call_id,'content':json.dumps(result,ensure_ascii=False)}])
     for _ in range(4):
         if budget[0]>=8 or time.monotonic()>=deadline:raise TestFailed('call_limit')
         budget[0]+=1
         with httpx.Client(trust_env=False,follow_redirects=False,timeout=httpx.Timeout(min(p.timeout_seconds,max(1,deadline-time.monotonic())),connect=5)) as client:
-            body=dict(model=p.model,messages=messages,tools=assistant_tools(),tool_choice='auto',stream=True,**parameters(p))
+            body=dict(model=p.model,messages=messages,tools=tools,tool_choice='auto',stream=True,**parameters(p))
             with tracked_stream(db,job,p,client,'POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json=body) as response:
                 ensure_response(response)
                 if 'text/event-stream' in response.headers.get('content-type',''):answer=read_stream(response,job)
@@ -106,10 +126,8 @@ def evaluate(db,job,p,case,deadline,budget):
             return
         if name=='prepare_transaction' and case in ('transaction','followup','receipt'):
             try:check_draft(answer.draft,case)
-            except TestFailed:
-                record(job,'tool',tool=name,status='invalid');raise
-            except (ValueError,TypeError):
-                record(job,'tool',tool=name,status='invalid');raise TestFailed('invalid_arguments') from None
+            except (ValueError,TypeError) as error:
+                feedback(answer,error);continue
             record(job,'tool',tool=name,status='ok');return
         if name not in ('lookup_workspace','query_finance') or reads>=3:
             record(job,'tool',tool=name,status='invalid');raise TestFailed('wrong_tool')
@@ -117,15 +135,13 @@ def evaluate(db,job,p,case,deadline,budget):
             result=lookup(answer.draft) if name=='lookup_workspace' else query_finance(answer.draft)
             if case=='balance' and not any(x.get('resource')=='balances' for x in result.get('results',[])):
                 pass  # ID discovery is allowed, but a balance read is still required.
-            elif name=='lookup_workspace' and any(x.get('resource')=='balances' for x in result.get('results',[])):seen.add(name)
+            elif name=='lookup_workspace' and any(x.get('resource')=='balances' and not x.get('summary',{}).get('scope',{}).get('q') and x.get('summary',{}).get('scope',{}).get('kind') in (None,'asset') for x in result.get('results',[])):seen.add(name)
             elif name=='query_finance':seen.add(name)
-        except TestFailed:
-            record(job,'tool',tool=name,status='invalid');raise
-        except (ValueError,TypeError):
-            record(job,'tool',tool=name,status='invalid');raise TestFailed('invalid_arguments') from None
+        except (ValueError,TypeError) as error:
+            feedback(answer,error);continue
         reads+=1;record(job,'tool',tool=name,status='ok',resources=[x.get('resource') for x in result.get('results',[])]+(['monthly_analysis'] if name=='query_finance' else []))
         messages.extend([{'role':'assistant','content':None,'tool_calls':[{'id':answer.call_id,'type':'function','function':{'name':name,'arguments':answer.draft}}]},{'role':'tool','tool_call_id':answer.call_id,'content':json.dumps(result,ensure_ascii=False)}])
-    raise TestFailed('call_limit')
+    raise TestFailed(last_failure or 'call_limit')
 
 def run(db,job):
     case=job.payload['case'];selected=job.payload.get('provider_id');options=settings(db,job.workspace_id)

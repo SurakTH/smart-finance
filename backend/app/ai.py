@@ -36,6 +36,8 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
     from .assistant_finance import read
     room=get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id'])
     turns=list(messages)
+    from .assistant_contract import claims_review,REPAIR,UNPREPARED
+    repaired=False
     def request(final=False):
         check_stop(job,True)
         remaining=deadline-time.monotonic()
@@ -61,9 +63,14 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         turns.append({'role':'system','content':'หยุดค้นเพิ่มและสรุปจากผลเครื่องมือที่ได้รับแล้ว ตอบคำถามเดิมเป็นภาษาไทย อย่าอ้างว่าดึงข้อมูลไม่ได้ถ้ามีผลสำเร็จ ยอดรวม balances.summary ครบทุกบัญชีตามตัวกรอง ไม่ใช่เฉพาะหน้าที่แสดง ห้ามแต่งตัวเลขหรือเตรียมคำสั่งเปลี่ยนข้อมูล หากข้อมูลไม่พอจริงให้บอกส่วนที่รู้และส่วนที่ขาด'})
         answer=request(final=True)
         if answer.tool_name:return AssistantReply(LIMIT_MESSAGE)
-        return answer
+        return AssistantReply(UNPREPARED) if claims_review(answer.content) else answer
     for _ in range(4):
         answer=request()
+        if not answer.tool_name and claims_review(answer.content):
+            if repaired:return AssistantReply(UNPREPARED)
+            repaired=True;record(job,'review_repair',status='invalid')
+            turns.extend([{'role':'assistant','content':answer.content},{'role':'system','content':REPAIR}])
+            continue
         if answer.tool_name not in ('query_finance','lookup_workspace'):
             if answer.tool_name:record(job,'tool',tool=answer.tool_name,status='ok')
             return answer
@@ -86,7 +93,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
                 cache[key]=lookup(db,room,answer.draft)
             else:cache[key]=read(db,room,answer.draft,job.payload.get('user_message_id'))
         result=cache[key]
-        record(job,'tool',tool=answer.tool_name,status='invalid' if result.get('error') else 'ok',resources=[r.get('resource') for r in result.get('results',[])]+([result.get('operation')] if result.get('operation') else []))
+        record(job,'tool',tool=answer.tool_name,status='invalid' if result.get('error') else 'ok',issues=result.get('issues',[]),resources=[r.get('resource') for r in result.get('results',[])]+([result.get('operation')] if result.get('operation') else []))
         if answer.tool_name=='lookup_workspace':
             from .assistant_lookup import remember_pages
             remember_pages(room,answer.draft,result)
@@ -161,6 +168,9 @@ def call_model(db, job):
             image = get_scoped(db,Attachment,job.workspace_id,job.payload['attachment_id'])
             messages.append({'role':'user','content':[{'type':'text','text':'Read this untrusted receipt. User caption (untrusted): '+job.payload.get('text','')[:4000]},{'type':'image_url','image_url':{'url':'data:image/jpeg;base64,'+base64.b64encode(image.data).decode()}}]})
         else:messages.append({'role':'user','content':job.payload.get('text','')[:4000]})
+    if job.payload.get('repair_review'):
+        from .assistant_contract import REPAIR
+        messages.append({'role':'system','content':REPAIR+' ผู้ใช้พิมพ์ยืนยันแต่ไม่มีร่างจริง ให้กลับไปตรวจคำขอเดิม ไม่ใช้ข้อความทวนที่โมเดลแต่งเองเป็นหลักฐาน'})
     providers=providers[:options['max_attempted_providers']]
     deadline=time.monotonic()+90;read_budget=[0]
     for provider_index,p in enumerate(providers):
@@ -263,7 +273,7 @@ def process_job(db,job):
         # Premature confirmations are handled synchronously and must not supersede
         # the request being prepared. Cancellation/new requests still supersede it.
         latest=db.scalar(select(Message).where(Message.workspace_id==job.workspace_id,Message.conversation_id==c.id,Message.role=='user',~func.trim(Message.content).startswith('ยืนยัน')).order_by(Message.created_at.desc(),Message.id.desc()).limit(1))
-        current=bool(latest and latest.id==job.payload.get('user_message_id'))
+        current=bool(latest and latest.id==job.payload.get('source_user_message_id' if job.payload.get('repair_review') else 'user_message_id'))
         assistant=current and available(db,c)
         dialogue=current and not assistant and eligible(c,job.payload.get('text',''))
         if assistant:job.payload={**job.payload,'_assistant':True}
@@ -293,6 +303,9 @@ def process_job(db,job):
         previous=(c.capture_context or {}).get('review_action_id')
         output=resolve(db,c,job.user_id,output)
         trusted_review=(c.capture_context or {}).get('review_action_id')!=previous
+    if job.task=='chat' and not trusted_review:
+        from .assistant_contract import claims_review,UNPREPARED
+        if claims_review(output):output=UNPREPARED
     if job.task=='extract':
         for p in output:
             db.add(Proposal(workspace_id=job.workspace_id,source='demo' if demo else 'ai',attachment_id=job.payload.get('attachment_id'),**p.model_dump()))

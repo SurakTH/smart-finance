@@ -10,7 +10,7 @@ from .db import get_db
 from .security import owner,login_limit
 
 router=APIRouter(prefix='/workspaces/{wid}/ai',dependencies=[Depends(owner)])
-EVENTS={'request','tool','provider_error','fallback','synthesis','result'}
+EVENTS={'request','tool','provider_error','fallback','synthesis','result','review_repair'}
 TOOLS={'lookup_workspace','query_finance','prepare_transaction','prepare_correction','prepare_management_plan'}
 RESOURCES={'accounts','categories','balances','budgets','goals','recurring','preferences','monthly_analysis','search_transactions'}
 STATUSES={'ok','failed','invalid','cached','limited','passed','skipped'}
@@ -27,6 +27,9 @@ def record(job,event,**values):
         elif key=='status' and isinstance(value,str) and value in STATUSES:item[key]=value
         elif key=='estimated' and type(value) is bool:item[key]=value
         elif key=='resources' and isinstance(value,list):item[key]=[x for x in value if isinstance(x,str) and x in RESOURCES][:3]
+        elif key=='issues':
+            from .tool_arguments import valid_issues
+            item[key]=valid_issues(value)
         elif key=='error':
             from .ai_errors import MESSAGES
             if isinstance(value,str) and value in MESSAGES:item[key]=value

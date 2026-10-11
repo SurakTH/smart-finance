@@ -5,7 +5,7 @@ from datetime import date,timedelta
 from typing import Literal
 from uuid import UUID,uuid4
 from fastapi import HTTPException
-from pydantic import BaseModel,ConfigDict,Field,ValidationError
+from pydantic import BaseModel,ConfigDict,Field,ValidationError,field_validator
 from sqlalchemy import select,or_,and_
 from .models import Account,Entry,now
 from .reporting import today,transaction_conditions,entry_details
@@ -26,6 +26,10 @@ class Read(BaseModel):
     amount:int|None=Field(default=None,strict=True,gt=0,le=100_000_000_000)
     month:str|None=Field(default=None,pattern=r'^\d{4}-\d{2}$')
     cursor:UUID|None=None
+    @field_validator('q',mode='before')
+    @classmethod
+    def empty_search(cls,value):return '' if value is None else value
+
 class Changes(BaseModel):
     model_config=ConfigDict(extra='forbid')
     amount:int|None=Field(default=None,strict=True,gt=0,le=100_000_000_000)

@@ -1,4 +1,5 @@
 "use client";
+import {ChatMarkdown} from "./chat-markdown";
 import {useChatStream} from "./use-chat-stream";
 import {WorkspaceManager} from "./workspaces";
 import {PwaSettings} from "./pwa";
@@ -867,13 +868,13 @@ export default function Finance() {
                     {messages.length ? messages.map((m) => <div id={"chat-message-"+m.id} className={"message " + m.role+(focusMessage===m.id?" search-focus":"")} key={m.id}>
                       <span className="message-author">{m.role === "user" ? "คุณ" : <><Sparkles size={17} /> Finance AI</>}</span>
                       {m.attachment_id && <a href={"/api" + base + "/attachments/" + m.attachment_id} target="_blank" rel="noreferrer"><img className="chat-image" src={"/api" + base + "/attachments/" + m.attachment_id} alt="รูปที่แนบในบทสนทนา" loading="lazy" onLoad={() => { const el = chatScroll.current; if (el && followBottom.current && !focusMessage) el.scrollTop = el.scrollHeight; }} /></a>}
-                      {m.content && <p>{m.role==='assistant'?m.content.replace(/\n\nรหัสทางเลือก:\nยืนยัน [A-F0-9]{8}\n$/,''):m.content}</p>}
+                      {m.content && <ChatMarkdown text={m.role==='assistant'?m.content.replace(/\n\nรหัสทางเลือก:\nยืนยัน [A-F0-9]{8}\n$/,''):m.content}/>}
                       {m.role === "assistant" && m.content.includes("AI Inbox") && <Link className="inbox-result" href="/inbox">เปิด AI Inbox เพื่อตรวจสอบ <ArrowUpRight size={16} /></Link>}
                     </div>) : liveDraft ? null : <div className="chat-welcome">
                       <div className="ai-orb"><Sparkles size={32} /></div><p className="eyebrow">YOUR PERSONAL FINANCE COMPANION</p><h1>วันนี้ อยากคุย<br className="mobile-break" />เรื่องอะไร?</h1><p className="muted">มองภาพรวมเงินของคุณ หรือส่งสลิป<br />ให้ช่วยเตรียมรายการและยืนยันที่นี่</p>
                       <div className="chat-suggestions">{[{icon: Wallet, text: "ตอนนี้ฉันมีเงินเท่าไร?", detail: "ดูยอดสะสมจากบัญชีของคุณ"}, {icon: Paperclip, text: "อยากบันทึกจากสลิป", detail: "แนบรูป บอกนิดหน่อย แล้วทวนในแชท"}].map((prompt) => <button key={prompt.text} onClick={() => { if (chatInput.current) { chatInput.current.value = prompt.text; setChatText(prompt.text); chatInput.current.focus(); } }}><prompt.icon size={22} /><strong>{prompt.text}</strong><span>{prompt.detail}</span><ArrowUpRight size={16} /></button>)}</div>
                     </div>}
-                    {liveDraft?.text&&<div className="message assistant live-answer" aria-label="คำตอบที่กำลังทยอยแสดง"><span className="message-author"><Sparkles size={17}/> Finance AI <small>กำลังตอบ · ยังไม่สมบูรณ์</small></span><p>{liveDraft.text}</p></div>}
+                    {liveDraft?.text&&<div className="message assistant live-answer" aria-label="คำตอบที่กำลังทยอยแสดง"><span className="message-author"><Sparkles size={17}/> Finance AI <small>กำลังตอบ · ยังไม่สมบูรณ์</small></span><ChatMarkdown text={liveDraft.text}/></div>}
                     {streamNotice&&<p className="stream-notice" role="status">{streamNotice}</p>}
                     {(busy || hasPendingJobs || liveDraft) && !liveDraft?.text && messages.length > 0 && <div className="thinking" role="status"><span /><span /><span /> กำลังเตรียมคำตอบ</div>}
                   </div>

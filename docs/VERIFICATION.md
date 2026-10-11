@@ -1,5 +1,13 @@
 # ผลตรวจสอบ Smart Finance
 
+## จัดรูปแบบ Web AI Chat ด้วย Markdown (11 ตุลาคม 2026)
+
+- รองรับตัวหนา/เอียง/ขีดฆ่า หัวข้อ รายการ checklist quote ตาราง inline/fenced code พร้อมปุ่มคัดลอก และ ==ไฮไลต์== ทั้งข้อความย้อนหลังและ streaming ใช้ renderer เดียวกัน ตาราง/โค้ดเลื่อนภายใน ไม่ขยายหน้าจอมือถือ
+- ไม่ประมวลผล HTML และไม่โหลดรูปภายนอกจาก Markdown; จำกัดลิงก์ http/https/mailto/anchor บล็อก javascript/data/file และ relative API paths ข้อความทวนทางการเงินแสดงชื่อ/รายละเอียดแบบ literal เพื่อไม่ให้เครื่องหมาย Markdown ซ่อนข้อมูลที่จะยืนยัน
+- Chrome **12 passed** (desktop6/mobile6) ครอบคลุม Markdown/copy/streaming/XSS/no external image request/no horizontal overflow รวม regression scroll/confirmation/batch/default workspace/natural chat ใช้ mock transport และ fixture สำหรับการจัดรูปแบบ ไม่ใช่การตรวจคุณภาพ provider จริง
+- PostgreSQL ชุดเฉพาะ dialogue/secretary/actions/batch/confirmation pending **58 passed**; TypeScript และ Next production build ผ่าน Local Docker ทุก service healthy ไม่มี migration และไม่เพิ่ม model call สำหรับการแสดงผล ไม่ได้รันชุด backend ทั้งหมดใหม่ในรอบนี้
+- Source ZIP ตรวจ integrity และ runtime-secret scan แล้ว ไม่ได้อัปเดต server VM ของผู้ใช้
+
 ## แก้ scroll ระหว่างคิด/ข้อความซ้อน และยืนยันข้อเสนอเก่า (11 ตุลาคม 2026)
 
 - PostgreSQL ชุดรวม disposable **314 passed**; ชุดเฉพาะ confirmation/actions/dialogue/batch/secretary **58 passed** ตรวจยืนยันขณะคำขอใหม่ยัง pending ไม่โพสต์ข้อเสนอเก่าและไม่อ้างว่าข้อเสนอใหม่บันทึกแล้ว รวม old confirmed/old pending/legacy code/plain confirm/replay และงานในห้องอื่นไม่บล็อก

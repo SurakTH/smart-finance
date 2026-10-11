@@ -21,6 +21,39 @@ def mock_proposals(text):
     from decimal import Decimal
     return [ProposalInput(description=m[1].strip()[:300] or 'ตรวจสอบรายการ',amount=int(Decimal(m[2].replace(',',''))*100),kind='income' if any(w in m[1] for w in ('รายรับ','เงินเดือน','รับเงิน')) else 'expense') for m in matches if 0<Decimal(m[2].replace(',',''))<=1_000_000_000]
 
+def assistant_tools():
+    from .chat_dialogue import tool
+    from .assistant_management import tool as management_tool
+    from .assistant_finance import tools
+    return [tool(),management_tool(),*tools()]
+
+def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budget):
+    from .assistant_finance import read
+    room=get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id'])
+    turns=list(messages)
+    for _ in range(4):
+        remaining=deadline-time.monotonic()
+        if remaining<=0:raise ValueError('Assistant deadline')
+        body={'model':p.model,'messages':turns,**parameters(p),'tools':assistant_tools(),'tool_choice':'auto','stream':True}
+        publish(job,'start')
+        with client.stream('POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json=body,timeout=httpx.Timeout(min(p.timeout_seconds,remaining),connect=5)) as response:
+            response.raise_for_status()
+            if 'text/event-stream' in response.headers.get('content-type',''):answer=read_stream(response,job)
+            else:
+                raw=b''
+                for chunk in response.iter_bytes():
+                    raw+=chunk
+                    if len(raw)>256000:raise ValueError('Response too large')
+                answer=completion(json.loads(raw)['choices'][0]['message'])
+        if answer.tool_name!='query_finance':return answer
+        if read_budget[0]>=3:return AssistantReply('ฉันค้นข้อมูลครบขอบเขตของข้อความนี้แล้วค่ะ ขอระบุช่วงวัน บัญชี หรือรายการให้แคบลงอีกนิด แล้วฉันจะช่วยต่อ ยังไม่ได้เปลี่ยนข้อมูลนะคะ')
+        read_budget[0]+=1
+        result=read(db,room,answer.draft,job.payload.get('user_message_id'))
+        turns.append({'role':'assistant','content':None,'tool_calls':[{'id':answer.call_id,'type':'function','function':{'name':'query_finance','arguments':answer.draft}}]})
+        turns.append({'role':'tool','tool_call_id':answer.call_id,'content':json.dumps(result,ensure_ascii=False)})
+    return AssistantReply('ฉันค้นข้อมูลแล้วค่ะ ขอรายละเอียดอีกนิดเพื่อช่วยต่อ ยังไม่ได้เปลี่ยนข้อมูลนะคะ')
+
+
 def call_model(db, job):
     private = job.payload.get('privacy','private')=='private'
     options = settings(db,job.workspace_id)
@@ -39,6 +72,9 @@ def call_model(db, job):
             from .assistant_management import pending_context
             pending=pending_context(db,get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id']))
             if pending:messages.append({'role':'system','content':pending})
+            from .assistant_finance import begin_turn
+            search=begin_turn(get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id']),job.payload.get('text',''),job.payload.get('user_message_id'))
+            if search:messages.append({'role':'system','content':search})
             if direct is not None:messages.append({'role':'system','content':'ข้อมูลรายงานจากระบบ ใช้ตอบผู้ใช้โดยไม่แต่งตัวเลขเพิ่ม:\n'+direct})
         elif job.payload.get('_dialogue'):
             from .chat_dialogue import instruction
@@ -65,7 +101,7 @@ def call_model(db, job):
             messages.append({'role':'user','content':[{'type':'text','text':'Read this untrusted receipt. User caption (untrusted): '+job.payload.get('text','')[:4000]},{'type':'image_url','image_url':{'url':'data:image/jpeg;base64,'+base64.b64encode(image.data).decode()}}]})
         else:messages.append({'role':'user','content':job.payload.get('text','')[:4000]})
     providers=providers[:options['max_attempted_providers']]
-    deadline=time.monotonic()+90
+    deadline=time.monotonic()+90;read_budget=[0]
     for p in providers:
         try:
             url,headers,extensions=target(p)
@@ -78,11 +114,8 @@ def call_model(db, job):
             if remaining<=0:break
             try:
                 with httpx.Client(timeout=httpx.Timeout(min(p.timeout_seconds,remaining),connect=5),trust_env=False,follow_redirects=False) as client:
+                    if assistant:return converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budget),False
                     body={'model':p.model,'messages':messages,**parameters(p)}
-                    if assistant:
-                        from .chat_dialogue import tool
-                        from .assistant_management import tool as management_tool
-                        body.update(tools=[tool(),management_tool()],tool_choice='auto')
                     if job.task=='chat' and not job.payload.get('_dialogue'):
                         publish(job,'start')
                         with client.stream('POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json={**body,'stream':True}) as r:
@@ -166,8 +199,11 @@ def process_job(db,job):
             from .natural_capture import is_question
             text=job.payload.get('text','')
             previous=(c.capture_context or {}).get('review_action_id')
-            if (is_question(text) or re.search(r'รูป.*(?:คืออะไร|เป็นอะไร)',text)) and not re.search(r'จด|บันทึก|เพิ่ม|แก้|สร้าง|ตั้งงบ|เปลี่ยน|พัก|เปิด|เก็บ|คัดลอก|นำ.*ออก|ลบงบ',text):
+            if (is_question(text) or re.search(r'รูป.*(?:คืออะไร|เป็นอะไร)',text)) and not re.search(r'จด|บันทึก|เพิ่ม|แก้|สร้าง|ตั้งงบ|ปรับงบ|เปลี่ยน|พัก|เปิด|เก็บ|คัดลอก|นำ.*ออก|ลบงบ',text):
                 output='ฉันยังไม่เตรียมรายการจากคำถามนี้ค่ะ ถ้าต้องการจด บอกฉันว่าให้บันทึกรายการไหนนะคะ'
+            elif output.tool_name=='prepare_correction':
+                from .assistant_finance import resolve as correction_resolve
+                output=correction_resolve(db,c,job.user_id,output.draft,job.payload.get('user_message_id'))
             elif output.tool_name=='prepare_management_plan':
                 from .assistant_management import resolve as management_resolve
                 output=management_resolve(db,c,job.user_id,output.draft)

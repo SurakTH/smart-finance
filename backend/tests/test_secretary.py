@@ -185,3 +185,13 @@ def test_inbox_cannot_confirm_receipt_already_saved_from_chat(actor,monkeypatch)
     tx.update(occurred_on=today().isoformat(),idempotency_key=str(uuid4()))
     r=c.post(b+'/proposals/'+pid+'/confirm',json=tx)
     assert r.status_code==409 and count(w)==1
+
+
+def test_streamed_read_tool_preserves_fragmented_call_id_without_exposing_arguments(monkeypatch):
+    events=[];monkeypatch.setattr('app.chat_stream.publish',lambda *a,**kw:events.append(kw))
+    parts=[{'choices':[{'delta':{'tool_calls':[{'index':0,'id':'call_','function':{'name':'query_','arguments':'{"operation":'}}]}}]},
+           {'choices':[{'delta':{'reasoning_content':'private','tool_calls':[{'index':0,'id':'finance123','function':{'name':'finance','arguments':'"monthly_analysis"}'}}]},'finish_reason':'tool_calls'}]}]
+    response=httpx.Response(200,text=''.join('data: '+json.dumps(p)+'\n\n' for p in parts)+'data: [DONE]\n\n')
+    reply=read_stream(response,SimpleNamespace(payload={}))
+    assert reply.call_id=='call_finance123' and reply.tool_name=='query_finance'
+    assert json.loads(reply.draft)=={'operation':'monthly_analysis'} and events==[]

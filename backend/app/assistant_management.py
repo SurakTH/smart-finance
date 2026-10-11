@@ -74,6 +74,7 @@ class PauseRecurring(Strict):
     paused:bool=Field(strict=True)
 Operation=Annotated[CreateAccount|RenameAccount|SetBudget|RemoveBudget|CopyBudgets|CreateGoal|EditGoal|ArchiveGoal|CreateRecurring|PauseRecurring,Field(discriminator='operation')]
 class Plan(Strict):
+    rationale:str|None=Field(default=None,max_length=1000,description='Explain why you suggest these changes; distinguish suggestions from actual spending. Never claim execution.')
     operations:list[Operation]=Field(min_length=1,max_length=10)
 
 def tool():
@@ -164,12 +165,20 @@ def freeze(db,wid,plan):
     if len(accounts)>1000:raise ValueError('พื้นที่นี้มีบัญชี/หมวดครบ 1,000 รายการแล้ว')
     for model,kind,limit in ((Goal,'create_goal',500),(RecurringRule,'create_recurring',200)):
         if db.scalar(select(func.count()).select_from(model).where(model.workspace_id==wid))+sum(s['operation']==kind for s in steps)>limit:raise ValueError('จำนวนเป้าหมายหรือรายการประจำเกินขอบเขตที่รองรับ')
-    return dict(type='management',request=plan.model_dump(mode='json'),steps=steps,checks=checks,after='\n\n'.join(f'{i+1}. {r}' for i,r in enumerate(reviews)))
+    review='\n\n'.join(f'{i+1}. {r}' for i,r in enumerate(reviews))
+    if plan.rationale:review='ข้อเสนอจากผู้ช่วย (ควรตรวจสอบ): '+plan.rationale+'\n\n'+review
+    return dict(type='management',request=plan.model_dump(mode='json'),steps=steps,checks=checks,after=review)
 
 def resolve(db,c,user_id,raw):
     from .chat_actions import prepare_review
     try:payload=freeze(db,c.workspace_id,Plan.model_validate_json(raw))
     except (ValidationError,ValueError,HTTPException):return 'ยังเตรียมแผนนี้ไม่ได้ค่ะ ข้อมูลอาจไม่ครบ ชื่อซ้ำ หรือเป้าหมายไม่อยู่ในพื้นที่นี้ ขอรายละเอียดและชื่อที่ต้องการอีกครั้งนะคะ ยังไม่ได้เปลี่ยนข้อมูล'
+    months={s['month'] for s in payload['steps'] if s['operation'] in ('set_budget','remove_budget')}
+    evidence=[a for month,a in (c.capture_context or {}).get('finance_analyses',{}).items() if month in months and a.get('expires',0)>now()]
+    if evidence:
+        payload['analysis']=evidence
+        facts='\n'.join(f"{a['month']} · รายรับ {money(a['income'])} · รายจ่าย {money(a['expense'])} · รายจ่ายเดือนก่อน {money(a['previous_expense'])} · งบที่ตั้ง {money(a['planned'])}" for a in evidence)
+        payload['after']='ข้อมูลจริงจากระบบที่ใช้วิเคราะห์:\n'+facts+'\n\n'+payload['after']
     return prepare_review(db,c,user_id,payload)
 
 def pending_context(db,c):
@@ -189,6 +198,10 @@ def apply(db,c,user_id,action):
         for identifier,expected in checks[key].items():
             row=db.scalar(select(model).where(model.id==identifier,model.workspace_id==c.workspace_id).execution_options(populate_existing=True))
             stale=stale or row is None or object_snapshot(row)!=expected
+    if p.get('analysis'):
+        from .assistant_finance import analysis_snapshot
+        for evidence in p['analysis']:
+            stale=stale or analysis_snapshot(db,c.workspace_id,evidence['month'])['fingerprint']!=evidence['fingerprint']
     if stale:
         action.status='conflict';return 'ข้อมูลเปลี่ยนจากตอนที่ทวนแล้วค่ะ ยังไม่ทำแผนนี้ กรุณาสั่งใหม่เพื่อตรวจข้อมูลล่าสุด'
     from . import goals,recurring,budgets

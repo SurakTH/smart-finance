@@ -8,6 +8,7 @@ class AssistantReply:
     content: str
     draft: str | None = None
     tool_name: str | None = None
+    call_id: str | None = None
 
 def visible(text):
     return re.sub(r'<think\b[^>]*>.*?(?:</think>|$)','',text,flags=re.S|re.I).strip()
@@ -25,15 +26,17 @@ def completion(message):
     if not isinstance(tool,dict):raise ValueError('Invalid tool')
     function=tool.get('function',{})
     if not isinstance(function,dict):raise ValueError('Invalid function')
-    if tool.get('type','function')!='function' or function.get('name') not in ('prepare_transaction','prepare_management_plan'):raise ValueError('Unknown tool')
+    if tool.get('type','function')!='function' or function.get('name') not in ('prepare_transaction','prepare_management_plan','query_finance','prepare_correction'):raise ValueError('Unknown tool')
     arguments=function.get('arguments')
     if not isinstance(arguments,str) or len(arguments)>16000:raise ValueError('Invalid arguments')
-    return AssistantReply('',arguments,function['name'])
+    identifier=tool.get('id') or 'call_sf_read'
+    if not isinstance(identifier,str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,100}',identifier):raise ValueError('Invalid tool id')
+    return AssistantReply('',arguments,function['name'],identifier)
 
 def read_stream(response,job):
     from .chat_stream import publish
     import time
-    text='';name='';arguments='';tool_seen=False;finished=False;fields=[];size=0
+    text='';name='';arguments='';identifier='';tool_seen=False;finished=False;fields=[];size=0
     deadline=time.monotonic()+75
     for line in response.iter_lines():
         size+=len(line.encode())+1
@@ -61,7 +64,12 @@ def read_stream(response,job):
             for call in calls:
                 if not isinstance(call,dict):raise ValueError('Invalid tool')
                 if call.get('index',0)!=0 or call.get('type','function')!='function':raise ValueError('Invalid tool')
-                tool_seen=True;fn=call.get('function',{})
+                tool_seen=True
+                if call.get('id'):
+                    if not isinstance(call['id'],str):raise ValueError('Invalid tool id')
+                    identifier+=call['id']
+                    if len(identifier)>100:raise ValueError('Tool id limit')
+                fn=call.get('function',{})
                 if not isinstance(fn,dict):raise ValueError('Invalid function')
                 n=fn.get('name','');a=fn.get('arguments','')
                 if not isinstance(n,str) or not isinstance(a,str):raise ValueError('Invalid arguments')
@@ -76,7 +84,7 @@ def read_stream(response,job):
             # reasoning/reasoning_content/thoughts are intentionally neither stored nor published.
     if not finished:raise ValueError('Interrupted stream')
     message={'content':text}
-    if tool_seen:message['tool_calls']=[{'type':'function','function':{'name':name,'arguments':arguments}}]
+    if tool_seen:message['tool_calls']=[{'type':'function','id':identifier or 'call_sf_read','function':{'name':name,'arguments':arguments}}]
     result=completion(message)
     if not result.content and result.draft is None:raise ValueError('Empty completion')
     return result

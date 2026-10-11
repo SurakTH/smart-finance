@@ -184,7 +184,10 @@ def handle(db,c,user_id,text,review_message_id=None,require_review_id=False,allo
     change=re.fullmatch(r'(?:จริง\s*ๆ|แก้ยอด|เปลี่ยนยอด|เอาเป็น|เปลี่ยนเป็น|แก้เป็น|ยอดจริง)(?:\s*(?:เป็น|คือ))?\s*([\d,.]+)\s*(?:บาท)?\s*(?:นะ|ค่ะ|ครับ|จ้า)?',text)
     if change:
         action=db.scalar(select(ChatAction).where(*scope,ChatAction.status=='pending').with_for_update())
-        if not action or action.expires<=now():return 'ยังไม่มีรายการที่รอยืนยันค่ะ บอกฉันก่อนว่าอยากจดหรือแก้รายการไหน'
+        if not action or action.expires<=now():
+            from .chat_dialogue import available
+            if allow_model_dialogue and available(db,c):return None
+            return 'ยังไม่มีรายการที่รอยืนยันค่ะ บอกฉันก่อนว่าอยากจดหรือแก้รายการไหน'
         if action.payload.get('type')=='management':return None
         try:
             payload={**action.payload,'transaction':{**action.payload['transaction'],'amount':amount(change[1]),'idempotency_key':str(uuid4())},'revision_key':str(uuid4())}

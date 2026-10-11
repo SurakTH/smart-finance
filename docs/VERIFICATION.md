@@ -1,5 +1,17 @@
 # ผลตรวจสอบ Smart Finance
 
+## AI ค้นหา/แก้รายการและวิเคราะห์เพื่อปรับงบ (11 ตุลาคม 2026)
+
+- PostgreSQL ชุดรวมล่าสุด **292 passed**; เพิ่ม 26 เคสจากรอบก่อน รวม native read→tool result→correction/plan, streamed tool ID fragments ไม่เผย arguments/reasoning, ยืนยันซ้ำ และไม่เขียน ledger ก่อนยืนยัน
+- ทดสอบขอบเขต workspace/account จริง, คำค้น wildcard แบบ literal, ช่วงวันที่/ชนิด/ยอด strict, active entries หลัง correction, ผลสูงสุด10พร้อม has_more, หมดอายุ/ไม่มีผลค้นหา, หลายรายการ/ป้องกันโมเดลค้นแคบเองเพื่อข้ามการเลือกใน turn เดียว และป้องกันสลับรายการที่ผู้ใช้เลือก
+- ทดสอบ monthly actual/previous/budget amounts จาก backend, วิเคราะห์อย่างเดียวไม่สร้าง action, คำขอ “สรุป...แล้วปรับงบ...ได้ไหม” สร้างแผนรอยืนยัน และบล็อกทั้งแผนเมื่อ ledger เปลี่ยนจากข้อมูลที่ใช้วิเคราะห์
+- จำกัด reads3 ต่อข้อความรวม retry/fallback, รอบโมเดล4 ต่อ attempt และ deadline เดิม ส่ง tool result ด้วย call_id เดิม ตรวจ validation ไม่ส่งรายละเอียด SQL/provider errors ให้โมเดล
+- TypeScript/Next production build ผ่าน อัปเดต Docker local แล้วทุก service healthy ไม่มี schema migration ใหม่ ใช้ JSON context/payload เดิม
+- Chrome regression **12 passed** (desktop6/mobile6): settings, helper history, typed confirmation/correction/replay, streaming, natural capture/older history และ finance isolation/layout; native model tool behavior ตรวจด้วย HTTP/PostgreSQL ด้านบน ไม่ได้เรียก LLM จริงผ่าน browser
+- สำรองและ restore ในฐาน disposable ผ่าน จำนวนแถว snapshots รวม capture_context/ChatAction และ ledger balance ตรงกัน Source ZIP ตรวจ integrity/ไม่รวม runtime secrets แล้ว
+- Model transport เป็น HTTP MockTransport ทั้งหมด ยังไม่ได้ทดสอบคุณภาพภาษา/vision/tools ของ provider จริง Telegram ไม่ใช้ tools ใหม่นี้ ไม่มี deployment ไป VM ผู้ใช้ ยังอยู่ขั้น3จาก4
+
+
 ## แผน AI จัดการหลายงานพร้อมยืนยัน (11 ตุลาคม 2026)
 
 - PostgreSQL ชุดรวมล่าสุด **266 passed** รวมเคส stream ของ management tool และแก้บางส่วนของแผนรอยืนยันพร้อมส่ง operations เดิมเป็นบริบทให้โมเดล

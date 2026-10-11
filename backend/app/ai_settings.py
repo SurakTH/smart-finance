@@ -151,6 +151,9 @@ def probe(db,wid,pid,models=False):
     p=get_scoped(db,Provider,wid,pid)
     if p.kind!='ollama' and not settings(db,wid)['cloud_enabled']:
         raise HTTPException(403,'เปิดการใช้ Cloud AI ของพื้นที่ก่อนทดสอบ')
+    # Authorization is complete; this read-only synthetic probe must not hold
+    # the HTTP workspace lock while reserving usage or waiting for a provider.
+    db.commit()
     stage='dns'
     try:
         url,headers,extensions=target(p)

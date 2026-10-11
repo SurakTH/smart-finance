@@ -98,7 +98,7 @@ def test_read_only_analysis_does_not_create_action(assistant):
     c,w,u,b,cid,wallet,cat,state,post,send=assistant;post(10000)
     state['responses']=[tool('query_finance',dict(operation='monthly_analysis')),{'content':'เดือนนี้ใช้ไป100บาทค่ะ ยังไม่เปลี่ยนงบนะคะ'}]
     r=send('เดือนนี้ใช้เยอะไหม ช่วยวิเคราะห์หน่อย')
-    assert '100บาท' in r['content']
+    assert '100.00 บาท' in r['content']
     with SessionLocal() as db:assert not db.scalar(select(ChatAction).where(ChatAction.conversation_id==cid))
 
 @pytest.mark.parametrize('query',[
@@ -139,9 +139,9 @@ def test_model_cannot_correct_unsearched_or_expired_target(assistant):
 
 def test_read_loop_is_bounded(assistant):
     c,w,u,b,cid,wallet,cat,state,post,send=assistant
-    state['responses']=[search(q='กาแฟ')]*3
+    state['responses']=[search(q='กาแฟ')]*2
     r=send('ช่วยค้นหากาแฟหน่อย')
-    assert 'ครบขอบเขต' in r['content'] and len(state['calls'])==3
+    assert 'ไม่พบรายการ' in r['content'] and len(state['calls'])==2
     assert not state['responses']
 
 

@@ -131,7 +131,7 @@ def test_queued_room_stop_does_not_wait_for_another_rooms_workspace_lock(actor,m
     queued=pending(c,b,other,'คุยกับฉันหน่อย')
     def handler(req):
         calls.append(1);before=time.monotonic();response=stop(c,b,other,queued)
-        assert response.status_code==200 and response.json()['status']=='stopping'
+        assert response.status_code==200 and response.json()['status']=='cancelled'
         assert time.monotonic()-before<2
         return reply('ห้องแรกตอบตามปกติค่ะ')
     transport(monkeypatch,handler)

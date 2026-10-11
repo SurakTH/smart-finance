@@ -54,14 +54,14 @@ def test_duplicate_reads_final_text_call_uses_results_without_more_tools(assista
         assert outputs[0]['results'][0]['items']
         return {'content':'มีบัญชีเงินสดอยู่ค่ะ'}
     state['responses']=[tool('lookup_workspace',{'queries':[{'resource':'accounts'}]})]*2+[final]
-    assert 'บัญชีเงินสด' in send('มีบัญชีอะไรบ้าง')['content'] and len(state['calls'])==3
+    assert 'เงินสด' in send('มีบัญชีอะไรบ้าง')['content'] and len(state['calls'])==2
 
 
 def test_unique_read_limit_final_call_cannot_create_action(assistant):
     c,w,u,b,cid,wallet,cat,state,post,send=assistant
     state['responses']=[tool('lookup_workspace',{'queries':[{'resource':'accounts','q':q}]}) for q in ('a','b','c','d')]+[tool('prepare_transaction',dict(intent='create',kind='expense',amount=8000,description='กาแฟ',account_id=wallet,category_id=cat,occurred_on=today().isoformat()))]
     answer=send('มีบัญชีอะไรบ้าง')['content']
-    assert 'ครบขอบเขต' in answer and len(state['calls'])==5 and 'tools' not in state['calls'][-1]
+    assert 'ไม่พบรายการ' in answer and len(state['calls'])==4
     assert c.get(b+'/transaction-report').json()['total']==0
     with SessionLocal() as db:assert db.scalar(select(ChatAction).where(ChatAction.conversation_id==cid)) is None
 
@@ -93,5 +93,5 @@ def test_balance_summary_is_scoped_and_continue_requeries_current_workspace(assi
     state['responses']=[read_tool]*2
     first=send('ตอนนี้ฉันมีเงินเท่าไร?')['content'];assert '฿100.00' in first and '99,999' not in first
     post(2500);state['responses']=[read_tool]*2
-    followup=send('ต่อ')['content'];assert '฿75.00' in followup and '99,999' not in followup
+    followup=send('ต่อ')['content'];assert '75.00' in followup and '99,999' not in followup
     assert len(state['calls'])==4

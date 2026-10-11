@@ -31,7 +31,8 @@ def test_provider_retry_resets_partial(actor,monkeypatch):
         return response([chunk('partial')]) if len(calls)==1 else response([chunk('คำตอบใหม่'),'[DONE]'])
     monkeypatch.setattr(ai.httpx,'Client',lambda **kw:real(transport=httpx.MockTransport(handler),**kw))
     with SessionLocal.begin() as db:
-        db.add(Provider(workspace_id=wid,kind='ollama',model='test',task='chat',priority=1,encrypted_key=''));db.flush()
+        db.add(Provider(workspace_id=wid,kind='ollama',model='test',task='chat',priority=1,encrypted_key=''))
+    with SessionLocal.begin() as db:
         job=db.scalar(select(Job).where(Job.workspace_id==wid))
         output,demo=ai.call_model(db,job)
         assert output=='คำตอบใหม่' and not demo
@@ -117,7 +118,7 @@ def test_real_pubsub_previews_before_commit_and_done_after_commit(actor,pg_only,
                     if not event:continue
                     data=json.loads(event['data']);kinds.append(data['kind'])
                     if data['kind']=='progress':assert data['stage']=='thinking' and set(data)=={'kind','job_id','stage'}
-                    if data['kind']=='delta' and not release.is_set():
+                    if data['kind']=='progress' and not release.is_set():
                         with SessionLocal() as db:
                             assert not db.scalar(select(Message.id).where(Message.conversation_id==room,Message.role=='assistant'))
                         release.set()
@@ -128,5 +129,5 @@ def test_real_pubsub_previews_before_commit_and_done_after_commit(actor,pg_only,
                         break
             finally:release.set()
             future.result(timeout=10)
-        assert kinds==['start','progress','delta','delta','done']
+        assert kinds==['start','progress','done']
     finally:sub.close()

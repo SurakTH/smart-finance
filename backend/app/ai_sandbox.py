@@ -81,85 +81,60 @@ def check_draft(raw,case):
     if value.amount!=(12500 if case=='receipt' else 8000):raise TestFailed('wrong_amount')
     return True
 
+class Sandbox:
+    def __init__(self,case):
+        from types import SimpleNamespace
+        from .assistant_tools import catalog
+        self.case=case;self.last_failure=None;self.room=SimpleNamespace(capture_context={})
+        names={'lookup_workspace','query_finance','answer_finance_summary'} if case in ('balance','monthly') else {'lookup_workspace','prepare_transaction'}
+        self.tools=[t for t in catalog(set()) if t['function']['name'] in names]
+    def lookup(self,raw):
+        try:return lookup(raw)
+        except (ValueError,TypeError) as error:return self.problem(error)
+    def finance(self,raw):
+        try:return query_finance(raw)
+        except (ValueError,TypeError) as error:return self.problem(error)
+    def problem(self,error):
+        from .tool_arguments import issues
+        self.last_failure=error.reason if isinstance(error,TestFailed) else 'invalid_arguments'
+        return dict(error=self.last_failure,issues=issues(error) if isinstance(error,ValidationError) else [])
+    def validate(self,name,raw):
+        try:
+            if name!='prepare_transaction' or self.case not in ('transaction','followup','receipt'):raise TestFailed('wrong_tool')
+            check_draft(raw,self.case)
+        except (ValueError,TypeError) as error:return self.problem(error)
+    def summary(self,raw):
+        from .assistant_summary import parse,render
+        value=parse(raw)
+        if self.case not in ('balance','monthly') or value.report!=('balances' if self.case=='balance' else 'monthly'):raise TestFailed('wrong_tool')
+        data=lookup(json.dumps({'queries':[{'resource':'balances'}]})) if self.case=='balance' else query_finance(json.dumps({'operation':'monthly_analysis','month':value.month}))
+        return render(value,data)
+    def finish(self,content,cache):
+        from .assistant_summary import Summary,render
+        if self.case not in ('balance','monthly'):raise TestFailed('no_tool')
+        for (name,_),result in reversed(list(cache.items())):
+            if self.case=='monthly' and name=='query_finance':return render(Summary(report='monthly'),result)
+            if self.case=='balance' and name=='lookup_workspace':
+                rows=[r for r in result.get('results',[]) if r.get('resource')=='balances' and not r.get('summary',{}).get('scope',{}).get('q') and not r.get('summary',{}).get('scope',{}).get('kind')]
+                if rows:return render(Summary(report='balances'),dict(results=rows))
+        raise TestFailed('no_tool')
+
 def evaluate(db,job,p,case,deadline,budget):
-    from .ai import assistant_tools
+    from .assistant_runtime import converse
     try:url,headers,extensions=target(p)
     except Exception:raise AIRequestError('dns') from None
     try:
         if p.encrypted_key:headers['Authorization']='Bearer '+config.cipher().decrypt(p.encrypted_key.encode()).decode()
     except Exception:raise AIRequestError('key_invalid') from None
-    messages=context(case);seen=set();reads=0;last_failure=None;repaired=False
-    names={'lookup_workspace','query_finance'} if case in ('balance','monthly') else {'lookup_workspace','prepare_transaction'}
-    tools=[t for t in assistant_tools() if t['function']['name'] in names]
-    if case in ('balance','monthly'):
-        from .assistant_summary import tool as summary_tool
-        tools.append(summary_tool())
-    def feedback(answer,error):
-        nonlocal last_failure,repaired
-        reason=error.reason if isinstance(error,TestFailed) else 'invalid_arguments'
-        from .tool_arguments import issues
-        fields=issues(error) if isinstance(error,ValidationError) else []
-        record(job,'tool',tool=answer.tool_name,status='invalid',issues=fields)
-        last_failure=reason
-        if repaired:raise TestFailed(reason)
-        repaired=True
-        result=dict(error=reason,issues=fields,message='แก้คำสั่งตาม schema และโจทย์เดิม เว้นช่องที่ไม่ใช้ ค้น ID ด้วย lookup_workspace; จำนวนเป็นสตางค์ ห้ามเดา ID หรือจำนวนจากคำตอบตัวเอง')
-        messages.extend([{'role':'assistant','content':None,'tool_calls':[{'id':answer.call_id,'type':'function','function':{'name':answer.tool_name,'arguments':answer.draft}}]},{'role':'tool','tool_call_id':answer.call_id,'content':json.dumps(result,ensure_ascii=False)}])
-    for _ in range(4):
-        if budget[0]>=8 or time.monotonic()>=deadline:raise TestFailed('call_limit')
-        budget[0]+=1
-        with httpx.Client(trust_env=False,follow_redirects=False,timeout=httpx.Timeout(min(p.timeout_seconds,max(1,deadline-time.monotonic())),connect=5)) as client:
-            body=dict(model=p.model,messages=messages,tools=tools,tool_choice='auto',stream=True,**parameters(p))
-            with tracked_stream(db,job,p,client,'POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json=body) as response:
-                ensure_response(response)
-                if 'text/event-stream' in response.headers.get('content-type',''):answer=read_stream(response,job)
-                else:
-                    raw=b''
-                    for chunk in response.iter_bytes():
-                        raw+=chunk
-                        if len(raw)>256000:raise TestFailed('invalid_arguments')
-                    answer=completion_choice(json.loads(raw)['choices'][0])
-        name=answer.tool_name
-        if name=='answer_finance_summary':
-            from .assistant_summary import parse,render
-            try:
-                value=parse(answer.draft)
-                if value.report!=('balances' if case=='balance' else 'monthly') or case not in ('balance','monthly'):raise TestFailed('wrong_tool')
-                data=lookup(json.dumps({'queries':[{'resource':'balances'}]})) if case=='balance' else query_finance(json.dumps({'operation':'monthly_analysis','month':value.month}))
-                if not render(value,data):raise TestFailed('answer_mismatch')
-            except (ValueError,TypeError) as error:
-                feedback(answer,error);continue
-            record(job,'tool',tool=name,status='ok');return
-        if not name:
-            if case not in ('balance','monthly'):
-                if repaired:raise TestFailed('no_tool')
-                repaired=True
-                record(job,'review_repair',status='invalid')
-                messages.extend([{'role':'assistant','content':answer.content},{'role':'system','content':'งานเดิมคือเตรียมร่างจากคำขอผู้ใช้และผลเครื่องมือที่ได้รับ หากข้อมูลครบให้เรียก prepare_transaction จริง ห้ามอ้างว่ามีร่างจากข้อความอย่างเดียว หากยังขาดข้อมูลให้อธิบายสิ่งที่ขาด ห้ามเดาจำนวนเงินหรือ ID'}])
-                continue
-            required='lookup_workspace' if case=='balance' else 'query_finance'
-            if required not in seen:raise TestFailed('no_tool')
-            numbers=re.findall(r'\d+(?:\.\d+)?',answer.content.replace(',',''))
-            if ('1234.56' if case=='balance' else '450') not in numbers and (case!='monthly' or '450.00' not in numbers):raise TestFailed('answer_mismatch')
-            return
-        if name=='prepare_transaction' and case in ('transaction','followup','receipt'):
-            try:check_draft(answer.draft,case)
-            except (ValueError,TypeError) as error:
-                feedback(answer,error);continue
-            record(job,'tool',tool=name,status='ok');return
-        if name not in ('lookup_workspace','query_finance') or reads>=3:
-            record(job,'tool',tool=name,status='invalid');raise TestFailed('wrong_tool')
-        try:
-            result=lookup(answer.draft) if name=='lookup_workspace' else query_finance(answer.draft)
-            if case=='balance' and not any(x.get('resource')=='balances' for x in result.get('results',[])):
-                pass  # ID discovery is allowed, but a balance read is still required.
-            elif name=='lookup_workspace' and any(x.get('resource')=='balances' and not x.get('summary',{}).get('scope',{}).get('q') and x.get('summary',{}).get('scope',{}).get('kind') in (None,'asset') for x in result.get('results',[])):seen.add(name)
-            elif name=='query_finance':seen.add(name)
-        except (ValueError,TypeError) as error:
-            feedback(answer,error);continue
-        reads+=1;record(job,'tool',tool=name,status='ok',resources=[x.get('resource') for x in result.get('results',[])]+(['monthly_analysis'] if name=='query_finance' else []))
-        messages.extend([{'role':'assistant','content':None,'tool_calls':[{'id':answer.call_id,'type':'function','function':{'name':name,'arguments':answer.draft}}]},{'role':'tool','tool_call_id':answer.call_id,'content':json.dumps(result,ensure_ascii=False)}])
-    raise TestFailed(last_failure or 'call_limit')
+    sandbox=Sandbox(case)
+    before=getattr(job,'_assistant_requests',0)
+    with httpx.Client(trust_env=False,follow_redirects=False) as client:
+        try:answer=converse(db,job,p,client,url,headers,extensions,context(case),deadline,[0],sandbox=sandbox)
+        finally:budget[0]+=getattr(job,'_assistant_requests',0)-before
+    if case in ('transaction','followup','receipt'):
+        if answer.tool_name!='prepare_transaction':raise TestFailed(sandbox.last_failure or 'no_tool')
+        check_draft(answer.draft,case)
+    elif not answer.content:raise TestFailed('answer_mismatch')
 
 def run(db,job):
     case=job.payload['case'];selected=job.payload.get('provider_id');options=settings(db,job.workspace_id)

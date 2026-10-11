@@ -36,7 +36,7 @@ def test_query_phantom_repairs_to_answer_without_creating_entries(assistant):
     c,w,u,b,cid,wallet,cat,state,post,send=assistant
     state['responses']=[{'content':PHANTOM},{'content':'รายงานนี้เป็นข้อมูลที่บันทึกอยู่แล้วค่ะ'}]
     value=send('เมื่อวานกินข้าวไปเท่าไร?')
-    assert 'บันทึกอยู่แล้ว' in value['content'] and count(w)==0
+    assert '0.00 บาท' in value['content'] and count(w)==0
 
 
 def seed_legacy(db,w,cid,request):

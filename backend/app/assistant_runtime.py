@@ -4,6 +4,7 @@ All writes remain in the authenticated confirmation endpoint. Runtime validation
 is pure; business validation and frozen review creation run after this returns.
 """
 import json
+import re
 import time
 import httpx
 from .models import Conversation
@@ -18,10 +19,16 @@ from .chat_stop import check as check_stop
 from .assistant_tools import catalog,Toolkit,validate_draft,canonical_read
 from pydantic import ValidationError
 
-def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budget):
+def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budget,sandbox=None):
     from .assistant_finance import read
-    room=get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id'])
+    room=sandbox.room if sandbox else get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id'])
     turns=list(messages)
+    from . import assistant_evidence as evidence
+    task=evidence.Scope('mutation' if sandbox.case in ('transaction','followup','receipt') else 'query','') if sandbox else evidence.scope(db,room,job.payload.get('text',''))
+    job._suppress_preview=True
+    def checked(answer):
+        record(job,'synthesis',status='ok')
+        return AssistantReply(sandbox.finish(answer.content,getattr(job,'_read_cache',{})) if sandbox else evidence.finish(db,room,job,task,answer.content,getattr(job,'_read_cache',{})))
     from .assistant_contract import claims_review,REPAIR,UNPREPARED
     repaired=False;repairs=0;stage='thinking';active=set(getattr(job,'_assistant_toolkits',[]))
     pending=(room.capture_context or {}).get('review_action_id')
@@ -45,7 +52,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         if used>=8:raise AIRequestError('turn_limit')
         job._assistant_requests=used+1
         body={'model':p.model,'messages':turns,**parameters(p),'stream':True}
-        if not final:body.update(tools=catalog(active),tool_choice='auto')
+        if not final:body.update(tools=sandbox.tools if sandbox else catalog(active),tool_choice='auto')
         publish(job,'start')
         publish(job,'progress',stage='summarizing' if final else stage)
         with tracked_stream(db,job,p,client,'POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json=body,timeout=httpx.Timeout(min(p.timeout_seconds,remaining),connect=5)) as response:
@@ -59,24 +66,21 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
                 answer=completion_choice(json.loads(raw)['choices'][0])
         return answer
     def finish():
-        from .assistant_balance_reply import fallback,LIMIT_MESSAGE
         record(job,'synthesis',status='ok');publish(job,'progress',stage='summarizing')
-        grounded=fallback(getattr(job,'_read_cache',{}))
-        if grounded:return AssistantReply(grounded)
-        turns.append({'role':'system','content':'หยุดค้นเพิ่มและสรุปจากผลเครื่องมือที่ได้รับแล้ว ตอบคำถามเดิมเป็นภาษาไทย อย่าอ้างว่าดึงข้อมูลไม่ได้ถ้ามีผลสำเร็จ ยอดรวม balances.summary ครบทุกบัญชีตามตัวกรอง ไม่ใช่เฉพาะหน้าที่แสดง ห้ามแต่งตัวเลขหรือเตรียมคำสั่งเปลี่ยนข้อมูล หากข้อมูลไม่พอจริงให้บอกส่วนที่รู้และส่วนที่ขาด'})
-        answer=request(final=True)
-        if answer.tool_name:return AssistantReply(LIMIT_MESSAGE)
-        return AssistantReply(UNPREPARED) if claims_review(answer.content) else answer
+        return AssistantReply(sandbox.finish('',getattr(job,'_read_cache',{})) if sandbox else evidence.grounded(db,room,job,task,getattr(job,'_read_cache',{})))
     for _ in range(7):
         answer=request()
-        if not answer.tool_name and claims_review(answer.content):
+        if not answer.tool_name and (claims_review(answer.content) or (task.kind=='mutation' and not re.search(r'ไหน|อะไร|เท่าไร|เท่าไหร่|\?',answer.content))):
             if repaired:return AssistantReply(UNPREPARED)
             repaired=True;record(job,'review_repair',status='invalid')
             turns.extend([{'role':'assistant','content':answer.content},{'role':'system','content':REPAIR}])
             continue
         if answer.tool_name=='answer_finance_summary':
             from .assistant_summary import answer as summary_answer
-            try:content=summary_answer(db,room,job,answer.draft)
+            try:
+                from .assistant_summary import parse
+                parse(answer.draft)
+                content=sandbox.summary(answer.draft) if sandbox else evidence.grounded(db,room,job,task,getattr(job,'_read_cache',{}))
             except ValueError:
                 invalid(answer,dict(error='invalid_arguments',message='เลือก report balances โดยไม่ใส่ month หรือ monthly พร้อมเดือน YYYY-MM ที่ถูกต้อง เว้น month เพื่อใช้เดือนนี้'))
                 if repairs>=2:return AssistantReply('ยังอ่านรายงานตามเงื่อนไขนี้ไม่ได้ค่ะ ระบุเดือนที่ต้องการอีกครั้งได้ไหมคะ?')
@@ -84,6 +88,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             record(job,'tool',tool=answer.tool_name,status='ok')
             publish(job,'progress',stage='summarizing')
             return AssistantReply(content)
+        if answer.tool_name=='load_toolkit' and sandbox:raise ValueError('Unexpected sandbox toolkit')
         if answer.tool_name=='load_toolkit':
             try:kit=Toolkit.model_validate_json(answer.draft).toolkit
             except ValidationError as error:
@@ -99,15 +104,21 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         if answer.tool_name not in ('query_finance','lookup_workspace'):
             if answer.tool_name:
                 publish(job,'progress',stage='checking_draft')
-                problem=validate_draft(db,room,answer.tool_name,answer.draft)
+                problem=sandbox.validate(answer.tool_name,answer.draft) if sandbox else validate_draft(db,room,answer.tool_name,answer.draft)
                 if problem:
                     invalid(answer,problem)
                     if repairs>=2:
                         prefix={'prepare_correction':'ยังเตรียมการแก้ไขไม่ได้','prepare_management_plan':'ยังเตรียมแผนนี้ไม่ได้'}.get(answer.tool_name,'ยังเตรียมรายการนี้ไม่ได้')
                         return AssistantReply(prefix+'ค่ะ ข้อมูลร่างยังไม่ครบหรือไม่ตรง ช่วยระบุบัญชี หมวด หรือรายละเอียดที่ต้องการอีกครั้งได้ไหมคะ? ยังไม่ได้เปลี่ยนข้อมูล')
                     continue
+                if answer.tool_name=='prepare_transaction':
+                    from .chat_dialogue import Suggestion
+                    value=Suggestion.model_validate_json(answer.draft)
+                    if value.intent=='chat':
+                        if claims_review(value.reply or ''):return AssistantReply(UNPREPARED)
+                        return checked(AssistantReply(value.reply or 'อยากให้ช่วยดูเรื่องไหนคะ?'))
                 record(job,'tool',tool=answer.tool_name,status='ok')
-            return answer
+            return answer if answer.tool_name else checked(answer)
         if read_budget[0]>=3:return finish()
         cache=getattr(job,'_read_cache',None)
         if cache is None:cache={};job._read_cache=cache
@@ -119,8 +130,8 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         stage='lookup';publish(job,'progress',stage=stage)
         if answer.tool_name=='lookup_workspace':
             from .assistant_lookup import read as lookup
-            result=lookup(db,room,answer.draft)
-        else:result=read(db,room,answer.draft,job.payload.get('user_message_id'))
+            result=sandbox.lookup(answer.draft) if sandbox else lookup(db,room,answer.draft)
+        else:result=sandbox.finance(answer.draft) if sandbox else read(db,room,answer.draft,job.payload.get('user_message_id'))
         if result.get('error'):
             invalid(answer,result)
             if repairs>=2:return AssistantReply('ฉันยังค้นข้อมูลตามเงื่อนไขนี้ไม่สำเร็จค่ะ ช่วยระบุช่วงวันหรือชื่อบัญชีที่ต้องการอีกนิดได้ไหมคะ? ยังไม่ได้เปลี่ยนข้อมูล')
@@ -132,7 +143,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             if json.loads(answer.draft).get('operation')=='search_transactions':active.add('corrections')
         if key is not None:cache[key]=result
         record(job,'tool',tool=answer.tool_name,status='invalid' if result.get('error') else 'ok',issues=result.get('issues',[]),resources=[r.get('resource') for r in result.get('results',[])]+([result.get('operation')] if result.get('operation') else []))
-        if answer.tool_name=='lookup_workspace':
+        if answer.tool_name=='lookup_workspace' and not sandbox:
             from .assistant_lookup import remember_pages
             remember_pages(room,answer.draft,result)
         from .finance_references import collect

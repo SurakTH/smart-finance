@@ -90,7 +90,7 @@ def read_stream(response,job):
                 if not isinstance(part,str) or len(text)+len(part)>16000:raise ValueError('Content limit')
                 text+=part
                 shown=visible(text)
-                if part and shown and not tool_seen:publish(job,'delta',text=shown,snapshot=True)
+                if part and shown and not tool_seen and not getattr(job,'_suppress_preview',False):publish(job,'delta',text=shown,snapshot=True)
             # reasoning/reasoning_content/thoughts are intentionally neither stored nor published.
     if not finished:raise ValueError('Interrupted stream')
     message={'content':text}

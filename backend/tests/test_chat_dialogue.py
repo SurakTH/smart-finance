@@ -78,7 +78,7 @@ def test_workspace_cloud_disabled_and_stale_job_never_creates_draft(actor,monkey
     with SessionLocal() as db:
         actions=db.scalars(select(ChatAction).where(ChatAction.conversation_id==cid)).all()
         assert len(actions)==1 and actions[0].payload['transaction']['amount']==7500
-    assert 'ทวนอีกที' in say(c,b,cid,'ยืนยัน') and count(w)==0
+    assert 'บันทึกรายการเรียบร้อย' in say(c,b,cid,'ยืนยัน') and count(w)==1
 
 
 def test_model_chat_cannot_impersonate_existing_trusted_review(actor,monkeypatch):

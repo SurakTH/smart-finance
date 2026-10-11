@@ -445,7 +445,9 @@ def stop_chat(wid:str,cid:str,jid:str,user:User=Depends(current_user),db:DBSessi
     # different room's worker owns this workspace; its queued job will cancel
     # itself when picked up, without ever reaching a model.
     free_workspace=db.scalar(select(Workspace.id).where(Workspace.id==wid).with_for_update(skip_locked=True))
-    queued=db.scalar(select(Job).where(Job.id==jid,Job.status=='pending').with_for_update(skip_locked=True)) if free_workspace else None
+    from sqlalchemy import text as sql_text
+    owns_job=db.bind.dialect.name!='postgresql' or db.scalar(sql_text('SELECT pg_try_advisory_xact_lock(hashtextextended(:id, 0))'),{'id':jid})
+    queued=db.scalar(select(Job).where(Job.id==jid,Job.status=='pending').with_for_update(skip_locked=True)) if free_workspace and owns_job else None
     if queued:
         from .chat_stop import stopped_message
         queued.status='cancelled';queued.error=None;queued.payload={}

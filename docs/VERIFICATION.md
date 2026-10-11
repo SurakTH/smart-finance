@@ -513,3 +513,12 @@ Browser เพิ่มทดสอบค้นหาบริการ/empty/re
 - Backend **444 passed** (warning Starlette/httpx เดิม 1 รายการ) เพิ่ม 9 เคส: ยอดเงินและรายเดือนผ่าน model request เดียวแล้ว render จาก backend, ไม่เพิ่ม ledger, invalid month/filter/report ถูกปฏิเสธ, cents exact และชื่อหมวดไม่สร้าง Markdown link/HTML, lab ทั้ง balance/monthly ผ่าน tool ใหม่ด้วย fixture เท่านั้น
 - Production backend build `6edf2e54321a`, local Compose healthy, HTTP root 200; ไม่มี frontend changes หรือ migration ใหม่ในรอบนี้ จึงไม่ได้รัน browser suite ซ้ำ
 - Backup `finance-20261011T164740Z.dump` และ disposable restore ผ่าน snapshots/row counts/ledger balance ไม่ deploy Ubuntu และไม่ได้เรียก Gemma จริง การคุมตัวเลขโดย renderer ครอบคลุม tool ใหม่เท่านั้น ไม่รับรองคำตอบอิสระทุกชนิดของโมเดล
+
+## ปิด AI Chat audit ทั้ง 6 ข้อ — 12 ตุลาคม 2026
+
+- Final PostgreSQL disposable suite: **457 passed** (Starlette/httpx deprecation warning เดิม 1 รายการ) เพิ่ม 13 adversarial/concurrency cases: fabricated balance, false saved claim, wrong category scope, wrong fallback report, writes during inference, membership revocation, room deletion, crash/claim recovery with persisted usage, suppressed raw stream, lab numeric false positive corrected by renderer, independent workspace jobs, prose embedded in tool, unsupported comparison fails closed
+- AI Lab ใช้ production converse loop ผ่าน synthetic adapter; ไม่อ่านบัญชีจริงและไม่ resolve drafts ในห้องทดสอบ Expected-output checks ของตัวเลขดิบถูกแทนด้วยผลที่ backend render จาก fixture ที่ตรวจแล้ว ผลผ่านไม่ใช่คะแนนความถูกต้องของ raw model prose
+- Browser Chrome Playwright **10 passed** (desktop/mobile อย่างละ 5): diagnostics label, confirmation/correction/replay, batch, stop/late output และ UI stream/reconnect/room change; raw production preview suppression ตรวจใน backend integration ด้วย ตรวจ screenshot AI lab มือถือและไม่มี horizontal overflow
+- TypeScript และ production build ผ่าน backend `aee3ea5ea32e`, web `63d78e0ab2d8`; local Compose healthy HTTP root 200; migration head `ai_evidence_epoch` สำเร็จ ไม่มีการ deploy Ubuntu ของผู้ใช้
+- Backup ก่อน migration `finance-20261011T171000Z.dump`; หลัง migration `finance-20261011T171657Z.dump` และ disposable restore ผ่าน row counts/configuration snapshots รวม `workspaces.ai_epoch` และ journals สมดุล
+- Network model tests ใช้ HTTP mocks ไม่ได้เรียก Gemma/Ollama ของผู้ใช้จริง ขอบเขตภาษา/รายงานที่ยังตีความไม่ได้ต้องถามเพิ่ม ไม่รับรองความแม่นยำของโมเดลทุกคำถาม Tests count เป็น regression evidence ไม่ใช่ model-quality score

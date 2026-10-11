@@ -30,6 +30,7 @@ class EmailToken(Base):
     __table_args__ = (CheckConstraint("purpose IN ('reset','verify')"), CheckConstraint("delivery IN ('pending','sent','failed','cancelled')"))
 
 class Workspace(Base):
+    ai_epoch: Mapped[int] = mapped_column(BigInteger,default=0,server_default='0')
     __tablename__ = 'workspaces'
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     name: Mapped[str] = mapped_column(String(100))

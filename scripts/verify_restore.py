@@ -32,7 +32,7 @@ try:
     chats='SELECT id,title,privacy,temporary,created_at,updated_at,capture_context FROM conversations ORDER BY id'
     profiles='SELECT id,email,name,email_verified_at,password FROM users ORDER BY id'
     actions='SELECT id,workspace_id,conversation_id,user_id,code,payload,status,expires,entry_id FROM chat_actions ORDER BY id'
-    spaces='SELECT id,name,archived_at,version FROM workspaces ORDER BY id'
+    spaces='SELECT id,name,archived_at,version,ai_epoch FROM workspaces ORDER BY id'
     email_links='SELECT token_hash,user_id,purpose,expires,used,delivery,encrypted_payload,attempts,next_attempt FROM email_tokens ORDER BY token_hash'
     ai_options='SELECT workspace_id,cloud_enabled,demo_fallback,max_attempted_providers FROM ai_settings ORDER BY workspace_id'
     ai_providers='SELECT id,workspace_id,kind,model,task,priority,encrypted_key,name,endpoint,enabled,timeout_seconds,retries,max_tokens,temperature,reasoning_effort,supports_images FROM providers ORDER BY id'

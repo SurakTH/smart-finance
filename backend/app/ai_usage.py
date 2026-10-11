@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter,Depends,HTTPException,Query
 from pydantic import BaseModel,ConfigDict,Field
 from sqlalchemy import select,func,case,Integer
-from .db import get_db
+from .db import get_db,SessionLocal
 from .models import AIUsage,AIUsagePolicy,Provider,Workspace,uid
 from .security import owner
 from .reporting import today
@@ -52,7 +52,12 @@ class BudgetExceeded(ValueError):pass
 def cost(i,o,price):return (i*price['input']+o*price['output']+999999)//1000000
 
 def reserve(db,job,p,body):
-    db.scalar(select(Workspace).where(Workspace.id==job.workspace_id).with_for_update())
+    workspace=db.scalar(select(Workspace).where(Workspace.id==job.workspace_id).with_for_update())
+    if hasattr(job,'_baseline_epoch'):
+        from .models import Membership
+        from .ai_fence import Invalidated
+        if not workspace or workspace.archived_at is not None or not db.get(Membership,(job.user_id,job.workspace_id)):raise Invalidated('membership_revoked')
+        if workspace.ai_epoch!=job._baseline_epoch:raise Invalidated('context_changed')
     options=policy(db,job.workspace_id);price=options['prices'].get(p.id)
     if p.kind=='ollama':price=dict(input=0,output=0)
     # UTF-8 byte count is a conservative text estimate, not an exact tokenizer.
@@ -100,7 +105,10 @@ class Meter:
 def tracked_stream(db,job,p,client,*args,**kwargs):
     import time
     started=time.monotonic()
-    row,price=reserve(db,job,p,kwargs.get('json',{}));meter=None;ok=False;failure=None
+    # Commit the reservation before network I/O; crashes conservatively retain it.
+    with SessionLocal.begin() as billing:
+        row,price=reserve(billing,job,p,kwargs.get('json',{}))
+    meter=None;ok=False;failure=None
     try:
         with client.stream(*args,**kwargs) as response:
             from .chat_stop import watch
@@ -122,7 +130,10 @@ def tracked_stream(db,job,p,client,*args,**kwargs):
         job._usage_events=getattr(job,'_usage_events',[])+[event]
         from .ai_diagnostics import record
         record(job,'request',provider_id=p.id,status='ok' if ok else 'failed',error=failure,duration_ms=int((time.monotonic()-started)*1000),input_tokens=row.input_tokens,output_tokens=row.output_tokens,estimated=row.estimated)
-        db.flush()
+        with SessionLocal.begin() as billing:
+            current=billing.get(AIUsage,row.id)
+            if current:
+                for key in ('status','input_tokens','output_tokens','estimated','cost'):setattr(current,key,getattr(row,key))
 
 def recover(db,job):
     for event in getattr(job,'_usage_events',[]):

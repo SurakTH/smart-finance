@@ -6,7 +6,7 @@ import time
 import httpx
 from sqlalchemy import select,func
 from . import config
-from .models import message_time, Provider, Message, Attachment, Conversation, Proposal, Membership, Workspace
+from .models import message_time, Provider, Message, Attachment, Conversation, Proposal, Membership, Workspace,Job
 from .schemas import ProposalInput
 from .ledger import account_balances, get_scoped
 from .chat_stream import publish,read_completion
@@ -184,8 +184,13 @@ def call_model(db, job):
     return 'ฉันช่วยจดรายการง่าย ๆ และดูยอดจริงได้ค่ะ ลองบอกว่า “กาแฟ 75 จากเงินสด” หรือถาม “เดือนนี้ใช้ไปเท่าไหร่” ได้เลย ตอนนี้เป็นโหมดสาธิต ถ้าอยากคุยอิสระมากขึ้น ให้เลือกโมเดลในหน้าตั้งค่า AI นะคะ', True
 
 def process_job(db,job):
+    with db.no_autoflush:return _process_job(db,job)
+
+def _process_job(db,job):
     check_stop(job,True)
-    ws=db.scalar(select(Workspace).where(Workspace.id==job.workspace_id).with_for_update())
+    ws=db.scalar(select(Workspace).where(Workspace.id==job.workspace_id))
+    baseline_epoch=ws.ai_epoch if ws else None
+    job._baseline_epoch=baseline_epoch
     if not ws or ws.archived_at is not None:return
     if not db.get(Membership,(job.user_id,job.workspace_id)):
         job.status='failed'; job.error='membership_revoked'; job.payload={}; return
@@ -195,10 +200,11 @@ def process_job(db,job):
         if expired(db,c):
             job.status='failed';job.error='conversation_expired';job.payload={};return
         if c.user_id!=job.user_id: raise ValueError('Conversation owner mismatch')
+        import copy
+        baseline_context=copy.deepcopy(c.capture_context)
     duplicate = False
     if job.task=='extract' and job.payload.get('attachment_id'):
-        # Serialize the check and insert across chat, Inbox and Telegram workers.
-        db.scalar(select(Workspace).where(Workspace.id==job.workspace_id).with_for_update())
+        # Duplicate and epoch are checked again under the final workspace fence.
         duplicate = bool(db.scalar(select(Proposal.id).where(Proposal.workspace_id==job.workspace_id,Proposal.attachment_id==job.payload['attachment_id']).limit(1)))
     dialogue=False
     if job.task=='chat' and job.payload.get('conversation_id'):
@@ -207,11 +213,34 @@ def process_job(db,job):
         # the request being prepared. Cancellation/new requests still supersede it.
         latest=db.scalar(select(Message).where(Message.workspace_id==job.workspace_id,Message.conversation_id==c.id,Message.role=='user',~func.trim(Message.content).startswith('ยืนยัน')).order_by(Message.created_at.desc(),Message.id.desc()).limit(1))
         current=bool(latest and latest.id==job.payload.get('source_user_message_id' if job.payload.get('repair_review') else 'user_message_id'))
+        if not current:
+            job.status='cancelled';job.error=None;job.payload={};return
         assistant=current and available(db,c)
         dialogue=current and not assistant and eligible(c,job.payload.get('text',''))
         if assistant:job.payload={**job.payload,'_assistant':True}
         elif dialogue:job.payload={**job.payload,'_dialogue':True}
     output, demo = ([], False) if duplicate else call_model(db,job)
+    # No data mutation is flushed before this fence. A changed workspace invalidates
+    # both the answer and proposed action, rather than committing stale evidence.
+    latest_ws=db.scalar(select(Workspace).where(Workspace.id==job.workspace_id).with_for_update().execution_options(populate_existing=True))
+    live_job=db.scalar(select(Job.id).where(Job.id==job.id))
+    if not live_job:
+        from .ai_fence import Gone
+        raise Gone()
+    member=db.scalar(select(Membership.user_id).where(Membership.user_id==job.user_id,Membership.workspace_id==job.workspace_id))
+    if not latest_ws or latest_ws.archived_at is not None or not member:
+        from .ai_fence import Invalidated
+        raise Invalidated('membership_revoked')
+    if job.payload.get('conversation_id'):
+        fresh_context=db.scalar(select(Conversation.capture_context).where(Conversation.id==c.id,Conversation.workspace_id==job.workspace_id))
+        latest_user=db.scalar(select(Message.id).where(Message.conversation_id==c.id,Message.workspace_id==job.workspace_id,Message.role=='user',~func.trim(Message.content).startswith('ยืนยัน')).order_by(Message.created_at.desc(),Message.id.desc()).limit(1))
+        expected=job.payload.get('source_user_message_id' if job.payload.get('repair_review') else 'user_message_id')
+        if fresh_context!=baseline_context or (expected and latest_user!=expected):
+            from .ai_fence import Invalidated
+            raise Invalidated('context_changed')
+    if latest_ws.ai_epoch!=baseline_epoch:
+        from .ai_fence import Invalidated
+        raise Invalidated('context_changed')
     stop_fence(db,job)
     trusted_review=False
     if isinstance(output,AssistantReply):

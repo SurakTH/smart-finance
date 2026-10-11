@@ -129,5 +129,5 @@ def test_retry_reuses_read_result_and_keeps_it_in_final_context(assistant,monkey
         assert outputs and outputs[0]['results'][0]['items']
         return {'content':'มีบัญชีเงินสดค่ะ'}
     query=tool('lookup_workspace',{'queries':[{'resource':'accounts'}]})
-    state['responses']=[query,fail,query,final]
-    assert 'เงินสด' in send('มีบัญชีอะไรบ้าง')['content'] and len(reads)==1 and len(state['calls'])==4
+    state['responses']=[query,fail,query]
+    assert 'เงินสด' in send('มีบัญชีอะไรบ้าง')['content'] and len(reads)==1 and len(state['calls'])==3

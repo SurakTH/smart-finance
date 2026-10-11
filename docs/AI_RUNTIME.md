@@ -74,3 +74,17 @@ AI Lab ให้โอกาสแก้ prose ที่ไม่ได้เร
 `answer_finance_summary` เป็น read-only terminal tool สำหรับคำถามยอดคงเหลือรวมและสรุปรายเดือนทั้ง workspace เครื่องมืออ่านผ่าน scoped lookup/report เดิม แล้วแสดงยอดจาก integer satang โดยตรง ไม่ต้องให้โมเดลคำนวณหรือเขียนจำนวนเงินซ้ำ ช่วยจบงานมาตรฐานในหนึ่ง model request เมื่อเลือกเครื่องมือนี้ รายเดือนมีรายรับ รายจ่าย ผลต่าง และสูงสุดห้าหมวด พร้อม evidence links จาก backend
 
 เดือนผิดรูปแบบ/เดือนที่ไม่มีจริงและตัวกรองที่ไม่รองรับถูกปฏิเสธและส่งให้โมเดลแก้ ไม่ละเลยตัวกรองเงียบ ๆ คำถามเจาะบัญชีหรือวิเคราะห์ซับซ้อนยังใช้เครื่องมือค้นเดิม ไม่ใช่การรับรองตัวเลขในคำตอบอิสระของโมเดลทั้งหมด และการเลือกเครื่องมือยังขึ้นกับโมเดล AI Lab รองรับเครื่องมือนี้ด้วยข้อมูลสังเคราะห์ ไม่มีการเขียนบัญชีหรือสร้างร่างจากคำถามรายงาน
+
+## Audit fixes — 12 ตุลาคม 2026 (แทนข้อจำกัดเรื่อง write lock ข้างต้น)
+
+- `assistant_evidence.py` ตรวจขอบเขตจากคำขอผู้ใช้และบริบทที่ backend ตรวจแล้ว: ยอดปัจจุบัน/ช่วงรายรับรายจ่าย, บัญชี/หมวด, วันที่ และการถามต่อที่ยังไม่หมดอายุ คำถามไม่ชัด หลายบัญชี/หมวด หรือยอดย้อนหลังที่ยังไม่รองรับต้องถามเพิ่ม ไม่แปลงเป็นยอดรวมเงียบ ๆ
+- คำตอบการเงินในเส้นทางที่รองรับสร้างจาก scoped backend reads หรือรายการที่เครื่องมืออ่านได้ ไม่ใช้จำนวนเงินใน free prose ของโมเดล ข้อความอ้างทำสำเร็จไม่มีสิทธิ์เป็นหลักฐานบันทึก การบันทึกจริงยังอยู่ใน confirmation endpoint เท่านั้น งาน mutation ต้องส่ง typed draft; หากโมเดลไม่ทำ ระบบไม่อ้างว่างานเสร็จ
+- Raw assistant streaming previews ถูกพักไว้ ส่งเฉพาะ progress และคำตอบที่ commit แล้ว เพื่อไม่ให้ยอด/คำอ้างผิดหลุดขึ้นจอชั่วคราว ปุ่มหยุดยังใช้ durable control เดิม
+- Cache hit และ read limit ใช้ renderer ที่ตรงกับคำถาม/ข้อมูลล่าสุด ไม่เลือก balances เพียงเพราะเคยอ่านไว้ และไม่เรียกโมเดลเพิ่มเพื่อเขียนตัวเลขซ้ำ
+- AI Lab ใช้ `assistant_runtime.converse` เดียวกับแชท ผ่าน synthetic adapter ที่ไม่มีสิทธิ์อ่านบัญชีจริงหรือสร้างร่างใน DB ผลผ่านหมายถึงผลลัพธ์หลังตรวจ ไม่ใช่การรับรองข้อความดิบของโมเดล เลิกตรวจแค่ว่ามีเลขที่คาดหวังอยู่ในข้อความ
+- Worker ใช้ connection-scoped advisory ownership ต่อ job/workspace แทน workspace row lock ระหว่าง network inference ไม่ flush mutations ขณะรอ; HTTP writes ทำงานได้ และ worker สอง thread ทำต่าง workspace ได้ (AI_WORKERS 1–4, default 2)
+- Usage reservation อยู่ใน transaction สั้นแยกต่างหากและ commit ก่อนส่งคำขอ ถ้า process crash ยอดจองยังอยู่เพื่อไม่ให้ overspend; ไม่ลดค่า reservation ที่ไม่ทราบ usage จริงอัตโนมัติ
+- Migration `ai_evidence_epoch` เพิ่ม counter ที่ trigger เปลี่ยนเมื่อข้อมูลการเงิน/สิทธิ์/การตั้งค่าที่เกี่ยวข้องเปลี่ยน ก่อน commit ต้องล็อก workspace ช่วงสั้น ตรวจ epoch, membership, job/room existence, current user turn, room context และ stop fence ถ้าข้อมูลเปลี่ยนให้ยกเลิกผลเก่าและแจ้งส่งใหม่ การยืนยันร่างยังตรวจ stale/duplicate ตามเดิม
+- Provider connection probe ปล่อย HTTP authorization lock ก่อน network I/O งานเก่าที่มีคำขอใหม่กว่าไม่เรียกโมเดลและไม่ทับ review ใหม่
+
+ข้อจำกัดที่ยังต้องทราบ: การตีความภาษาธรรมชาติไม่ได้รองรับทุกประโยค ถ้าระบุขอบเขตไม่ได้ระบบขอเพิ่ม ไม่รับรองคุณภาพ Gemma จาก mocks และยังเก็บ read transaction/connection ระหว่าง inference (ไม่มี workspace write lock) Schema/catalog ยังคงหนึ่ง tool call ต่อ model reply ต้องทดสอบกับ provider จริงต่อ จำนวน request cap ยังต่อ processing attempt; ค่าใช้จ่าย reserve คงอยู่ข้าม crash แต่ไม่ได้อ้างว่า provider ยกเลิกคิดเงินเมื่อกดหยุด

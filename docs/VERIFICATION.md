@@ -507,3 +507,9 @@ Browser เพิ่มทดสอบค้นหาบริการ/empty/re
 - Backend **435 passed**, warning Starlette/httpx เดิม 1 รายการ เพิ่ม tests: child intent default โดย root intent ยังคงจำเป็นและ amount strict, lab prose repair ผ่านเมื่อได้ร่างจริงเท่านั้น/ปฏิเสธ prose ซ้ำโดยไม่มีการเขียนข้อมูล, SSE/JSON finish_reason length แยก output_limit
 - Browser **4 passed** desktop/mobile สำหรับ diagnostics และ batch review/แก้/ยืนยัน/กันซ้ำ; TypeScript และ production build ผ่าน backend `9726be4cd910`, web `3411dab6f0e0`; local Compose healthy ไม่มี migration และไม่ได้ deploy Ubuntu
 - ไม่ได้เรียก Gemma จริง ผลทดสอบโมเดลใช้ HTTP mocks ไม่สรุปสาเหตุรายเดือน answer_mismatch หรือสลิป invalid จาก metadata เก่าเพียงอย่างเดียว ไม่เปลี่ยนจำนวนเงินที่คาดหวังเพื่อทำให้ผลผ่าน
+
+## Verified summary tool สำหรับงานเลขา (11 ตุลาคม 2026)
+
+- Backend **444 passed** (warning Starlette/httpx เดิม 1 รายการ) เพิ่ม 9 เคส: ยอดเงินและรายเดือนผ่าน model request เดียวแล้ว render จาก backend, ไม่เพิ่ม ledger, invalid month/filter/report ถูกปฏิเสธ, cents exact และชื่อหมวดไม่สร้าง Markdown link/HTML, lab ทั้ง balance/monthly ผ่าน tool ใหม่ด้วย fixture เท่านั้น
+- Production backend build `6edf2e54321a`, local Compose healthy, HTTP root 200; ไม่มี frontend changes หรือ migration ใหม่ในรอบนี้ จึงไม่ได้รัน browser suite ซ้ำ
+- Backup `finance-20261011T164740Z.dump` และ disposable restore ผ่าน snapshots/row counts/ledger balance ไม่ deploy Ubuntu และไม่ได้เรียก Gemma จริง การคุมตัวเลขโดย renderer ครอบคลุม tool ใหม่เท่านั้น ไม่รับรองคำตอบอิสระทุกชนิดของโมเดล

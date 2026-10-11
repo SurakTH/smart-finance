@@ -74,6 +74,16 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             repaired=True;record(job,'review_repair',status='invalid')
             turns.extend([{'role':'assistant','content':answer.content},{'role':'system','content':REPAIR}])
             continue
+        if answer.tool_name=='answer_finance_summary':
+            from .assistant_summary import answer as summary_answer
+            try:content=summary_answer(db,room,job,answer.draft)
+            except ValueError:
+                invalid(answer,dict(error='invalid_arguments',message='เลือก report balances โดยไม่ใส่ month หรือ monthly พร้อมเดือน YYYY-MM ที่ถูกต้อง เว้น month เพื่อใช้เดือนนี้'))
+                if repairs>=2:return AssistantReply('ยังอ่านรายงานตามเงื่อนไขนี้ไม่ได้ค่ะ ระบุเดือนที่ต้องการอีกครั้งได้ไหมคะ?')
+                continue
+            record(job,'tool',tool=answer.tool_name,status='ok')
+            publish(job,'progress',stage='summarizing')
+            return AssistantReply(content)
         if answer.tool_name=='load_toolkit':
             try:kit=Toolkit.model_validate_json(answer.draft).toolkit
             except ValidationError as error:

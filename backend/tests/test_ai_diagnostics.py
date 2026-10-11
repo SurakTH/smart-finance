@@ -169,7 +169,7 @@ def test_lab_accepts_empty_optional_lookup_fields_and_default_discovery(lab,monk
     c,w,u,b,cid,pid=lab;calls=[]
     def handler(req):
         body=json.loads(req.content);calls.append(body)
-        assert len(body['tools'])==2
+        assert len(body['tools'])==(3 if case=='balance' else 2)
         if len(calls)==1:
             query={'resource':'balances' if case=='balance' else 'preferences','q':None,'kind':'','month':'','cursor':'','limit':None}
             answer=tool('lookup_workspace',{'queries':[query]})
@@ -238,3 +238,12 @@ def test_output_limit_distinguished_for_stream_and_json():
         def iter_lines(self):return iter(['data: '+json.dumps({'choices':[{'delta':{},'finish_reason':'length'}]}),''])
     with pytest.raises(AIRequestError) as failure:read_stream(Response(),SimpleNamespace(task='ai_test'))
     assert diagnose(failure.value)=='output_limit'
+
+
+@pytest.mark.parametrize('case,report',[('balance','balances'),('monthly','monthly')])
+def test_lab_verified_summary_tool(lab,monkeypatch,case,report):
+    c,w,u,b,cid,pid=lab
+    transport(monkeypatch,lambda req:httpx.Response(200,json={'choices':[{'message':tool('answer_finance_summary',{'report':report})}]}))
+    before=counts(w);jid=start(c,b,case,pid);run_all()
+    data=result(c,b,jid)['diagnostics']['test']
+    assert data['status']=='passed' and data['calls']==1 and counts(w)==before

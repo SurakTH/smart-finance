@@ -91,6 +91,9 @@ def evaluate(db,job,p,case,deadline,budget):
     messages=context(case);seen=set();reads=0;last_failure=None;repaired=False
     names={'lookup_workspace','query_finance'} if case in ('balance','monthly') else {'lookup_workspace','prepare_transaction'}
     tools=[t for t in assistant_tools() if t['function']['name'] in names]
+    if case in ('balance','monthly'):
+        from .assistant_summary import tool as summary_tool
+        tools.append(summary_tool())
     def feedback(answer,error):
         nonlocal last_failure,repaired
         reason=error.reason if isinstance(error,TestFailed) else 'invalid_arguments'
@@ -117,6 +120,16 @@ def evaluate(db,job,p,case,deadline,budget):
                         if len(raw)>256000:raise TestFailed('invalid_arguments')
                     answer=completion_choice(json.loads(raw)['choices'][0])
         name=answer.tool_name
+        if name=='answer_finance_summary':
+            from .assistant_summary import parse,render
+            try:
+                value=parse(answer.draft)
+                if value.report!=('balances' if case=='balance' else 'monthly') or case not in ('balance','monthly'):raise TestFailed('wrong_tool')
+                data=lookup(json.dumps({'queries':[{'resource':'balances'}]})) if case=='balance' else query_finance(json.dumps({'operation':'monthly_analysis','month':value.month}))
+                if not render(value,data):raise TestFailed('answer_mismatch')
+            except (ValueError,TypeError) as error:
+                feedback(answer,error);continue
+            record(job,'tool',tool=name,status='ok');return
         if not name:
             if case not in ('balance','monthly'):
                 if repaired:raise TestFailed('no_tool')

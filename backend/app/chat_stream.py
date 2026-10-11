@@ -58,7 +58,7 @@ async def events(request,token,wid,cid):
                 raw=item['data']
                 if len(raw)>100000:continue
                 data=json.loads(raw)
-                if data.get('kind') in ('start','delta','done','failed'):
+                if data.get('kind') in ('start','delta','done','failed','stopping','cancelled'):
                     yield frame(data)
             else:
                 yield ': heartbeat\n\n'
@@ -75,6 +75,8 @@ def read_completion(response,job):
     """Bounded OpenAI-compatible SSE reader; interrupted output is never committed."""
     text='';size=0;finished=False;fields=[];deadline=time.monotonic()+45
     for line in response.iter_lines():
+        from .chat_stop import check
+        check(job)
         if time.monotonic()>deadline:raise ValueError('Stream timeout')
         size+=len(line.encode('utf-8'))+1
         if size>256000:raise ValueError('Response too large')

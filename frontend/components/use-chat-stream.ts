@@ -17,7 +17,8 @@ export function useChatStream(wid:string,cid:string,enabled:boolean,lastAssistan
    else if(value.kind==='start'){setNotice('');setDraft({job:value.job_id,text:'',baseline:latest.current,context});}
    else if(value.kind==='delta'&&typeof value.text==='string'){setDraft(old=>value.snapshot===true?{job:value.job_id,text:value.text.slice(0,16000),baseline:old&&old.job===value.job_id?old.baseline:latest.current,context}:old&&old.job===value.job_id?{...old,text:(old.text+value.text).slice(0,16000)}:null);}
    else if(value.kind==='done'){retire(value.job_id);void done.current().catch(()=>{if(active)setNotice('กำลังตรวจคำตอบล่าสุด…');}).finally(()=>{if(active)setDraft(old=>old?.job===value.job_id?null:old);});}
-   else if(value.kind==='failed'){retire(value.job_id);setDraft(old=>old?.job===value.job_id?null:old);setNotice('เตรียมคำตอบไม่สำเร็จ กรุณาลองส่งข้อความอีกครั้ง');}
+   else if(value.kind==='stopping'||value.kind==='cancelled'){retire(value.job_id);setDraft(old=>old?.job===value.job_id?null:old);setNotice(value.kind==='stopping'?'ส่งคำขอหยุดแล้ว กำลังปิดการเชื่อมต่อ AI…':'หยุดคำตอบแล้ว');if(value.kind==='cancelled')void done.current().catch(()=>{});}
+   else if(value.kind==='failed'){retire(value.job_id);setDraft(old=>old?.job===value.job_id?null:old);setNotice(typeof value.message==='string'?value.message:'เตรียมคำตอบไม่สำเร็จ กรุณาลองส่งข้อความอีกครั้ง');}
    else if(value.kind==='closed'){setDraft(null);setNotice('ห้องหมดอายุหรือสิทธิ์เปลี่ยน กรุณาเปิดบทสนทนาใหม่');source.close();}
    else if(value.kind==='unavailable'){setDraft(null);setNotice('แสดงคำตอบเมื่อพร้อม ระบบยังตรวจคำตอบให้อยู่');}
   }catch{}};
@@ -25,5 +26,6 @@ export function useChatStream(wid:string,cid:string,enabled:boolean,lastAssistan
   return()=>{active=false;source.close();};
  },[wid,cid,enabled]);
  // Hide immediately when persisted history arrives; effects run after paint.
- return {draft:draft?.context===context&&draft.baseline===lastAssistant?draft:null,streamNotice:notice};
+ function stopPreview(job:string){retire(job);setDraft(old=>old?.job===job?null:old);setNotice('ส่งคำขอหยุดแล้ว กำลังปิดการเชื่อมต่อ AI…');}
+ return {stopPreview,draft:draft?.context===context&&draft.baseline===lastAssistant?draft:null,streamNotice:notice};
 }

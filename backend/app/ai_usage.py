@@ -101,7 +101,11 @@ def tracked_stream(db,job,p,client,*args,**kwargs):
     row,price=reserve(db,job,p,kwargs.get('json',{}));meter=None;ok=False
     try:
         with client.stream(*args,**kwargs) as response:
-            meter=Meter(response);yield meter;ok=True
+            from .chat_stop import watch
+            guard=watch(job,response)
+            try:
+                meter=Meter(response);yield meter;ok=True
+            finally:guard.set()
     finally:
         row.status='success' if ok else 'failed'
         if meter and meter.usage:

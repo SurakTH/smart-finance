@@ -62,6 +62,7 @@ def target(p):
     custom=p.kind in ('compatible','ollama')
     base=p.endpoint if custom else ENDPOINTS[p.kind]
     base=custom_endpoint(base or config.COMPATIBLE_URL)
+    if p.kind=='ollama' and urlsplit(base).path in ('','/'):base+='/v1'
     url=httpx.URL(base);port=url.port or (443 if url.scheme=='https' else 80)
     try:
         addresses=socket.getaddrinfo(url.host,port,type=socket.SOCK_STREAM)
@@ -99,7 +100,9 @@ def apply(p,data,creating=False):
     validate(data.kind,data.model,data.reasoning_effort)
     values=data.model_dump(exclude={'api_key','clear_key'})
     if data.kind=='compatible':values['endpoint']=custom_endpoint(data.endpoint or config.COMPATIBLE_URL)
-    elif data.kind=='ollama':values['endpoint']=custom_endpoint(data.endpoint) if data.endpoint else ''
+    elif data.kind=='ollama':
+        values['endpoint']=custom_endpoint(data.endpoint) if data.endpoint else ''
+        if values['endpoint'] and urlsplit(values['endpoint']).path in ('','/'):values['endpoint']+='/v1'
     elif data.endpoint:raise HTTPException(422,'ตั้ง URL ได้เฉพาะ Ollama และ Custom API')
     if data.api_key and any(ord(c)<32 or ord(c)>126 for c in data.api_key):raise HTTPException(422,'รูปแบบ API key ไม่ถูกต้อง')
     if data.clear_key and data.api_key:raise HTTPException(422,'เลือกล้างคีย์หรือใส่คีย์ใหม่อย่างใดอย่างหนึ่ง')
@@ -148,11 +151,14 @@ def probe(db,wid,pid,models=False):
     p=get_scoped(db,Provider,wid,pid)
     if p.kind!='ollama' and not settings(db,wid)['cloud_enabled']:
         raise HTTPException(403,'เปิดการใช้ Cloud AI ของพื้นที่ก่อนทดสอบ')
+    stage='dns'
     try:
         url,headers,extensions=target(p)
+        stage='key_invalid'
         key=config.cipher().decrypt(p.encrypted_key.encode()).decode() if p.encrypted_key else ''
         if key:headers['Authorization']='Bearer '+key
-        with httpx.Client(timeout=httpx.Timeout(10,connect=5),trust_env=False,follow_redirects=False) as client:
+        stage='request'
+        with httpx.Client(timeout=httpx.Timeout(p.timeout_seconds,connect=5),trust_env=False,follow_redirects=False) as client:
             # Models discovery never sends a prompt. Connection test uses a small synthetic prompt.
             method='GET' if models else 'POST'
             path='/models' if models else '/chat/completions'
@@ -172,7 +178,8 @@ def probe(db,wid,pid,models=False):
             meter_job=SimpleNamespace(workspace_id=wid,task='probe')
             stream=client.stream(method,url+path,headers=headers,extensions=extensions,**kwargs) if models else tracked_stream(db,meter_job,p,client,method,url+path,headers=headers,extensions=extensions,**kwargs)
             with stream as response:
-                response.raise_for_status();raw=b''
+                from .ai_errors import ensure_response
+                ensure_response(response);raw=b''
                 for chunk in response.iter_bytes():
                     raw+=chunk
                     if len(raw)>256000:raise ValueError()
@@ -184,12 +191,13 @@ def probe(db,wid,pid,models=False):
             if not isinstance(items,list):raise ValueError()
             names=sorted({item['id'] for item in items if isinstance(item,dict) and isinstance(item.get('id'),str) and re.fullmatch(r'[a-zA-Z0-9_./:@-]{1,100}',item['id'])})[:300]
             return {'models':names}
-        if not isinstance(data['choices'][0]['message']['content'],str):raise ValueError()
+        from .assistant_response import completion
+        completion(data['choices'][0]['message'])
         return {'ok':True,'message':'เชื่อมต่อและเรียกโมเดลได้แล้ว'}
-    except Exception:
+    except Exception as error:
         db.commit()
-        # Never expose URL, key, headers, response body, or traceback.
-        raise HTTPException(422,'เชื่อมต่อไม่สำเร็จ ตรวจ URL คีย์ ชื่อโมเดล และสิทธิ์ของผู้ให้บริการ') from None
+        from .ai_errors import diagnose,message
+        raise HTTPException(422,message(stage if stage!='request' else diagnose(error))) from None
 
 @router.post('/providers/{pid}/test')
 def test_provider(wid:str,pid:str,db:Session=Depends(get_db,scope='function')):

@@ -15,6 +15,8 @@ from .ai_settings import settings, target
 from .ai_parameters import parameters
 from .assistant_response import AssistantReply,completion,read_stream
 from .ai_usage import tracked_stream
+from .chat_stop import check as check_stop, fence as stop_fence
+from .ai_errors import ensure_response,diagnose,message as error_message
 
 def mock_proposals(text):
     # Deliberately limited demo parser. Unknown receipt amounts remain unset.
@@ -34,12 +36,13 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
     room=get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id'])
     turns=list(messages)
     for _ in range(4):
+        check_stop(job,True)
         remaining=deadline-time.monotonic()
         if remaining<=0:raise ValueError('Assistant deadline')
         body={'model':p.model,'messages':turns,**parameters(p),'tools':assistant_tools(),'tool_choice':'auto','stream':True}
         publish(job,'start')
         with tracked_stream(db,job,p,client,'POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json=body,timeout=httpx.Timeout(min(p.timeout_seconds,remaining),connect=5)) as response:
-            response.raise_for_status()
+            ensure_response(response)
             if 'text/event-stream' in response.headers.get('content-type',''):answer=read_stream(response,job)
             else:
                 raw=b''
@@ -141,13 +144,18 @@ def call_model(db, job):
     providers=providers[:options['max_attempted_providers']]
     deadline=time.monotonic()+90;read_budget=[0]
     for p in providers:
+        check_stop(job,True)
+        target_stage='dns'
         try:
             url,headers,extensions=target(p)
+            target_stage='key_invalid'
             key = config.cipher().decrypt(p.encrypted_key.encode()).decode() if p.encrypted_key else ''
             if key:headers['Authorization']='Bearer '+key
         except Exception:
+            job._last_ai_error=target_stage
             continue
         for attempt in range(p.retries+1):
+            check_stop(job,True)
             remaining=deadline-time.monotonic()
             if remaining<=0:break
             try:
@@ -157,7 +165,7 @@ def call_model(db, job):
                     if job.task=='chat' and not job.payload.get('_dialogue'):
                         publish(job,'start')
                         with tracked_stream(db,job,p,client,'POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json={**body,'stream':True}) as r:
-                            r.raise_for_status()
+                            ensure_response(r)
                             if 'text/event-stream' in r.headers.get('content-type',''):
                                 content=read_stream(r,job) if assistant else read_completion(r,job)
                             else:
@@ -170,7 +178,7 @@ def call_model(db, job):
                                 content=completion(message) if assistant else message['content']
                     else:
                         with tracked_stream(db,job,p,client,'POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json=body) as r:
-                            r.raise_for_status();raw=b''
+                            ensure_response(r);raw=b''
                             for chunk in r.iter_bytes():
                                 raw+=chunk
                                 if len(raw)>256000:raise ValueError('Response too large')
@@ -183,10 +191,14 @@ def call_model(db, job):
                         if not isinstance(values,list) or len(values)>10: raise ValueError('Invalid extraction')
                         return [ProposalInput.model_validate(v) for v in values], False
                     return content, False
-            except (httpx.HTTPError,ValueError,KeyError,TypeError):
+            except (httpx.HTTPError,ValueError,KeyError,TypeError) as error:
+                check_stop(job,True)
+                job._last_ai_error=diagnose(error)
                 # Never log request, provider response, URL credentials or keys.
                 if attempt<p.retries: time.sleep(0.3)
     if getattr(job,'_budget_blocked',False) and job.task=='chat':return 'ยังเรียก Cloud AI ไม่ได้ค่ะ วงเงิน AI เดือนนี้ไม่พอ หรือยังไม่ได้ตั้งราคาครบ ตรวจได้ที่ตั้งค่า AI → การใช้งานและงบ ยังไม่ได้เปลี่ยนข้อมูลการเงิน',False
+    if job.task=='chat' and getattr(job,'_last_ai_error',None):
+        return error_message(job._last_ai_error)+' ยังไม่ได้บันทึกหรือแก้ข้อมูลจากคำขอนี้ค่ะ',False
     if not options['demo_fallback']:
         raise ValueError('No available AI provider')
     if job.task=='extract':
@@ -206,6 +218,7 @@ def call_model(db, job):
     return 'ฉันช่วยจดรายการง่าย ๆ และดูยอดจริงได้ค่ะ ลองบอกว่า “กาแฟ 75 จากเงินสด” หรือถาม “เดือนนี้ใช้ไปเท่าไหร่” ได้เลย ตอนนี้เป็นโหมดสาธิต ถ้าอยากคุยอิสระมากขึ้น ให้เลือกโมเดลในหน้าตั้งค่า AI นะคะ', True
 
 def process_job(db,job):
+    check_stop(job,True)
     ws=db.scalar(select(Workspace).where(Workspace.id==job.workspace_id).with_for_update())
     if not ws or ws.archived_at is not None:return
     if not db.get(Membership,(job.user_id,job.workspace_id)):
@@ -233,6 +246,7 @@ def process_job(db,job):
         if assistant:job.payload={**job.payload,'_assistant':True}
         elif dialogue:job.payload={**job.payload,'_dialogue':True}
     output, demo = ([], False) if duplicate else call_model(db,job)
+    stop_fence(db,job)
     trusted_review=False
     if isinstance(output,AssistantReply):
         if output.draft is not None:

@@ -16,8 +16,10 @@ test('chat reviews before typed confirmation, prevents replay and preserves corr
  await expect(reviews.last()).toContainText('พิมพ์ ยืนยัน');await expect(reviews.last()).not.toContainText('พิมพ์ “ยืนยัน”');
  // Transport fixture for an unrelated pending workspace job; confirmation still
  // goes through the real authenticated API and changes the real test ledger.
- await page.route('**/workspaces/'+ws.id+'/jobs',route=>route.fulfill({json:[{id:'other-pending-job',task:'extract',status:'pending',error:null}]}));
- await expect(page.getByRole('status').filter({hasText:'กำลังเตรียมคำตอบ'})).toBeVisible();
+ let unrelatedSeen=false;await page.route('**/workspaces/'+ws.id+'/jobs',route=>{unrelatedSeen=true;return route.fulfill({json:[{id:'other-pending-job',task:'extract',status:'pending',error:null}]});});
+ await expect.poll(()=>unrelatedSeen).toBe(true);
+ // An unrelated Inbox job no longer displays this room's thinking indicator.
+ await expect(page.getByRole('status').filter({hasText:'กำลังเตรียมคำตอบ'})).not.toBeVisible();
 
  await send('ยืนยัน');await expect(page.locator('.message.assistant').last()).toContainText('บันทึกรายการเรียบร้อยแล้ว');expect((await report()).expense).toBe(7500);
  await send('ยืนยัน');await expect(page.locator('.message.assistant').last()).toContainText('ไม่มีการบันทึกซ้ำ');expect((await report()).total).toBe(1);

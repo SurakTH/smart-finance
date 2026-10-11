@@ -451,3 +451,13 @@ Browser เพิ่มทดสอบค้นหาบริการ/empty/re
 - สำรองและ restore ฐาน disposable หลัง browser tests ผ่าน จำนวนแถวรวม recurring_rules/recurring_occurrences ตรงกัน รวมวันถัดไป/สถานะพัก/ข้อมูลรอบ และยอดจัดสรรเป้าหมายออมตรงกัน ledger สมดุล Source archive ไม่รวม credentials/.env/session states/DB dumps/runtime screenshots
 
 ข้อจำกัด: รองรับรายรับ/รายจ่ายรายวัน สัปดาห์ เดือนเท่านั้น ไม่มี transfer/card payment ประจำ รอบรายปี กำหนดหลายวัน ปุ่มข้าม backlog รวม หรือแจ้งเตือน push/Telegram ไม่มี auto-post/auto-pay ตารางเดิมเปลี่ยนรายละเอียดได้แต่เปลี่ยนความถี่/วันเริ่ม-สิ้นสุดต้องพักแล้วสร้างใหม่ ไม่มี audit trail การแก้รายละเอียดตาราง และยังไม่มี AI อ่าน/สร้างรายการประจำ การตรวจอัตโนมัติต้องเปิด worker และอาจช้าลงตามงานในคิว ยังไม่ได้ตรวจมือถือเครื่องจริง Ubuntu/Hyper-V หรือ provider/Telegram จริง อยู่ระหว่างขั้น 3 จาก 4
+
+## 2026-10-11 — AI diagnostics และปุ่มหยุด Web Chat
+
+- PostgreSQL disposable DB: **384 tests passed** ทั้ง backend หลัง migration `chat_generation_stop` ครอบคลุม queued stop, stop ระหว่าง worker ถือ workspace/job lock, silent-thinking stream close, late draft/text rejection, queued stop ในอีกห้องระหว่าง workspace ถูกล็อก, room/user scope, idempotency, งานที่ commit แล้วไม่เปลี่ยน และ usage accounting หลัง rollback
+- Provider diagnostics: ทดสอบ HTTP 400/401/404/429/500/redirect, missing model, tools/images/Thinking ไม่รองรับ, connect/read timeout, configured probe timeout, ไม่สะท้อน upstream secrets, fallback ไปโมเดลสำรอง และ all-provider failure ไม่ post ข้อมูล Tests ใช้ MockTransport ไม่ได้เรียก Ollama/Cloud จริง
+- Browser: **10 scenarios ผ่านในการรันทดสอบสุดท้ายของแต่ละไฟล์** (desktop/mobile: chat-stop, chat-stream, ai-settings, chat-actions, chat-defaults) ปุ่มหยุดแสดงก่อน token แรก, disabled ขณะ stopping, ละทิ้ง late chunks, โหลดประวัติหยุด, พิมพ์ต่อได้ และไม่ล้นจอ ภาพ `artifacts/chat-stop-desktop.png` / `chat-stop-mobile.png` ตรวจแล้ว งาน Inbox ที่ไม่เกี่ยวข้องไม่ทำให้ห้องนี้แสดงกำลังคิด จึงแก้ assertion เก่าและรัน chat-actions ซ้ำจนผ่านทั้งสองขนาด
+- TypeScript typecheck, production Docker build และ HTTP root 200 ผ่าน Docker services ในเครื่อง healthy; migration head `chat_generation_stop` ไม่มีการ deploy เครื่อง Ubuntu ของผู้ใช้
+- ข้อจำกัด: upstream close เป็น best effort หลัง headers อาจรอ timeout ก่อนจบ และไม่รับประกันยกเลิกการประมวลผลหรือค่าบริการฝั่ง provider; ปุ่มหยุดครอบคลุม Web Chat เท่านั้น ยังต้องทดสอบกับ Ollama/provider จริงบนเครื่องผู้ใช้
+
+- Backup/restore หลัง migration ผ่านใน disposable DB รวมจำนวนแถวและ snapshot `chat_generations.stop_requested` และ ledger สมดุล (backup `finance-20261011T144653Z.dump`)

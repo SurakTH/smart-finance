@@ -201,6 +201,12 @@ class Job(Base):
     error: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[int] = mapped_column(BigInteger, default=lambda: time.time_ns()//1_000_000)
 
+class ChatGeneration(Base):
+    __tablename__='chat_generations'
+    job_id:Mapped[str]=mapped_column(ForeignKey('jobs.id',ondelete='CASCADE'),primary_key=True)
+    conversation_id:Mapped[str]=mapped_column(String(36))
+    stop_requested:Mapped[bool]=mapped_column(default=False,server_default='false')
+
 class TelegramLink(Base):
     __tablename__ = 'telegram_links'
     telegram_id: Mapped[str] = mapped_column(String(30), primary_key=True)

@@ -324,6 +324,9 @@ def store_image(db, wid, data):
 def enqueue(db,wid,user_id,task,payload):
     job = Job(workspace_id=wid,user_id=user_id,task=task,payload=payload)
     db.add(job); db.flush()
+    if task=='chat' and payload.get('conversation_id'):
+        from .models import ChatGeneration
+        db.add(ChatGeneration(job_id=job.id,conversation_id=payload['conversation_id']));db.flush()
     # DB is the durable outbox. Worker also polls, so a wake-up lost before commit is safe.
     try: redis.lpush('sf:wakeup','1'); redis.ltrim('sf:wakeup',0,100)
     except Exception: pass
@@ -419,9 +422,41 @@ async def send_chat_image(wid: str, cid: str, file: UploadFile = File(...), text
     db.commit()
     return {'job_id':job.id,'attachment_id':image.id,'duplicate':duplicate}
 
-@app.get('/workspaces/{wid}/jobs', dependencies=[Depends(workspace_member)])
-def jobs(wid: str, db: DBSession = Depends(get_db, scope='function')):
-    return [dict(id=j.id,task=j.task,status=j.status,error=j.error) for j in db.scalars(select(Job).where(Job.workspace_id==wid).order_by(Job.created_at.desc()).limit(30))]
+@app.post('/workspaces/{wid}/conversations/{cid}/jobs/{jid}/stop')
+def stop_chat(wid:str,cid:str,jid:str,user:User=Depends(current_user),db:DBSession=Depends(get_db,scope='function')):
+    # Read-only authorization, like SSE: waiting for Workspace FOR UPDATE here
+    # would make Stop wait for the very generation it must interrupt.
+    ws=db.get(Workspace,wid);member=db.get(Membership,(user.id,wid))
+    if not ws or ws.archived_at is not None or not member:raise HTTPException(404,'ไม่พบห้องสนทนา')
+    owned_conversation(db,wid,cid,member.user_id)
+    from .models import ChatGeneration
+    control=db.scalar(select(ChatGeneration).join(Job,Job.id==ChatGeneration.job_id).where(ChatGeneration.job_id==jid,ChatGeneration.conversation_id==cid,Job.workspace_id==wid,Job.user_id==member.user_id,Job.task=='chat').with_for_update(of=ChatGeneration))
+    if not control:raise HTTPException(404,'ไม่พบงานในห้องนี้')
+    job=db.scalar(select(Job).where(Job.id==jid).execution_options(populate_existing=True))
+    if job.status!='pending':return {'job_id':jid,'status':job.status}
+    control.stop_requested=True;db.flush()
+    # Queued jobs can finish cancellation now; a running job is locked by its
+    # worker and will observe the durable flag without waiting for that lock.
+    # Inserting the stop notice needs a workspace FK lock. Do not wait if a
+    # different room's worker owns this workspace; its queued job will cancel
+    # itself when picked up, without ever reaching a model.
+    free_workspace=db.scalar(select(Workspace.id).where(Workspace.id==wid).with_for_update(skip_locked=True))
+    queued=db.scalar(select(Job).where(Job.id==jid,Job.status=='pending').with_for_update(skip_locked=True)) if free_workspace else None
+    if queued:
+        from .chat_stop import stopped_message
+        queued.status='cancelled';queued.error=None;queued.payload={}
+        stopped_message(db,wid,cid)
+    db.commit()
+    from .worker import notify
+    notify((wid,cid,jid),'cancelled' if queued else 'stopping')
+    return {'job_id':jid,'status':'cancelled' if queued else 'stopping'}
+
+@app.get('/workspaces/{wid}/jobs')
+def jobs(wid: str, member: Membership=Depends(workspace_member), db: DBSession = Depends(get_db, scope='function')):
+    from .models import ChatGeneration
+    from .ai_errors import message
+    rows=db.execute(select(Job,ChatGeneration).outerjoin(ChatGeneration,ChatGeneration.job_id==Job.id).where(Job.workspace_id==wid).order_by(Job.created_at.desc()).limit(30)).all()
+    return [dict(id=j.id,task=j.task,status=j.status,error=j.error,message=message(j.error) if j.status=='failed' else None,conversation_id=g.conversation_id if g and j.user_id==member.user_id else None,stopping=bool(g and g.stop_requested and j.status=='pending')) for j,g in rows]
 
 @app.post('/workspaces/{wid}/capture')
 def capture(wid: str, data: CaptureInput, member: Membership = Depends(workspace_member), db: DBSession = Depends(get_db, scope='function')):

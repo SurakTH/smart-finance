@@ -173,7 +173,9 @@ def test_http_pins_ip_preserves_port_and_named_cloud_stays_public(monkeypatch):
 def test_each_ollama_machine_used_by_probe_discovery_and_runtime_fallback(configured,monkeypatch):
     c,b,w,u=configured
     rows=[c.post(b+'/providers',json=dict(kind='ollama',model=model,task='chat',endpoint=url,retries=0)).json() for model,url in [('machine-one','http://192.168.1.20:11434/v1'),('machine-two','http://100.90.1.2:11435/v1')]]
-    monkeypatch.setattr(ai_settings.socket,'getaddrinfo',lambda host,port,**kw:[(2,1,6,'',(host,port))])
+    real_dns=ai_settings.socket.getaddrinfo
+    # Mock only model IPs; cancellation opens independent PostgreSQL connections.
+    monkeypatch.setattr(ai_settings.socket,'getaddrinfo',lambda host,port,**kw:[(2,1,6,'',(host,port))] if host in ('192.168.1.20','100.90.1.2') else real_dns(host,port,**kw))
     real=httpx.Client;calls=[]
     def handler(req):
         calls.append((req.url.host,req.url.port,req.url.path))
@@ -202,3 +204,40 @@ def test_ollama_default_and_key_does_not_follow_new_machine(configured,monkeypat
     with SessionLocal() as db:assert ai_settings.target(db.get(Provider,row['id']))==('http://ollama:11434/v1',{}, {})
     edited=c.put(b+'/providers/'+row['id'],json=dict(kind='ollama',model='local',task='chat',endpoint='http://192.168.1.20:11434/v1')).json()
     assert edited['has_key'] is False
+
+@pytest.mark.parametrize('status,error,expected',[
+    (404,'model secret-model not found','ไม่พบโมเดล'),(404,'404 page not found','เส้นทาง API'),
+    (400,'model does not support tools','ไม่รองรับ tools'),(400,'model does not support images','ไม่รองรับรูป'),
+    (400,'reasoning effort unsupported','Thinking'),(401,'hidden upstream credentials','ปฏิเสธสิทธิ์'),
+    (500,'backend oom secret dump','RAM/VRAM'),(429,'secret rate limit','จำกัดจำนวนคำขอ'),(302,'redirect','เปลี่ยนเส้นทาง'),
+])
+def test_probe_specific_errors_never_echo_upstream(configured,monkeypatch,status,error,expected):
+    c,b,*_=configured;row=c.post(b+'/providers',json=dict(kind='ollama',model='test',task='chat')).json();real=httpx.Client
+    monkeypatch.setattr(ai.httpx,'Client',lambda **kw:real(transport=httpx.MockTransport(lambda req:httpx.Response(status,json={'error':error+' secret-never-echo'})),**kw))
+    response=c.post(b+'/providers/'+row['id']+'/test',json={})
+    assert response.status_code==422 and expected in response.json()['detail']
+    assert 'secret-never-echo' not in response.text and 'secret-model' not in response.text
+
+@pytest.mark.parametrize('exception,expected',[(httpx.ConnectError,'เชื่อมต่อเครื่อง'),(httpx.ConnectTimeout,'Timeout'),(httpx.ReadTimeout,'Timeout')])
+def test_probe_network_diagnostics_and_configured_timeout(configured,monkeypatch,exception,expected):
+    c,b,*_=configured;row=c.post(b+'/providers',json=dict(kind='ollama',model='test',task='chat',timeout_seconds=45)).json();real=httpx.Client
+    def handler(req):
+        assert req.extensions['timeout']['read']==45
+        raise exception('secret url/password must not be echoed',request=req)
+    monkeypatch.setattr(ai.httpx,'Client',lambda **kw:real(transport=httpx.MockTransport(handler),**kw))
+    response=c.post(b+'/providers/'+row['id']+'/test',json={})
+    assert response.status_code==422 and expected in response.json()['detail'] and 'secret' not in response.text
+
+
+def test_ollama_root_url_normalized_and_probe_accepts_tool_reply_without_posting(configured,monkeypatch):
+    c,b,*_=configured;row=c.post(b+'/providers',json=dict(kind='ollama',model='test',task='chat',endpoint='http://192.168.1.20:11434')).json()
+    assert row['endpoint']=='http://192.168.1.20:11434/v1'
+    real_dns=ai_settings.socket.getaddrinfo
+    # Mock only model IPs; cancellation opens independent PostgreSQL connections.
+    monkeypatch.setattr(ai_settings.socket,'getaddrinfo',lambda host,port,**kw:[(2,1,6,'',(host,port))] if host in ('192.168.1.20','100.90.1.2') else real_dns(host,port,**kw));real=httpx.Client
+    def handler(req):
+        assert req.url.path=='/v1/chat/completions'
+        return httpx.Response(200,json={'choices':[{'message':{'content':None,'tool_calls':[{'type':'function','function':{'name':'prepare_transaction','arguments':'{"intent":"create"}'}}]}}]})
+    monkeypatch.setattr(ai.httpx,'Client',lambda **kw:real(transport=httpx.MockTransport(handler),**kw))
+    assert c.post(b+'/providers/'+row['id']+'/test',json={}).status_code==200
+    assert c.get(b+'/transactions').json()==[]

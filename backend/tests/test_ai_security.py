@@ -10,6 +10,7 @@ from fastapi import HTTPException
 import pytest
 
 class FakeResponse:
+    status_code=200
     def __init__(self,content):
         self.content=b'{}';self.value=content
     def raise_for_status(self): pass

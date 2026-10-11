@@ -5,6 +5,7 @@ from .db import SessionLocal
 from .models import Job,Workspace
 from .security import redis
 from .ai import process_job
+from .chat_stop import Stopped,check,stopped_message
 
 logging.getLogger('httpx').setLevel(logging.WARNING)
 logging.getLogger('httpcore').setLevel(logging.WARNING)
@@ -21,23 +22,31 @@ def run_once():
             if cid:live=(job.workspace_id,cid,job.id)
             try:
                 with db.begin_nested(): process_job(db,job)
+            except Stopped:
+                if cid:stopped_message(db,job.workspace_id,cid)
+                job.status='cancelled';job.error=None;job.payload={}
             except Exception:
-                job.status='failed';job.error='processing_failed';job.payload={}
+                try:check(job,True)
+                except Stopped:
+                    if cid:stopped_message(db,job.workspace_id,cid)
+                    job.status='cancelled';job.error=None;job.payload={}
+                else:job.status='failed';job.error=getattr(job,'_last_ai_error','processing_failed');job.payload={}
             from .ai_usage import recover
             recover(db,job)
             status=job.status
         # Never announce completion before the transaction has actually committed.
-        if live:notify(live,'done' if status=='done' else 'failed')
+        if live:notify(live,'done' if status=='done' else 'cancelled' if status=='cancelled' else 'failed',job.error)
         return True
     except Exception:
         if live:notify(live,'failed')
         raise
 
-def notify(live,kind):
+def notify(live,kind,error=None):
     import json
     from .chat_stream import channel
     wid,cid,jid=live
-    try:redis.publish(channel(wid,cid),json.dumps({'kind':kind,'job_id':jid}))
+    from .ai_errors import message
+    try:redis.publish(channel(wid,cid),json.dumps({'kind':kind,'job_id':jid,**({'message':message(error)} if kind=='failed' else {})},ensure_ascii=False))
     except Exception:pass
 
 def schedule_once(wid=None):

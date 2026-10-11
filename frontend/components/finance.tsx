@@ -33,6 +33,7 @@ import {
   ArrowDownRight,
   X,
   Send,
+  Square,
   Paperclip,
   ChevronRight,
   ChartNoAxesCombined,
@@ -80,7 +81,7 @@ type Proposal = {
 };
 type Conversation = { id: string; title: string; privacy: string; temporary?:boolean };
 type Message = { references?:Evidence[]|null; id: string; role: string; content: string; attachment_id?: string | null };
-type Job = { id: string; status: string; error: string | null };
+type Job = { id: string; status: string; error: string | null; conversation_id?:string|null; stopping?:boolean; message?:string|null };
 function isReviewCommand(text:string) {
   return /^(?:(?:ยืนยัน|ยกเลิก)(?:\s+[a-fA-F0-9]{8})?|ทวนอีกที|ทวนหน่อย|ทวนรายการ|สรุปที่จะบันทึก|ยกเลิกการกรอก|เริ่มใหม่)$/.test(text.trim());
 }
@@ -351,8 +352,22 @@ export default function Finance() {
     if(wid&&cid)loadChat(cid,true).catch(e=>{if(selectedCid.current===cid)setError(e.message);});
   },[wid,cid,focusMessage]);
   const liveContext=useRef('');liveContext.current=wid+cid+focusMessage;
-  const {draft:liveDraft,streamNotice}=useChatStream(wid,cid,isChat&&!focusMessage,messages.filter(m=>m.role==='assistant').at(-1)?.id||'',async()=>{await loadChat(cid);});
+  const {draft:liveDraft,streamNotice,stopPreview}=useChatStream(wid,cid,isChat&&!focusMessage,messages.filter(m=>m.role==='assistant').at(-1)?.id||'',async()=>{await loadChat(cid);});
   useLayoutEffect(()=>{const el=chatScroll.current;if(el&&liveDraft&&followBottom.current&&!focusMessage)el.scrollTop=el.scrollHeight;},[liveDraft?.text,focusMessage]);
+  const [stoppingJob,setStoppingJob]=useState('');
+  const chatJob=jobs.find(j=>j.conversation_id===cid);
+  const activeJob=chatJob?.status==='pending'?chatJob.id:liveDraft?.job;
+  const chatPending=Boolean(activeJob);
+  const stopping=Boolean(activeJob&&(chatJob?.stopping||stoppingJob===wid+':'+cid+':'+activeJob));
+  async function stopAI(){
+    const job=activeJob,context=wid+':'+cid;if(!job||stopping)return;
+    setStoppingJob(context+':'+job);setError('');
+    try{const result=await api<{status:string}>(base+'/conversations/'+cid+'/jobs/'+job+'/stop',{});if(activeWid.current+':'+selectedCid.current!==context)return;
+      if(result.status==='stopping'||result.status==='cancelled'){stopPreview(job);setJobs(old=>old.map(j=>j.id===job?{...j,stopping:result.status==='stopping',status:result.status==='cancelled'?'cancelled':j.status}:j));}
+      if(result.status!=='stopping'){await loadChat(cid);await refresh();}
+    }catch(e){if(activeWid.current+':'+selectedCid.current===context)setError((e as Error).message);}
+    finally{setStoppingJob(old=>old===context+':'+job?'':old);}
+  }
   const hasPendingJobs = jobs.some((j) => j.status === "pending");
   useEffect(() => {
     // A fast worker can finish between the first history fetch and job refresh.
@@ -418,7 +433,7 @@ export default function Finance() {
     // These commands are handled synchronously by the backend, never by a model.
     // A receipt/chat job elsewhere in the workspace must not lock confirmation.
     const reviewControl = !chatFile && isReviewCommand(text);
-    if (hasPendingJobs && !reviewControl) {
+    if (chatPending && !reviewControl) {
       setNotice("กำลังเตรียมคำตอบอยู่ แต่ยังพิมพ์ ยืนยัน ยกเลิก หรือ ทวนอีกที ได้ค่ะ");
       return;
     }
@@ -438,11 +453,13 @@ export default function Finance() {
         const upload = new FormData();
         upload.append("file", chatFile);
         upload.append("text", text);
-        await api(base + "/conversations/" + room + "/images", upload);
+        const queued=await api<{job_id:string|null}>(base + "/conversations/" + room + "/images", upload);
+        if(queued.job_id)setJobs(old=>[{id:queued.job_id!,status:"pending",error:null,conversation_id:room},...old.filter(j=>j.id!==queued.job_id)]);
         setChatFile(null);
         setNotice("ส่งรูปแล้ว ผู้ช่วยจะอ่านพร้อมข้อความของคุณ แล้วทวนให้ยืนยันในแชท");
       } else {
-        await api(base + "/conversations/" + room + "/messages", { text, review_message_id: messages.filter(m=>m.role==='assistant').at(-1)?.id });
+        const queued=await api<{job_id:string|null}>(base + "/conversations/" + room + "/messages", { text, review_message_id: messages.filter(m=>m.role==='assistant').at(-1)?.id });
+        if(queued.job_id)setJobs(old=>[{id:queued.job_id!,status:"pending",error:null,conversation_id:room},...old.filter(j=>j.id!==queued.job_id)]);
       }
       setCid(room);
       form.reset();setChatText("");
@@ -879,7 +896,7 @@ export default function Finance() {
                     </div>}
                     {liveDraft?.text&&<div className="message assistant live-answer" aria-label="คำตอบที่กำลังทยอยแสดง"><span className="message-author"><Sparkles size={17}/> Finance AI <small>กำลังตอบ · ยังไม่สมบูรณ์</small></span><ChatMarkdown text={liveDraft.text}/></div>}
                     {streamNotice&&<p className="stream-notice" role="status">{streamNotice}</p>}
-                    {(busy || hasPendingJobs || liveDraft) && !liveDraft?.text && messages.length > 0 && <div className="thinking" role="status"><span /><span /><span /> กำลังเตรียมคำตอบ</div>}
+                    {(busy || chatPending || liveDraft) && !liveDraft?.text && messages.length > 0 && <div className="thinking" role="status"><span /><span /><span /> กำลังเตรียมคำตอบ</div>}
                   </div>
                 </div>
                 <div className="chat-composer-dock">
@@ -889,6 +906,7 @@ export default function Finance() {
                   <div><strong>{chatFile?.name}</strong><p className="small muted">พร้อมอ่านสลิป · ยังไม่ส่งจนกว่าจะกดส่งข้อความ</p></div>
                   <Button variant="ghost" type="button" aria-label="นำรูปออก" onClick={() => setChatFile(null)}><X size={20} /></Button>
                 </div>}
+                {chatJob?.status==='failed'&&chatJob.message&&<p role="alert" className="error">{chatJob.message}</p>}
                 <form onSubmit={send} className="composer">
                   <label className="chat-attach-button" title="แนบรูปสลิป">
                     <Paperclip size={22} />
@@ -919,8 +937,9 @@ export default function Finance() {
                     required={!chatFile}
                     maxLength={4000}
                   />
+                  {activeJob&&<Button type="button" className="chat-stop" variant="outline" aria-label="หยุด AI" disabled={stopping} onClick={()=>void stopAI()}><Square size={17}/><span>{stopping?"กำลังหยุด…":"หยุด"}</span></Button>}
                   <Button
-                    disabled={busy || (hasPendingJobs && (!!chatFile || !isReviewCommand(chatText)))}
+                    disabled={busy || (chatPending && (!!chatFile || !isReviewCommand(chatText)))}
                     aria-label="ส่งข้อความ"
                   >
                     <Send size={18} />

@@ -39,6 +39,8 @@ def read_stream(response,job):
     text='';name='';arguments='';identifier='';tool_seen=False;finished=False;fields=[];size=0
     deadline=time.monotonic()+75
     for line in response.iter_lines():
+        from .chat_stop import check
+        check(job)
         size+=len(line.encode())+1
         if size>256000 or time.monotonic()>deadline:raise ValueError('Stream limit')
         if line.startswith('data:'):fields.append(line[5:].lstrip())

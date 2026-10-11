@@ -476,3 +476,11 @@ Browser เพิ่มทดสอบค้นหาบริการ/empty/re
 - Final synthesis ไม่ดำเนินการ tools แม้โมเดลส่ง prepare_transaction ที่มีข้อมูลครบกลับมา ไม่มี ChatAction หรือ ledger entry ใหม่ Regression confirmation/tenant isolation/stop/read responsiveness ผ่านทั้งชุด ไม่เพิ่ม migration
 - Tests ไม่ได้เรียก Gemma/Ollama บนเครื่องผู้ใช้ จึงยังต้องลองคุณภาพการเลือก tools ของโมเดลจริง ไม่รับประกันความถูกต้องของข้อความธรรมชาติที่โมเดลสร้างทุกประโยค
 - Backend Docker build/Compose health ผ่าน, root HTTP 200; browser chat-stream/chat-stop **4 tests passed** ทั้ง desktop/mobile ไม่มีการ deploy เครื่องผู้ใช้ Source archive รวมไฟล์ใหม่และตรวจ integrity/runtime secrets
+
+## AI lab และ metadata diagnostics (11 ตุลาคม 2026)
+
+- PostgreSQL disposable database: **409 passed** ทั้ง backend (เพิ่ม 16 เคสจาก 393; Starlette/httpx deprecation warning เดิมหนึ่งรายการ) ตรวจ 5 โจทย์สังเคราะห์ผ่าน HTTP MockTransport, tool arguments/ยอดผิด/บัญชีอื่น/management tool ถูกปฏิเสธโดยไม่สร้าง Entry, ChatAction, Proposal, Conversation หรือ Message จริง; selected/fallback provider, Cloud-off, owner/tenant isolation, pending guard, budget ก่อน network, token accounting, metadata redaction, retention และ clear ผ่าน
+- Chrome Playwright **8 passed** (desktop 4/mobile 4): AI lab, AI settings, Stop และ streaming; lab เรียกเริ่มเฉพาะกดปุ่ม มีโจทย์ 5 แบบ สถานะรอ/ผ่าน ขั้นตอน/tokens และล้างประวัติ ไม่มี horizontal overflow หน้า lab ใช้ API response mock เพื่อไม่เรียก provider จริง ชุด backend ตรวจ network pipeline ผ่าน MockTransport แยกต่างหาก
+- TypeScript typecheck และ Docker build backend/worker/migrate/web ผ่าน backend `e5571883a6fb`, web `e0e65ea5e10b`; local Compose healthy, migration `ai_diagnostics`, หน้าแรก HTTP 200
+- สำรอง `finance-20261011T153150Z.dump` และกู้คืนใน disposable database ผ่าน ตรวจจำนวนแถว snapshots รวม `jobs.diagnostics`/expiry และ journals สมดุล
+- ไม่ได้ทดสอบ Ollama/Gemma หรือ Cloud provider ของผู้ใช้จริง ไม่ deploy Ubuntu server ผล lab เป็นการตรวจโจทย์ตัวอย่าง ไม่ใช่การรับรองคุณภาพทั่วไป งาน AI ยังใช้ workspace write lock เดิม และผล diagnostics ปรากฏหลัง job commit

@@ -703,3 +703,6 @@ def assistant_changes(wid: str, page: int = Query(1,ge=1,le=10000), db: DBSessio
     from .models import AssistantChange
     rows=db.execute(select(AssistantChange,User.name).join(User,User.id==AssistantChange.user_id).where(AssistantChange.workspace_id==wid).order_by(AssistantChange.created_at.desc(),AssistantChange.id.desc()).offset((page-1)*10).limit(11)).all()
     return {'items':[dict(id=r.id,summary=r.summary,created_at=r.created_at,actor=name or 'สมาชิก') for r,name in rows[:10]],'has_more':len(rows)>10,'page':page}
+
+from .ai_diagnostics import router as diagnostics_router
+app.include_router(diagnostics_router)

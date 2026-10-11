@@ -197,9 +197,12 @@ class Job(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey('users.id'))
     task: Mapped[str] = mapped_column(String(15))
     payload: Mapped[dict] = mapped_column(JSON)
+    diagnostics: Mapped[dict] = mapped_column(JSON,default=dict,server_default='{}')
+    diagnostics_expires: Mapped[int|None] = mapped_column(BigInteger,nullable=True,index=True)
     status: Mapped[str] = mapped_column(String(15), default='pending', index=True)
     error: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[int] = mapped_column(BigInteger, default=lambda: time.time_ns()//1_000_000)
+    __table_args__=(Index('ix_jobs_workspace_created','workspace_id','created_at','id'),)
 
 class ChatGeneration(Base):
     __tablename__='chat_generations'

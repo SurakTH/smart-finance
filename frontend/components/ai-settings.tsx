@@ -1,5 +1,6 @@
 "use client";
 import {useEffect,useState,useRef,type ReactNode} from 'react';
+import {AIDiagnostics} from "./ai-diagnostics";
 import {AIPersonalization} from "./ai-personalization";
 import Link from 'next/link';
 import {Sparkles,ShieldCheck,Plus,ArrowUp,ArrowDown,Pencil,Trash2,FlaskConical,RefreshCw,ArrowLeft,Cloud,Server} from 'lucide-react';
@@ -57,6 +58,7 @@ export function AISettingsPage({wid,owner}:{wid:string;owner:boolean}){
     {tested[p.id]&&<p className="ai-test-result">✓ {tested[p.id]}</p>}{models[p.id]&&<p className="muted small">พบ {models[p.id].length} โมเดล · เปิด “แก้ไข” เพื่อเลือก</p>}
    </article>)}</div>
   </section>})}
+  <AIDiagnostics wid={wid} providers={rows}/>
   <AIPersonalization wid={wid} owner={owner}/>
   <div className="ai-help"><ShieldCheck size={20}/><div><strong>ทดสอบอย่างไร และ AI ทำอะไรได้บ้าง</strong><p>ปุ่มทดสอบส่งข้อความสั้นที่ไม่มีข้อมูลการเงิน อาจมีค่าบริการตามผู้ให้บริการ การอ่านสลิปเตรียมข้อเสนอเท่านั้น ทุกการบันทึกหรือแก้รายการยังต้องทวนและยืนยันโดยคุณ</p><p>Ollama ตั้ง URL แยกแต่ละเครื่องได้ เช่น IP ในบ้านหรือ Tailscale ต้องมี Ollama และดาวน์โหลดโมเดลแล้ว หน้านี้ไม่ติดตั้งโมเดลหรือซอฟต์แวร์ให้</p><p>Custom API รองรับ OpenAI-compatible ผ่าน HTTP/HTTPS รวม IP ในบ้านและ Tailscale ใส่ URL ที่เซิร์ฟเวอร์ Smart Finance เข้าถึงได้ HTTP ไม่เข้ารหัสการส่งข้อมูล</p></div></div>
   {removing&&<AIDialog id="ai-remove-title" onClose={()=>setRemoving(null)}><h2 id="ai-remove-title">ลบโมเดลนี้?</h2><p>{removing.name||removing.model} จะถูกนำออกจากลำดับสำรองและลบคีย์ที่เก็บไว้</p><div className="ai-editor-actions"><Button variant="outline" disabled={busy} onClick={()=>setRemoving(null)}>ยกเลิก</Button><Button disabled={busy} onClick={()=>run(async()=>{await request(base+'/providers/'+removing.id,'DELETE');await load();setRemoving(null);setNotice('ลบโมเดลแล้ว');})}>ยืนยันลบโมเดล</Button></div></AIDialog>}

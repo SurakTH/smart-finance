@@ -20,8 +20,13 @@ def run_once():
             if not job:return False
             cid=job.payload.get('conversation_id')
             if cid:live=(job.workspace_id,cid,job.id)
+            job._diagnostic_started=time.monotonic()
             try:
-                with db.begin_nested(): process_job(db,job)
+                with db.begin_nested():
+                    if job.task=='ai_test':
+                        from .ai_sandbox import run
+                        run(db,job)
+                    else:process_job(db,job)
             except Stopped:
                 if cid:stopped_message(db,job.workspace_id,cid)
                 job.status='cancelled';job.error=None;job.payload={}
@@ -33,6 +38,8 @@ def run_once():
                 else:job.status='failed';job.error=getattr(job,'_last_ai_error','processing_failed');job.payload={}
             from .ai_usage import recover
             recover(db,job)
+            from .ai_diagnostics import finish
+            finish(db,job)
             status=job.status
         # Never announce completion before the transaction has actually committed.
         if live:notify(live,'done' if status=='done' else 'cancelled' if status=='cancelled' else 'failed',job.error)
@@ -58,6 +65,8 @@ def cleanup_once():
     from .email_recovery import cleanup as cleanup_mail
     with SessionLocal.begin() as db:
         cleanup_mail(db)
+        from .ai_diagnostics import cleanup as cleanup_diagnostics
+        cleanup_diagnostics(db)
         return cleanup(db)
 
 if __name__=='__main__':

@@ -98,7 +98,9 @@ class Meter:
 
 @contextmanager
 def tracked_stream(db,job,p,client,*args,**kwargs):
-    row,price=reserve(db,job,p,kwargs.get('json',{}));meter=None;ok=False
+    import time
+    started=time.monotonic()
+    row,price=reserve(db,job,p,kwargs.get('json',{}));meter=None;ok=False;failure=None
     try:
         with client.stream(*args,**kwargs) as response:
             from .chat_stop import watch
@@ -106,6 +108,10 @@ def tracked_stream(db,job,p,client,*args,**kwargs):
             try:
                 meter=Meter(response);yield meter;ok=True
             finally:guard.set()
+    except Exception as error:
+        from .ai_errors import diagnose
+        failure=diagnose(error)
+        raise
     finally:
         row.status='success' if ok else 'failed'
         if meter and meter.usage:
@@ -114,6 +120,8 @@ def tracked_stream(db,job,p,client,*args,**kwargs):
         # Preserve accounting when worker rolls back invalid model output.
         event={key:getattr(row,key) for key in ('id','workspace_id','provider_id','model','task','month','input_tokens','output_tokens','cost','estimated','status','created_at')}
         job._usage_events=getattr(job,'_usage_events',[])+[event]
+        from .ai_diagnostics import record
+        record(job,'request',provider_id=p.id,status='ok' if ok else 'failed',error=failure,duration_ms=int((time.monotonic()-started)*1000),input_tokens=row.input_tokens,output_tokens=row.output_tokens,estimated=row.estimated)
         db.flush()
 
 def recover(db,job):

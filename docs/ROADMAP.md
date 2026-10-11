@@ -33,3 +33,5 @@
 อัปเดต responsiveness ระหว่าง AI ช้า: อ่าน dashboard/บัญชี/รายการ/แชท/settings จาก committed state ได้โดยไม่รอ workspace write lock; mutation authorization และ ledger guards เดิมคงอยู่ งานเขียนใน workspace เดียวกันยังอาจรอ inference การย้าย inference ออกนอก transaction พร้อม budget reservation/evidence revalidation เป็นงานต่อไป ไม่ได้ทำในแพตช์นี้
 
 แก้ยอดเงินปัจจุบัน/ค้นวน: balances มี SQL summary ครบทุกบัญชีตามตัวกรองโดยไม่ขึ้นกับหน้า แยกสินทรัพย์/หนี้/สุทธิ ค้นชุดเดิมซ้ำหยุดและตอบยอดจริงจาก backend ได้ หากไม่มี summary ให้โมเดลสรุปผลเดิมหนึ่งครั้งโดยไม่มี tools ยังต้องตรวจคุณภาพการเลือก tool กับ Ollama/Gemma ที่ผู้ใช้ตั้งไว้จริง
+
+เพิ่ม AI lab ในศูนย์ตั้งค่า AI แล้ว: 5 โจทย์สังเคราะห์ ใช้ provider จริงตามลำดับหรือเลือกเฉพาะตัว ตรวจ tools/ยอด/ร่างโดยไม่เขียนข้อมูลเงินจริง; owner ดู metadata แชท/ทดสอบ (เวลา tool tokens fallback รหัสปัญหา) ย้อนหลัง 30 วันและล้างได้ ยังอยู่ขั้น 3 จาก 4 การทดสอบนี้ไม่ทดแทนการตรวจ Ollama/Gemma ภาพจริง เครือข่ายและโหลดบน Ubuntu ของผู้ใช้ในขั้น 4

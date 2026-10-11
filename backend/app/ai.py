@@ -17,6 +17,7 @@ from .assistant_response import AssistantReply,completion,read_stream
 from .ai_usage import tracked_stream
 from .chat_stop import check as check_stop, fence as stop_fence
 from .ai_errors import ensure_response,diagnose,message as error_message
+from .ai_diagnostics import record
 
 def mock_proposals(text):
     # Deliberately limited demo parser. Unknown receipt amounts remain unset.
@@ -54,6 +55,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         return answer
     def finish():
         from .assistant_balance_reply import fallback,LIMIT_MESSAGE
+        record(job,'synthesis',status='ok')
         grounded=fallback(getattr(job,'_read_cache',{}))
         if grounded:return AssistantReply(grounded)
         turns.append({'role':'system','content':'หยุดค้นเพิ่มและสรุปจากผลเครื่องมือที่ได้รับแล้ว ตอบคำถามเดิมเป็นภาษาไทย อย่าอ้างว่าดึงข้อมูลไม่ได้ถ้ามีผลสำเร็จ ยอดรวม balances.summary ครบทุกบัญชีตามตัวกรอง ไม่ใช่เฉพาะหน้าที่แสดง ห้ามแต่งตัวเลขหรือเตรียมคำสั่งเปลี่ยนข้อมูล หากข้อมูลไม่พอจริงให้บอกส่วนที่รู้และส่วนที่ขาด'})
@@ -62,12 +64,16 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         return answer
     for _ in range(4):
         answer=request()
-        if answer.tool_name not in ('query_finance','lookup_workspace'):return answer
+        if answer.tool_name not in ('query_finance','lookup_workspace'):
+            if answer.tool_name:record(job,'tool',tool=answer.tool_name,status='ok')
+            return answer
         if read_budget[0]>=3:return finish()
         cache=getattr(job,'_read_cache',None)
         if cache is None:cache={};job._read_cache=cache
         key=(answer.tool_name,json.dumps(json.loads(answer.draft),sort_keys=True))
-        if key in cache:return finish()
+        if key in cache:
+            record(job,'tool',tool=answer.tool_name,status='cached')
+            return finish()
         read_budget[0]+=1
         if key not in cache:
             # Finance searches update correction evidence. Invalidate earlier
@@ -80,6 +86,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
                 cache[key]=lookup(db,room,answer.draft)
             else:cache[key]=read(db,room,answer.draft,job.payload.get('user_message_id'))
         result=cache[key]
+        record(job,'tool',tool=answer.tool_name,status='invalid' if result.get('error') else 'ok',resources=[r.get('resource') for r in result.get('results',[])]+([result.get('operation')] if result.get('operation') else []))
         if answer.tool_name=='lookup_workspace':
             from .assistant_lookup import remember_pages
             remember_pages(room,answer.draft,result)
@@ -156,7 +163,8 @@ def call_model(db, job):
         else:messages.append({'role':'user','content':job.payload.get('text','')[:4000]})
     providers=providers[:options['max_attempted_providers']]
     deadline=time.monotonic()+90;read_budget=[0]
-    for p in providers:
+    for provider_index,p in enumerate(providers):
+        if provider_index:record(job,'fallback',provider_id=p.id,status='ok')
         check_stop(job,True)
         target_stage='dns'
         try:
@@ -166,6 +174,7 @@ def call_model(db, job):
             if key:headers['Authorization']='Bearer '+key
         except Exception:
             job._last_ai_error=target_stage
+            record(job,'provider_error',provider_id=p.id,error=target_stage,status='failed')
             continue
         for attempt in range(p.retries+1):
             check_stop(job,True)
@@ -207,6 +216,7 @@ def call_model(db, job):
             except (httpx.HTTPError,ValueError,KeyError,TypeError) as error:
                 check_stop(job,True)
                 job._last_ai_error=diagnose(error)
+                record(job,'provider_error',provider_id=p.id,error=job._last_ai_error,status='failed',attempt=attempt+1)
                 # Never log request, provider response, URL credentials or keys.
                 if attempt<p.retries: time.sleep(0.3)
     if getattr(job,'_budget_blocked',False) and job.task=='chat':return 'ยังเรียก Cloud AI ไม่ได้ค่ะ วงเงิน AI เดือนนี้ไม่พอ หรือยังไม่ได้ตั้งราคาครบ ตรวจได้ที่ตั้งค่า AI → การใช้งานและงบ ยังไม่ได้เปลี่ยนข้อมูลการเงิน',False

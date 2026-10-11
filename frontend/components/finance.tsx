@@ -79,6 +79,9 @@ type Proposal = {
 type Conversation = { id: string; title: string; privacy: string; temporary?:boolean };
 type Message = { id: string; role: string; content: string; attachment_id?: string | null };
 type Job = { id: string; status: string; error: string | null };
+function isReviewCommand(text:string) {
+  return /^(?:(?:ยืนยัน|ยกเลิก)(?:\s+[a-fA-F0-9]{8})?|ทวนอีกที|ทวนหน่อย|ทวนรายการ|สรุปที่จะบันทึก|ยกเลิกการกรอก|เริ่มใหม่)$/.test(text.trim());
+}
 type Summary = DashboardSummary;
 type Workspace = { id: string; name: string; role: string };
 const money = (n: number) =>
@@ -162,6 +165,7 @@ export default function Finance() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [compact, setCompact] = useState(true);
   const chatInput = useRef<HTMLTextAreaElement>(null);
+  const [chatText,setChatText] = useState("");
   const chatScroll = useRef<HTMLDivElement>(null);
   const selectedCid=useRef('');
   const messageRows=useRef<Message[]>([]);
@@ -400,11 +404,18 @@ export default function Finance() {
   }
   async function send(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (busy || hasPendingJobs) return;
+    if (busy) return;
     setFocusMessage("");setRenaming(false);
     const form = e.currentTarget;
     const text = String(new FormData(form).get("text")).trim();
     if (!text && !chatFile) return;
+    // These commands are handled synchronously by the backend, never by a model.
+    // A receipt/chat job elsewhere in the workspace must not lock confirmation.
+    const reviewControl = !chatFile && isReviewCommand(text);
+    if (hasPendingJobs && !reviewControl) {
+      setNotice("กำลังเตรียมคำตอบอยู่ แต่ยังพิมพ์ ยืนยัน ยกเลิก หรือ ทวนอีกที ได้ค่ะ");
+      return;
+    }
     await run(async () => {
       let room = cid||selectedCid.current;
       const requested=new URLSearchParams(window.location.search).get('conversation');
@@ -425,10 +436,10 @@ export default function Finance() {
         setChatFile(null);
         setNotice("ส่งรูปแล้ว ผู้ช่วยจะอ่านพร้อมข้อความของคุณ แล้วทวนให้ยืนยันในแชท");
       } else {
-        await api(base + "/conversations/" + room + "/messages", { text, review_message_id: messages.at(-1)?.id });
+        await api(base + "/conversations/" + room + "/messages", { text, review_message_id: messages.filter(m=>m.role==='assistant').at(-1)?.id });
       }
       setCid(room);
-      form.reset();
+      form.reset();setChatText("");
       if (chatInput.current) chatInput.current.style.height = "";
       followBottom.current=true;selectedCid.current=room;
       liveContext.current=wid+room;
@@ -858,7 +869,7 @@ export default function Finance() {
                       {m.role === "assistant" && m.content.includes("AI Inbox") && <Link className="inbox-result" href="/inbox">เปิด AI Inbox เพื่อตรวจสอบ <ArrowUpRight size={16} /></Link>}
                     </div>) : liveDraft ? null : <div className="chat-welcome">
                       <div className="ai-orb"><Sparkles size={32} /></div><p className="eyebrow">YOUR PERSONAL FINANCE COMPANION</p><h1>วันนี้ อยากคุย<br className="mobile-break" />เรื่องอะไร?</h1><p className="muted">มองภาพรวมเงินของคุณ หรือส่งสลิป<br />ให้ช่วยเตรียมรายการและยืนยันที่นี่</p>
-                      <div className="chat-suggestions">{[{icon: Wallet, text: "ตอนนี้ฉันมีเงินเท่าไร?", detail: "ดูยอดสะสมจากบัญชีของคุณ"}, {icon: Paperclip, text: "อยากบันทึกจากสลิป", detail: "แนบรูป บอกนิดหน่อย แล้วทวนในแชท"}].map((prompt) => <button key={prompt.text} onClick={() => { if (chatInput.current) { chatInput.current.value = prompt.text; chatInput.current.focus(); } }}><prompt.icon size={22} /><strong>{prompt.text}</strong><span>{prompt.detail}</span><ArrowUpRight size={16} /></button>)}</div>
+                      <div className="chat-suggestions">{[{icon: Wallet, text: "ตอนนี้ฉันมีเงินเท่าไร?", detail: "ดูยอดสะสมจากบัญชีของคุณ"}, {icon: Paperclip, text: "อยากบันทึกจากสลิป", detail: "แนบรูป บอกนิดหน่อย แล้วทวนในแชท"}].map((prompt) => <button key={prompt.text} onClick={() => { if (chatInput.current) { chatInput.current.value = prompt.text; setChatText(prompt.text); chatInput.current.focus(); } }}><prompt.icon size={22} /><strong>{prompt.text}</strong><span>{prompt.detail}</span><ArrowUpRight size={16} /></button>)}</div>
                     </div>}
                     {liveDraft?.text&&<div className="message assistant live-answer" aria-label="คำตอบที่กำลังทยอยแสดง"><span className="message-author"><Sparkles size={17}/> Finance AI <small>กำลังตอบ · ยังไม่สมบูรณ์</small></span><p>{liveDraft.text}</p></div>}
                     {streamNotice&&<p className="stream-notice" role="status">{streamNotice}</p>}
@@ -866,7 +877,7 @@ export default function Finance() {
                   </div>
                 </div>
                 <div className="chat-composer-dock">
-                <details className="chat-action-help"><summary>ให้ผู้ช่วยจัดการอะไรได้บ้าง?</summary><p>คุยทั่วไป จดจากข้อความหรือรูป ค้นหาแล้วแก้รายการ วิเคราะห์รายเดือนและเสนอปรับงบ สร้าง/เปลี่ยนชื่อบัญชีและหมวด ตั้งงบ สร้างเป้าออม หรือตั้งรายการประจำ สั่งเป็นชุดได้ ฉันจะทวนทั้งชุดก่อนให้พิมพ์ “ยืนยัน” ดูงานที่ทำแล้วได้ในเมนูแชท → ประวัติงานผู้ช่วย</p><p>เช่น “กาแฟ 75 จากเงินสด” หรือ “รับเงินเดือน 30,000” ถ้าขาดอะไร ฉันจะถามเพิ่ม แล้วทวนให้ตรวจ พิมพ์แค่ “ยืนยัน” เพื่อบันทึก หรือ “ยกเลิก” ถ้าไม่เอาค่ะ</p><button type="button" onClick={()=>{if(chatInput.current){chatInput.current.value="กาแฟ 75 จากเงินสด";chatInput.current.style.height="auto";chatInput.current.focus();}}}>ใส่ตัวอย่างคำขอบันทึก</button><p>ยังไม่ยืนยันก็แก้ยอดได้ เช่น “จริง ๆ 90 บาท” ถ้าบันทึกไปแล้ว บอก “ค่ากาแฟเมื่อวานที่ลง 90 จริง ๆ 75” ได้เมื่อเชื่อมโมเดล ถ้าเจอหลายรายการฉันจะถามให้เลือกก่อน หรือใช้ “แก้รายการล่าสุดเป็น 90 บาท” / คำขอแก้จากหน้ารายการ</p><small>ข้อเสนอรอยืนยันได้ 15 นาทีในห้องนี้ ถ้าหาข้อความทวนไม่เจอ พิมพ์ “ทวนอีกที” แนบรูปพร้อมคำอธิบายได้ เมื่อโมเดลแชทรองรับภาพ ฉันจะทวนให้ยืนยันในห้องนี้</small></details>
+                <details className="chat-action-help"><summary>ให้ผู้ช่วยจัดการอะไรได้บ้าง?</summary><p>คุยทั่วไป จดจากข้อความหรือรูป ค้นหาแล้วแก้รายการ วิเคราะห์รายเดือนและเสนอปรับงบ สร้าง/เปลี่ยนชื่อบัญชีและหมวด ตั้งงบ สร้างเป้าออม หรือตั้งรายการประจำ สั่งเป็นชุดได้ ฉันจะทวนทั้งชุดก่อนให้พิมพ์ ยืนยัน ดูงานที่ทำแล้วได้ในเมนูแชท → ประวัติงานผู้ช่วย</p><p>เช่น “กาแฟ 75 จากเงินสด” หรือ “รับเงินเดือน 30,000” ถ้าขาดอะไร ฉันจะถามเพิ่ม แล้วทวนให้ตรวจ พิมพ์แค่ ยืนยัน เพื่อบันทึก หรือ ยกเลิก ถ้าไม่เอาค่ะ</p><button type="button" onClick={()=>{if(chatInput.current){chatInput.current.value="กาแฟ 75 จากเงินสด";setChatText("กาแฟ 75 จากเงินสด");chatInput.current.style.height="auto";chatInput.current.focus();}}}>ใส่ตัวอย่างคำขอบันทึก</button><p>ยังไม่ยืนยันก็แก้ยอดได้ เช่น “จริง ๆ 90 บาท” ถ้าบันทึกไปแล้ว บอก “ค่ากาแฟเมื่อวานที่ลง 90 จริง ๆ 75” ได้เมื่อเชื่อมโมเดล ถ้าเจอหลายรายการฉันจะถามให้เลือกก่อน หรือใช้ “แก้รายการล่าสุดเป็น 90 บาท” / คำขอแก้จากหน้ารายการ</p><small>ข้อเสนอรอยืนยันได้ 15 นาทีในห้องนี้ ถ้าหาข้อความทวนไม่เจอ พิมพ์ ทวนอีกที แนบรูปพร้อมคำอธิบายได้ เมื่อโมเดลแชทรองรับภาพ ฉันจะทวนให้ยืนยันในห้องนี้</small></details>
                 {chatPreview && <div className="chat-attachment-preview">
                   <img src={chatPreview} alt="ตัวอย่างรูปก่อนส่ง" />
                   <div><strong>{chatFile?.name}</strong><p className="small muted">พร้อมอ่านสลิป · ยังไม่ส่งจนกว่าจะกดส่งข้อความ</p></div>
@@ -892,7 +903,7 @@ export default function Finance() {
                   <textarea
                     ref={chatInput}
                     rows={1}
-                    onInput={(e) => { e.currentTarget.style.height = "auto"; e.currentTarget.style.height = Math.min(e.currentTarget.scrollHeight, 144) + "px"; }}
+                    onInput={(e) => { setChatText(e.currentTarget.value); e.currentTarget.style.height = "auto"; e.currentTarget.style.height = Math.min(e.currentTarget.scrollHeight, 144) + "px"; }}
                     onKeyDown={(e) => {
                       if (!compact && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); }
                     }}
@@ -903,7 +914,7 @@ export default function Finance() {
                     maxLength={4000}
                   />
                   <Button
-                    disabled={busy || jobs.some((j) => j.status === "pending")}
+                    disabled={busy || (hasPendingJobs && (!!chatFile || !isReviewCommand(chatText)))}
                     aria-label="ส่งข้อความ"
                   >
                     <Send size={18} />

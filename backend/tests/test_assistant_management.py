@@ -42,7 +42,7 @@ def test_batch_create_category_budget_goal_recurring_only_after_human_confirm(se
     assert 'แผนจัดการ 4 ขั้นตอน' in review['content'] and '฿2,000.00' in review['content'] and 'แต่ละรอบ' in review['content']
     assert not any(a['name']=='สัตว์เลี้ยง' for a in c.get(b+'/accounts').json())
     assert c.get(b+'/assistant-changes').json()['items']==[]
-    assert confirm(review).status_code==200
+    assert c.post(b+f'/conversations/{cid}/messages',json={'text':'ยืนยัน'}).status_code==200
     cat=next(a for a in c.get(b+'/accounts').json() if a['name']=='สัตว์เลี้ยง')
     assert cat['balance']==0
     assert c.get(b+'/budgets',params={'month':month}).json()['items'][0]['amount']==200000

@@ -147,11 +147,11 @@ def test_bare_confirm_binds_visible_review_replay_cancel_and_expiry(actor):
     assert 'ยังไม่มีรายการ' in say(c,b,cid,'ยืนยัน')
     say(c,b,cid,CREATE)
     messages=c.get(b+f'/conversations/{cid}/messages').json();old=messages[-1]['id']
-    # A client without a visible reviewed message must not post.
+    # An authenticated plain-text confirmation needs no hidden browser metadata.
+    assert 'พิมพ์ ยืนยัน' in messages[-1]['content'] and 'พิมพ์ “ยืนยัน”' not in messages[-1]['content']
     assert c.post(b+f'/conversations/{cid}/messages',json={'text':'ยืนยัน'}).status_code==200
-    assert count(w)==0
-    say(c,b,cid,'ทวนอีกที')
-    assert 'บันทึกรายการเรียบร้อย' in say(c,b,cid,'ยืนยัน');assert count(w)==1
+    assert count(w)==1
+    assert 'บันทึกรายการเรียบร้อย' in c.get(b+f'/conversations/{cid}/messages').json()[-1]['content']
     assert 'ไม่มีการบันทึกซ้ำ' in say(c,b,cid,'ยืนยัน');assert count(w)==1
     say(c,b,cid,CREATE)
     stale=c.post(b+f'/conversations/{cid}/messages',json={'text':'ยืนยัน','review_message_id':old})
@@ -182,4 +182,17 @@ def test_concurrent_bare_confirm_only_posts_visible_draft_once(actor,pg_only):
         r=c.post(b+f'/conversations/{cid}/messages',json={'text':'ยืนยัน','review_message_id':visible})
         assert r.status_code==200,r.text
     with ThreadPoolExecutor(max_workers=4) as pool:list(pool.map(confirm,range(4)))
+    assert count(w)==1
+
+
+
+def test_text_only_confirm_still_rejects_untrusted_latest_message(actor,monkeypatch):
+    c,w,u,b,cid=setup(actor);review=say(c,b,cid,CREATE)
+    monkeypatch.setattr(ai,'call_model',lambda db,job:(review,False))
+    say(c,b,cid,'ทักทายหน่อย');assert run_once()
+    assert c.post(b+f'/conversations/{cid}/messages',json={'text':'ยืนยัน'}).status_code==200
+    assert count(w)==0
+    assert 'ทวนอีกที' in c.get(b+f'/conversations/{cid}/messages').json()[-1]['content']
+    say(c,b,cid,'ทวนอีกที')
+    c.post(b+f'/conversations/{cid}/messages',json={'text':'ยืนยัน'})
     assert count(w)==1

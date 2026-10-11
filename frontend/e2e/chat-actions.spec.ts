@@ -13,8 +13,16 @@ test('chat reviews before typed confirmation, prevents replay and preserves corr
  await expect(page.getByLabel('ข้อความถึง AI',{exact:true})).toHaveValue(/กาแฟ 75 จากเงินสด/);
  await page.locator('.chat-action-help summary').click();await page.getByRole('button',{name:'ส่งข้อความ',exact:true}).click();
  const reviews=page.locator('.message.assistant').filter({hasText:'กรุณาตรวจสอบ — ยังไม่บันทึก'});await expect(reviews).toHaveCount(1);expect((await report()).total).toBe(0);
+ await expect(reviews.last()).toContainText('พิมพ์ ยืนยัน');await expect(reviews.last()).not.toContainText('พิมพ์ “ยืนยัน”');
+ // Transport fixture for an unrelated pending workspace job; confirmation still
+ // goes through the real authenticated API and changes the real test ledger.
+ await page.route('**/workspaces/'+ws.id+'/jobs',route=>route.fulfill({json:[{id:'other-pending-job',task:'extract',status:'pending',error:null}]}));
+ await expect(page.getByRole('status').filter({hasText:'กำลังเตรียมคำตอบ'})).toBeVisible();
+
  await send('ยืนยัน');await expect(page.locator('.message.assistant').last()).toContainText('บันทึกรายการเรียบร้อยแล้ว');expect((await report()).expense).toBe(7500);
  await send('ยืนยัน');await expect(page.locator('.message.assistant').last()).toContainText('ไม่มีการบันทึกซ้ำ');expect((await report()).total).toBe(1);
+ await page.unroute('**/workspaces/'+ws.id+'/jobs');
+ await expect(page.getByRole('status').filter({hasText:'กำลังเตรียมคำตอบ'})).not.toBeVisible();
  const id=(await report()).items[0].id;
  await page.context().grantPermissions(['clipboard-read','clipboard-write']);await page.goto('/transactions');await page.getByLabel(mobile?'เลือก workspace บนมือถือ':'เลือก workspace',{exact:true}).selectOption(ws.id);await page.getByRole('button',{name:'รายละเอียด กาแฟ',exact:true}).click();await page.getByRole('button',{name:'คัดลอกคำขอแก้ผ่านแชท',exact:true}).click();await expect(page.locator('dialog[open]')).toHaveCount(0);await expect(page.getByRole('status').filter({hasText:'คัดลอกแล้ว'})).toBeVisible();const copied=await page.evaluate(()=>navigator.clipboard.readText());expect(copied).toContain('แก้รายการ '+id);
  await page.goto('/assistant');await history();await page.getByLabel('เลือก workspace ในแชท',{exact:true}).selectOption(ws.id);await history();await page.locator('.rooms button').filter({hasText:'ทวนก่อนบันทึก'}).click();await send(copied.replace('จำนวน: 75.00','จำนวน: 95.00'));await expect(reviews).toHaveCount(2);await expect(reviews.last()).toContainText('ก่อนแก้ไข:');await expect(reviews.last()).toContainText('฿95.00');expect((await report()).expense).toBe(7500);

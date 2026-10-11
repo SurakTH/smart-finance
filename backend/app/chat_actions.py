@@ -106,7 +106,7 @@ def parse(db,wid,text):
     return dict(transaction=tx,target=target,reason=reason,before=old,after=after,revision_key=str(uuid4()))
 
 
-def handle(db,c,user_id,text,review_message_id=None,require_review_id=False,allow_model_dialogue=False):
+def handle(db,c,user_id,text,review_message_id=None,allow_model_dialogue=False):
     """Return None for ordinary chat, safe reply for intercepted commands.
 
     Called ONLY by authenticated text POST, never workers, OCR or providers.
@@ -128,8 +128,8 @@ def handle(db,c,user_id,text,review_message_id=None,require_review_id=False,allo
         if action.status=='pending':
             latest=db.scalar(select(Message).where(Message.workspace_id==c.workspace_id,Message.conversation_id==c.id,Message.role=='assistant').order_by(Message.created_at.desc(),Message.id.desc()).limit(1))
             expected=context.get('review_message_id')
-            if not latest or latest.id!=expected or (require_review_id and str(review_message_id or '')!=expected):
-                return 'ข้อความทวนเปลี่ยนไปแล้วค่ะ ยังไม่บันทึก พิมพ์ “ทวนอีกที” เพื่อตรวจรายการล่าสุดก่อนนะคะ'
+            if not latest or latest.id!=expected or (review_message_id is not None and str(review_message_id)!=expected):
+                return 'ข้อความทวนเปลี่ยนไปแล้วค่ะ ยังไม่บันทึก พิมพ์ ทวนอีกที เพื่อตรวจรายการล่าสุดก่อนนะคะ'
         command=re.fullmatch(r'(ยืนยัน|ยกเลิก)\s+([0-9a-fA-F]{8})',text+' '+action.code)
     if text in ('ยกเลิกการกรอก','เริ่มใหม่'):
 
@@ -179,7 +179,7 @@ def handle(db,c,user_id,text,review_message_id=None,require_review_id=False,allo
         db.flush()
         return ('แก้ไขและเก็บประวัติเดิมเรียบร้อยแล้ว' if p['target'] else 'บันทึกรายการเรียบร้อยแล้ว')+'\n'+p['after']
     if text.startswith(('ยืนยัน','ยกเลิก')):
-        return 'พิมพ์แค่ “ยืนยัน” หรือ “ยกเลิก” สำหรับรายการที่ฉันเพิ่งทวนได้เลยค่ะ'
+        return 'พิมพ์แค่ ยืนยัน หรือ ยกเลิก สำหรับรายการที่ฉันเพิ่งทวนได้เลยค่ะ'
     # An explicit short correction changes only the pending draft, never the ledger.
     change=re.fullmatch(r'(?:จริง\s*ๆ|แก้ยอด|เปลี่ยนยอด|เอาเป็น|เปลี่ยนเป็น|แก้เป็น|ยอดจริง)(?:\s*(?:เป็น|คือ))?\s*([\d,.]+)\s*(?:บาท)?\s*(?:นะ|ค่ะ|ครับ|จ้า)?',text)
     if change:
@@ -240,7 +240,7 @@ def review_text(action):
         if payload.get('attachment_id'):review+='\nหลักฐาน: รูปที่แนบในข้อความทวนนี้'
         if payload['target']:review+='\nเหตุผล: '+payload['reason']
     # Retain the optional code for older clients and advanced use. Ordinary users only type ยืนยัน.
-    return 'กรุณาตรวจสอบ — ยังไม่บันทึก\n\n'+review+f'\n\nถ้าถูกต้อง พิมพ์ “ยืนยัน” ได้เลยค่ะ หรือ “ยกเลิก” ถ้าไม่เอารายการนี้\nอยากเปลี่ยนอะไรบอกได้เลย ข้อเสนอนี้รอได้ 15 นาที\n\nรหัสทางเลือก:\nยืนยัน {action.code}\n'
+    return 'กรุณาตรวจสอบ — ยังไม่บันทึก\n\n'+review+f'\n\nถ้าถูกต้อง พิมพ์ ยืนยัน ได้เลยค่ะ หรือ ยกเลิก ถ้าไม่เอารายการนี้ (ไม่ต้องใส่เครื่องหมายคำพูดหรือรหัส)\nอยากเปลี่ยนอะไรบอกได้เลย ข้อเสนอนี้รอได้ 15 นาที\n\nรหัสทางเลือก:\nยืนยัน {action.code}\n'
 
 
 def bind_review(db,c,user_id,message):

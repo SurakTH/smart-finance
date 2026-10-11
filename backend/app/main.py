@@ -393,7 +393,7 @@ def send_message(wid: str, cid: str, data: ChatInput, member: Membership = Depen
     user_message=Message(workspace_id=wid,conversation_id=cid,role='user',content=data.text,created_at=message_time(db,wid,cid))
     db.add(user_message);db.flush()
     from .chat_actions import handle
-    reply=handle(db,c,member.user_id,data.text,data.review_message_id,require_review_id=True,allow_model_dialogue=True)
+    reply=handle(db,c,member.user_id,data.text,data.review_message_id,allow_model_dialogue=True)
     if reply is not None:
         message=Message(workspace_id=wid,conversation_id=cid,role='assistant',content=reply,created_at=message_time(db,wid,cid))
         db.add(message);db.flush()

@@ -43,7 +43,8 @@ def test_search_and_correct_from_natural_request_preserves_ledger_until_confirm(
     assert len(state['calls'])==2 and 'ก่อนแก้ไข:' in review['content'] and '฿90.00' in review['content'] and '฿75.00' in review['content']
     assert c.get(b+'/transaction-report').json()['expense']==9000
     assert state['calls'][-1]['messages'][-1]['role']=='tool' and state['calls'][-1]['messages'][-1]['tool_call_id']=='call_finance_123'
-    assert 'เก็บประวัติเดิม' in say(c,b,cid,'ยืนยัน')
+    assert c.post(b+f'/conversations/{cid}/messages',json={'text':'ยืนยัน'}).status_code==200
+    assert 'เก็บประวัติเดิม' in c.get(b+f'/conversations/{cid}/messages').json()[-1]['content']
     assert c.get(b+'/transaction-report').json()['expense']==7500
     assert c.get(b+'/transactions/'+eid).json()['status']=='corrected'
     say(c,b,cid,'ยืนยัน');assert c.get(b+'/transaction-history').json()['total']==1

@@ -1,5 +1,15 @@
 # ผลตรวจสอบ Smart Finance
 
+## แก้การส่ง ยืนยัน แบบไม่มีเครื่องหมายคำพูด (11 ตุลาคม 2026)
+
+- พบ composer ล็อกปุ่มส่งเมื่อมี pending job ใด ๆ ใน workspace จึงส่ง ยืนยัน ไม่ได้แม้งานนั้นเป็นรูปหรือข้อความอื่น แก้ให้ปุ่มส่งใช้ได้เมื่อพิมพ์คำสั่งยืนยัน/ทวน และคำสั่ง ยืนยัน/ยกเลิก/ทวนอีกที ส่งตรงไปยัง backend ได้ ข้อความคุยใหม่หรือรูปยังรอคำตอบก่อน และไม่ล้างร่างที่พิมพ์ไว้
+- API รับข้อความ ยืนยัน โดยไม่บังคับ hidden review_message_id ตรวจ action และข้อความทวนล่าสุดที่สร้างโดยระบบในห้องเจ้าของ หาก client ส่ง ID มาก็ยังตรวจ stale ID เว็บใช้ ID assistant ล่าสุดแทนข้อความ user ที่อาจอยู่ท้ายประวัติ
+- เอาเครื่องหมายคำพูดออกจากคำแนะนำบนหน้าแชทและข้อความทวน พร้อมระบุว่าไม่ต้องพิมพ์รหัส ตรวจ server-side confirmations สำหรับ create/correction/management แบบ text-only, replay/หมดอายุ/ข้อความเลียนแบบ/ต่างห้อง/ข้อมูลเปลี่ยนยังคงถูกป้องกัน
+- PostgreSQL ชุดรวม **293 passed**; TypeScript/Next production build ผ่าน ไม่มี migration ใหม่
+- Chrome รอบสุดท้าย **12 passed** (desktop6/mobile6) รวม fixture pending workspace job แล้วพิมพ์ ยืนยัน ผ่าน API/ledger จริง ตรวจ replay/แก้รายการและส่งรูปต่อด้วย รอบก่อนพบ ordinary send เปิดก่อนงานเสร็จจึงแก้ให้เปิดระหว่างรอเฉพาะคำสั่งที่ backend จัดการตรง อีกครั้งติด login throttle จากการรันทดสอบซ้ำ ล้างเฉพาะ local test email/proxy counters แล้วตรวจครบใหม่ ไม่ลด threshold
+- Source ZIP ตรวจ integrity และ runtime-secret scan ผ่าน อัปเดต local Docker แล้วทุก service healthy ไม่ได้อัปเดต VM ของผู้ใช้
+
+
 ## AI ค้นหา/แก้รายการและวิเคราะห์เพื่อปรับงบ (11 ตุลาคม 2026)
 
 - PostgreSQL ชุดรวมล่าสุด **292 passed**; เพิ่ม 26 เคสจากรอบก่อน รวม native read→tool result→correction/plan, streamed tool ID fragments ไม่เผย arguments/reasoning, ยืนยันซ้ำ และไม่เขียน ledger ก่อนยืนยัน

@@ -12,7 +12,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import select
-from .models import Account, ChatAction, Message, now
+from .models import Account, ChatAction, Message, Proposal, now
 from .schemas import TransactionInput, CorrectionInput
 from .ledger import post, get_scoped
 from .corrections import detail, revise
@@ -148,6 +148,9 @@ def handle(db,c,user_id,text,review_message_id=None,require_review_id=False,allo
         if command[1]=='ยกเลิก':
             action.status='cancelled'; return 'ยกเลิกข้อเสนอแล้ว ยังไม่ได้เปลี่ยนข้อมูลทางการเงิน'
         p=action.payload
+        image_id=p.get('attachment_id')
+        if image_id and db.scalar(select(Proposal.id).where(Proposal.workspace_id==c.workspace_id,Proposal.attachment_id==image_id,Proposal.status=='confirmed').limit(1)):
+            action.status='conflict';return 'รูปนี้มีรายการบันทึกแล้วค่ะ ไม่บันทึกซ้ำ'
         # Validate stale reviews before any writes. Posting must remain in the
         # top-level transaction: PostgreSQL's immutable-ledger xmin guard rejects
         # journals inserted in a savepoint. Any posting failure rolls back the
@@ -166,6 +169,8 @@ def handle(db,c,user_id,text,review_message_id=None,require_review_id=False,allo
             result=revise(db,c.workspace_id,user_id,p['target'],CorrectionInput(reason=p['reason'],idempotency_key=p['revision_key'],transaction=p['transaction']))
             entry_id=result['replacement']['id']
         else: entry_id=post(db,c.workspace_id,user_id,TransactionInput(**p['transaction'])).id
+        if image_id:
+            db.add(Proposal(workspace_id=c.workspace_id,source='ai_chat',description=p['transaction']['description'],amount=p['transaction']['amount'],kind=p['transaction']['kind'],status='confirmed',entry_id=entry_id,attachment_id=image_id))
         action.status='confirmed'; action.entry_id=entry_id
         c.capture_context={**(c.capture_context or {}),'last_entry_id':entry_id}
         db.flush()
@@ -187,16 +192,11 @@ def handle(db,c,user_id,text,review_message_id=None,require_review_id=False,allo
     structured=text.splitlines()[0] in KINDS or ('\n' in text and text.startswith(tuple(KINDS))) or (text.startswith(('บันทึกรายจ่าย','บันทึกรายรับ')) and bool(re.search(r'\sบัญชี\s.+\sหมวด\s',text))) or bool(re.match(r'แก้รายการ\s+[0-9a-fA-F-]{36}',text))
     try:
         if not structured:
+            from .chat_dialogue import available
+            if allow_model_dialogue and available(db,c):return None
             from .natural_capture import normalize,NeedInfo
             try:normalized=normalize(db,c,user_id,text)
             except NeedInfo as exc:
-                # A configured model can understand spelled-out amounts and conversational replies.
-                # Without one, keep the deterministic assistant fully usable.
-                from .models import Provider
-                from .ai_settings import settings
-                cloud=c.privacy=='standard' and settings(db,c.workspace_id)['cloud_enabled']
-                providers=db.scalars(select(Provider).where(Provider.workspace_id==c.workspace_id,Provider.task=='chat',Provider.enabled.is_(True))).all()
-                if allow_model_dialogue and any(p.kind=='ollama' or cloud for p in providers):return None
                 return 'ยังไม่บันทึกค่ะ '+str(exc)
             if normalized is None:return None
             text=normalized
@@ -227,6 +227,7 @@ def prepare_review(db,c,user_id,payload):
 def review_text(action):
     payload=action.payload
     review=('ก่อนแก้ไข:\n'+payload['before']+'\n\nหลังแก้ไข:\n' if payload['target'] else 'จะบันทึกรายการ:\n')+payload['after']
+    if payload.get('attachment_id'):review+='\nหลักฐาน: รูปที่แนบในข้อความทวนนี้'
     if payload['target']:review+='\nเหตุผล: '+payload['reason']
     # Retain the optional code for older clients and advanced use. Ordinary users only type ยืนยัน.
     return 'กรุณาตรวจสอบ — ยังไม่บันทึก\n\n'+review+f'\n\nถ้าถูกต้อง พิมพ์ “ยืนยัน” ได้เลยค่ะ หรือ “ยกเลิก” ถ้าไม่เอารายการนี้\nอยากเปลี่ยนอะไรบอกได้เลย ข้อเสนอนี้รอได้ 15 นาที\n\nรหัสทางเลือก:\nยืนยัน {action.code}\n'
@@ -236,4 +237,5 @@ def bind_review(db,c,user_id,message):
     context=dict(c.capture_context or {})
     action=db.scalar(select(ChatAction).where(ChatAction.id==context.get('review_action_id'),ChatAction.workspace_id==c.workspace_id,ChatAction.conversation_id==c.id,ChatAction.user_id==user_id,ChatAction.status=='pending'))
     if action and message.content==review_text(action):
+        if action.payload.get('attachment_id'):message.attachment_id=action.payload['attachment_id']
         context['review_message_id']=message.id;c.capture_context=context

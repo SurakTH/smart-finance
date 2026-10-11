@@ -28,9 +28,10 @@ def mock_provider(monkeypatch,w,payload,kind='ollama'):
     calls=[];real=httpx.Client
     def handler(request):
         body=json.loads(request.content);calls.append(body)
-        assert not body.get('stream'), 'Draft JSON must not stream into the chat UI'
-        assert 'SATANG' in body['messages'][0]['content']
-        return httpx.Response(200,json={'choices':[{'message':{'content':json.dumps(payload(),ensure_ascii=False)}}]})
+        assert body.get('stream') and body['tools'][0]['function']['name']=='prepare_transaction'
+        value=payload()
+        message={'content':value.get('reply','')} if value.get('intent')=='chat' else {'content':None,'tool_calls':[{'type':'function','function':{'name':'prepare_transaction','arguments':json.dumps(value,ensure_ascii=False)}}]}
+        return httpx.Response(200,json={'choices':[{'message':message}]})
     monkeypatch.setattr(ai.httpx,'Client',lambda **kw:real(transport=httpx.MockTransport(handler),**kw))
     return calls
 

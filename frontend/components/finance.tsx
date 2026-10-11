@@ -422,7 +422,7 @@ export default function Finance() {
         upload.append("text", text);
         await api(base + "/conversations/" + room + "/images", upload);
         setChatFile(null);
-        setNotice("ส่งรูปแล้ว รออ่านและตรวจสอบใน AI Inbox ก่อนยืนยันยอดเงิน");
+        setNotice("ส่งรูปแล้ว ผู้ช่วยจะอ่านพร้อมข้อความของคุณ แล้วทวนให้ยืนยันในแชท");
       } else {
         await api(base + "/conversations/" + room + "/messages", { text, review_message_id: messages.at(-1)?.id });
       }
@@ -856,8 +856,8 @@ export default function Finance() {
                       {m.content && <p>{m.role==='assistant'?m.content.replace(/\n\nรหัสทางเลือก:\nยืนยัน [A-F0-9]{8}\n$/,''):m.content}</p>}
                       {m.role === "assistant" && m.content.includes("AI Inbox") && <Link className="inbox-result" href="/inbox">เปิด AI Inbox เพื่อตรวจสอบ <ArrowUpRight size={16} /></Link>}
                     </div>) : liveDraft ? null : <div className="chat-welcome">
-                      <div className="ai-orb"><Sparkles size={32} /></div><p className="eyebrow">YOUR PERSONAL FINANCE COMPANION</p><h1>วันนี้ อยากคุย<br className="mobile-break" />เรื่องอะไร?</h1><p className="muted">มองภาพรวมเงินของคุณ หรือส่งสลิป<br />ให้ช่วยเตรียมรายการไว้ตรวจสอบ</p>
-                      <div className="chat-suggestions">{[{icon: Wallet, text: "ตอนนี้ฉันมีเงินเท่าไร?", detail: "ดูยอดสะสมจากบัญชีของคุณ"}, {icon: Paperclip, text: "อยากบันทึกจากสลิป", detail: "แนบรูป แล้วตรวจสอบใน Inbox"}].map((prompt) => <button key={prompt.text} onClick={() => { if (chatInput.current) { chatInput.current.value = prompt.text; chatInput.current.focus(); } }}><prompt.icon size={22} /><strong>{prompt.text}</strong><span>{prompt.detail}</span><ArrowUpRight size={16} /></button>)}</div>
+                      <div className="ai-orb"><Sparkles size={32} /></div><p className="eyebrow">YOUR PERSONAL FINANCE COMPANION</p><h1>วันนี้ อยากคุย<br className="mobile-break" />เรื่องอะไร?</h1><p className="muted">มองภาพรวมเงินของคุณ หรือส่งสลิป<br />ให้ช่วยเตรียมรายการและยืนยันที่นี่</p>
+                      <div className="chat-suggestions">{[{icon: Wallet, text: "ตอนนี้ฉันมีเงินเท่าไร?", detail: "ดูยอดสะสมจากบัญชีของคุณ"}, {icon: Paperclip, text: "อยากบันทึกจากสลิป", detail: "แนบรูป บอกนิดหน่อย แล้วทวนในแชท"}].map((prompt) => <button key={prompt.text} onClick={() => { if (chatInput.current) { chatInput.current.value = prompt.text; chatInput.current.focus(); } }}><prompt.icon size={22} /><strong>{prompt.text}</strong><span>{prompt.detail}</span><ArrowUpRight size={16} /></button>)}</div>
                     </div>}
                     {liveDraft?.text&&<div className="message assistant live-answer" aria-label="คำตอบที่กำลังทยอยแสดง"><span className="message-author"><Sparkles size={17}/> Finance AI <small>กำลังตอบ · ยังไม่สมบูรณ์</small></span><p>{liveDraft.text}</p></div>}
                     {streamNotice&&<p className="stream-notice" role="status">{streamNotice}</p>}
@@ -865,7 +865,7 @@ export default function Finance() {
                   </div>
                 </div>
                 <div className="chat-composer-dock">
-                <details className="chat-action-help"><summary>คุยเพื่อจดรายการได้เลย</summary><p>เช่น “กาแฟ 75 จากเงินสด” หรือ “รับเงินเดือน 30,000” ถ้าขาดอะไร ฉันจะถามเพิ่ม แล้วทวนให้ตรวจ พิมพ์แค่ “ยืนยัน” เพื่อบันทึก หรือ “ยกเลิก” ถ้าไม่เอาค่ะ</p><button type="button" onClick={()=>{if(chatInput.current){chatInput.current.value="กาแฟ 75 จากเงินสด";chatInput.current.style.height="auto";chatInput.current.focus();}}}>ใส่ตัวอย่างคำขอบันทึก</button><p>ยังไม่ยืนยันก็แก้ยอดได้ เช่น “จริง ๆ 90 บาท” ถ้าบันทึกไปแล้ว ใช้ “แก้รายการล่าสุดเป็น 90 บาท” หรือเลือกคำขอแก้จากหน้ารายการ</p><small>ข้อเสนอรอยืนยันได้ 15 นาทีในห้องนี้ ถ้าหาข้อความทวนไม่เจอ พิมพ์ “ทวนอีกที” รูปสลิปยังตรวจและยืนยันที่ AI Inbox</small></details>
+                <details className="chat-action-help"><summary>คุยเพื่อจดรายการได้เลย</summary><p>เช่น “กาแฟ 75 จากเงินสด” หรือ “รับเงินเดือน 30,000” ถ้าขาดอะไร ฉันจะถามเพิ่ม แล้วทวนให้ตรวจ พิมพ์แค่ “ยืนยัน” เพื่อบันทึก หรือ “ยกเลิก” ถ้าไม่เอาค่ะ</p><button type="button" onClick={()=>{if(chatInput.current){chatInput.current.value="กาแฟ 75 จากเงินสด";chatInput.current.style.height="auto";chatInput.current.focus();}}}>ใส่ตัวอย่างคำขอบันทึก</button><p>ยังไม่ยืนยันก็แก้ยอดได้ เช่น “จริง ๆ 90 บาท” ถ้าบันทึกไปแล้ว ใช้ “แก้รายการล่าสุดเป็น 90 บาท” หรือเลือกคำขอแก้จากหน้ารายการ</p><small>ข้อเสนอรอยืนยันได้ 15 นาทีในห้องนี้ ถ้าหาข้อความทวนไม่เจอ พิมพ์ “ทวนอีกที” แนบรูปพร้อมคำอธิบายได้ เมื่อโมเดลแชทรองรับภาพ ฉันจะทวนให้ยืนยันในห้องนี้</small></details>
                 {chatPreview && <div className="chat-attachment-preview">
                   <img src={chatPreview} alt="ตัวอย่างรูปก่อนส่ง" />
                   <div><strong>{chatFile?.name}</strong><p className="small muted">พร้อมอ่านสลิป · ยังไม่ส่งจนกว่าจะกดส่งข้อความ</p></div>

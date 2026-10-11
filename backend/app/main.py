@@ -290,6 +290,8 @@ def confirm(wid: str, pid: str, data: TransactionInput, member: Membership = Dep
     proposal = get_scoped(db,Proposal,wid,pid,lock=True)
     if proposal.status=='confirmed': return entry_json(get_scoped(db,Entry,wid,proposal.entry_id))
     if proposal.status!='pending' or data.kind not in ('income','expense'): raise HTTPException(409,'รายการนี้ไม่พร้อมยืนยัน')
+    if proposal.attachment_id and db.scalar(select(Proposal.id).where(Proposal.workspace_id==wid,Proposal.attachment_id==proposal.attachment_id,Proposal.status=='confirmed').limit(1)):
+        raise HTTPException(409,'รูปนี้มีรายการบันทึกแล้ว ไม่บันทึกซ้ำ')
     entry = post(db,wid,member.user_id,data)
     proposal.status='confirmed'; proposal.entry_id=entry.id
     db.commit()
@@ -407,8 +409,9 @@ async def send_chat_image(wid: str, cid: str, file: UploadFile = File(...), text
     image, duplicate = store_image(db,wid,await file.read(8*1024*1024+1))
     from .models import now
     c.updated_at=now()
-    db.add(Message(workspace_id=wid,conversation_id=cid,role='user',content=text.strip(),attachment_id=image.id,created_at=message_time(db,wid,cid)))
-    job = enqueue(db,wid,member.user_id,'extract',{'conversation_id':cid,'attachment_id':image.id,'text':text.strip(),'privacy':c.privacy})
+    message=Message(workspace_id=wid,conversation_id=cid,role='user',content=text.strip(),attachment_id=image.id,created_at=message_time(db,wid,cid))
+    db.add(message);db.flush()
+    job = enqueue(db,wid,member.user_id,'chat',{'conversation_id':cid,'attachment_id':image.id,'text':text.strip(),'privacy':c.privacy,'user_message_id':message.id})
     db.commit()
     return {'job_id':job.id,'attachment_id':image.id,'duplicate':duplicate}
 

@@ -57,6 +57,8 @@ class ProviderInput(BaseModel):
     retries: int = Field(default=1, ge=0, le=2)
     max_tokens: int = Field(default=1200, ge=64, le=8192)
     temperature: int = Field(default=10, ge=0, le=200)
+    reasoning_effort: Literal['default','none','minimal','low','medium','high','xhigh'] = 'default'
+    supports_images: bool = False
 
 class AISettingsInput(BaseModel):
     cloud_enabled: bool = False

@@ -34,17 +34,15 @@ def test_chat_image_history_private_fallback_and_duplicate(actor,monkeypatch):
     assert c.get(root+f'/attachments/{aid}').headers['content-type']=='image/jpeg'
     with SessionLocal() as db:
         job=db.get(Job,r.json()['job_id'])
-        assert job.payload['privacy']=='private' and job.task=='extract'
+        assert job.payload['privacy']=='private' and job.task=='chat'
     while run_once(): pass
-    proposals=c.get(root+'/proposals').json()
-    assert len(proposals)==1 and proposals[0]['amount'] is None
-    assert proposals[0]['status']=='pending'
-    assert 'ยังไม่ได้อ่านยอด' in c.get(root+f'/conversations/{cid}/messages').json()[-1]['content']
+    assert c.get(root+'/proposals').json()==[]
+    assert 'ยังอ่านรูปนี้ไม่ได้' in c.get(root+f'/conversations/{cid}/messages').json()[-1]['content']
     assert c.get(root+'/transactions').json()==[]
     c.post(root+f'/conversations/{cid}/images',files={'file':receipt()})
     while run_once(): pass
-    assert len(c.get(root+'/proposals').json())==1
-    assert 'ไม่สร้างรายการซ้ำ' in c.get(root+f'/conversations/{cid}/messages').json()[-1]['content']
+    assert c.get(root+'/proposals').json()==[]
+    assert c.get(root+'/transactions').json()==[]
 
 
 def test_image_access_requires_owner_until_shared_inbox_and_delete_cancels(actor):
@@ -76,26 +74,36 @@ def test_invalid_chat_image_is_atomic_and_cross_workspace_denied(actor):
     assert c.post(f'/workspaces/{other}/conversations/{cid}/images',files={'file':receipt()}).status_code==404
 
 
-def test_vision_extraction_caption_and_inbox_manual_only(actor,monkeypatch):
-    import json
-    from test_ai_security import FakeResponse, install_model
+def test_vision_caption_reviews_in_chat_and_preserves_confirmed_evidence(actor,monkeypatch):
+    import json,httpx
+    from test_chat_actions import say
+    from test_chat_dialogue import suggestion
     c,w,u=actor;root=f'/workspaces/{w}'
-    install_model(monkeypatch,w)
-    calls=[]
-    class Client:
-        def __init__(self,**kwargs): pass
-        def __enter__(self): return self
-        def __exit__(self,*args): pass
-        def stream(self,method,url,**kwargs):
-            calls.append(kwargs['json']['messages'])
-            return FakeResponse(json.dumps({'proposals':[{'description':'ข้าว','amount':5000,'kind':'expense','auto_post':True}]}))
-    monkeypatch.setattr(ai.httpx,'Client',Client)
+    with SessionLocal.begin() as db:db.add(Provider(workspace_id=w,kind='ollama',model='vision-test',task='chat',supports_images=True,retries=0))
+    calls=[];real=httpx.Client
+    def handler(req):
+        body=json.loads(req.content);calls.append(body)
+        return httpx.Response(200,json={'choices':[{'message':{'content':None,'tool_calls':[{'type':'function','function':{'name':'prepare_transaction','arguments':json.dumps(suggestion(w))}}]}}]})
+    monkeypatch.setattr(ai.httpx,'Client',lambda **kw:real(transport=httpx.MockTransport(handler),**kw))
     cid=c.post(root+'/conversations',json={}).json()['id']
-    c.post(root+f'/conversations/{cid}/images',files={'file':receipt()},data={'text':'มื้อกลางวัน'})
-    while run_once(): pass
-    parts=calls[0][-1]['content']
-    assert 'มื้อกลางวัน' in parts[0]['text']
+    r=c.post(root+f'/conversations/{cid}/images',files={'file':receipt()},data={'text':'มื้อกลางวัน ใช้เงินสด'}).json()
+    while run_once():pass
+    parts=calls[0]['messages'][-1]['content']
+    assert 'มื้อกลางวัน' in parts[0]['text'] and r['attachment_id'] in parts[0]['text']
     assert parts[1]['image_url']['url'].startswith('data:image/jpeg;base64,')
+    review=c.get(root+f'/conversations/{cid}/messages').json()[-1]
+    assert 'กรุณาตรวจสอบ' in review['content'] and review['attachment_id']==r['attachment_id']
+    assert c.get(root+'/transactions').json()==[] and c.get(root+'/proposals').json()==[]
+    assert 'บันทึกรายการเรียบร้อย' in say(c,root,cid,'ยืนยัน')
     proposal=c.get(root+'/proposals').json()[0]
-    assert proposal['amount']==5000 and proposal['status']=='pending'
-    assert c.get(root+'/transactions').json()==[]
+    assert proposal['amount']==20000 and proposal['status']=='confirmed'
+    assert c.delete(root+f'/conversations/{cid}').status_code==200
+    assert c.get(root+'/attachments/'+r['attachment_id']).status_code==200
+    assert len(c.get(root+'/transactions').json())==1
+    # A repeated receipt in another room cannot create another confirmed entry.
+    other=c.post(root+'/conversations',json={}).json()['id']
+    c.post(root+f'/conversations/{other}/images',files={'file':receipt()},data={'text':'จดอีกรอบ'})
+    while run_once():pass
+    assert 'ไม่สร้างรายการซ้ำ' in c.get(root+f'/conversations/{other}/messages').json()[-1]['content']
+    assert 'ยังไม่มีรายการ' in say(c,root,other,'ยืนยัน')
+    assert len(c.get(root+'/transactions').json())==1

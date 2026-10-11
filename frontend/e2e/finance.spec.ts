@@ -77,7 +77,7 @@ test("login, dashboard, manually confirmed inbox, private chat and responsive la
   await input.setInputFiles(receipt);
   await page.getByRole("button", { name: "ส่งข้อความ", exact: true }).click();
   await expect(page.getByAltText("รูปที่แนบในบทสนทนา")).toBeVisible({ timeout: 20000 });
-  await expect(page.locator(".message.assistant").last()).toContainText(/ยังไม่มีการบันทึกยอดเงิน|ไม่ได้บันทึกยอดเงินเพิ่ม/, { timeout: 20000 });
+  await expect(page.locator(".message.assistant").last()).toContainText(/ยังไม่ได้บันทึก|ยังไม่มีการบันทึกยอดเงิน|ไม่ได้บันทึกยอดเงินเพิ่ม/, { timeout: 20000 });
   await expect(page.getByAltText("ตัวอย่างรูปก่อนส่ง")).toHaveCount(0);
   const image = page.getByAltText("รูปที่แนบในบทสนทนา");
   await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth > 0)).toBe(true);

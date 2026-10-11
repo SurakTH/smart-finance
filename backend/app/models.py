@@ -156,6 +156,8 @@ class Provider(Base):
     retries: Mapped[int] = mapped_column(Integer, default=1, server_default='1')
     max_tokens: Mapped[int] = mapped_column(Integer, default=1200, server_default='1200')
     temperature: Mapped[int] = mapped_column(Integer, default=10, server_default='10')
+    reasoning_effort: Mapped[str] = mapped_column(String(12), default='default', server_default='default')
+    supports_images: Mapped[bool] = mapped_column(default=False, server_default='false')
 
 
 class Job(Base):

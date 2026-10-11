@@ -1,5 +1,19 @@
 # ผลตรวจสอบ Smart Finance
 
+## สนทนาปกติ รูปในแชท และ Thinking ต่อโมเดล (11 ตุลาคม 2026)
+
+- PostgreSQL ชุดรวมล่าสุด **242 passed** ใน Docker รวม native function tool, สนทนาทั่วไป/JSON ตัวอย่างไม่สร้างรายการ, ถามรายละเอียดต่อจากประวัติรูป, validation satang/บัญชี/tenant และคุ้มครองคำถามที่โมเดลพยายามสร้างร่าง
+- Chrome **10 passed ในรอบเดียว**: desktop 5 + Pixel 7 emulation 5 ครอบคลุมบันทึกค่า Thinking/รับรูป/ลำดับ/คีย์ไม่ส่งกลับ/สลับพื้นที่, แชทยืนยันคำเดียวและแก้พร้อมประวัติ, streaming/reconnect, แนบรูป/demo ไม่แต่งยอด, รายงานและเลื่อนประวัติ ตรวจภาพตั้งค่า AI ทั้งสองขนาดแล้ว ไม่มี horizontal overflow
+- TypeScript และ Next production build ผ่าน; local Docker อัปเดตและ healthy โดย migration additive `assistant_models` เพิ่ม reasoning_effort/default และ supports_images/false ให้ Provider เดิม
+- โมเดลงาน Chat ที่มีสิทธิ์ใช้รับข้อความทั่วไปทั้งหมดพร้อม function `prepare_transaction`; tool arguments/reasoning fields ไม่ทยอยแสดง ไม่ตีความ JSON ที่ตอบเป็น prose ให้เป็นคำสั่ง ทดสอบ tool fragments/interrupted/unknown/multiple tools และข้อความโมเดลปลอม review
+- รูป Web Chat ใช้ Chat vision และประวัติ 20 ข้อความ/3 รูป; กรองโมเดลรับรูปก่อนจำกัดจำนวน fallback ทดสอบรูปพร้อม caption → ถามบัญชี → ส่งรูปใน follow-up → ทวนพร้อม thumbnail → พิมพ์ยืนยัน → ledger + confirmed evidence ใน transaction เดียว
+- ทดสอบรูปจากห้องอื่นถูกปฏิเสธ/สมาชิกยังไม่เห็นรูปส่วนตัว, รูปยืนยันแล้วคงอยู่หลังลบห้อง, บันทึกล้มเหลว rollback ทั้ง ledger/evidence, replay ไม่เพิ่มเงิน และ Inbox ไม่ยืนยันรูปที่ Chat ลงบัญชีแล้ว
+- Thinking mappings ทดสอบ OpenAI/Gemini/OpenRouter/Groq/Compatible/Ollama, default/temperature/output token compatibility, settings persist และปฏิเสธค่าที่รู้ว่าไม่รองรับ ไม่มีการ retry โดยแอบลบ effort; upstream อาจมีข้อจำกัดต่างกันตามรุ่น
+- รอบ browser แรกตัวทดสอบหา Thinking ด้วย label แบบ exact ไม่พบ และมี race ของรายการ workspace หลัง API create; แก้ให้หา combobox ตามชื่อที่เข้าถึงได้และ reload หลังสร้าง workspace แล้วรอบสุดท้ายทั้ง 10 ผ่าน ไม่ลด throttle ของระบบ
+- สำรองหลัง migration และตรวจ restore ในฐาน disposable ผ่าน เทียบจำนวนแถวและ snapshots รวม Thinking/รับรูปตรงกับต้นฉบับ ledger สมดุล
+- ใช้ HTTP MockTransport ไม่มี API key/บริการโมเดลจริง จึงยังไม่รับรองความแม่นยำ OCR/ภาษา/ทุกโมเดลหรือทุกระดับ thinking บนอุปกรณ์จริง Telegram ยังใช้ deterministic capture/Inbox ตามเดิม ไม่ได้เปิด native conversation แบบเว็บในรอบนี้ อยู่ระหว่างขั้น 3 จาก 4; ไม่มีการ deploy เครื่อง Ubuntu ของผู้ใช้
+
+
 ## แชทแบบเลขาและยืนยันคำเดียว (11 ตุลาคม 2026)
 
 - PostgreSQL ชุดรวม **224 passed**; หลังแยกการเรียกโมเดลของเว็บกับ Telegram ทดสอบแชทล่าสุด **44 passed** รวมเพิ่มกรณี Telegram ถามบัญชีต่อได้แม้ตั้ง Chat provider ไว้

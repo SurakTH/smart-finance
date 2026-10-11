@@ -66,6 +66,8 @@ def test_cleanup_unshared_image_pending_job_and_access(actor):
 def test_shared_inbox_image_preserved_after_chat_delete(actor):
     c,w,u=actor;cid=room(c,w,temporary=True);b=f'/workspaces/{w}'
     r=c.post(b+f'/conversations/{cid}/images',files={'file':('receipt.png',image(),'image/png')});aid=r.json()['attachment_id']
+    # Explicitly sharing evidence in Inbox is independent of private chat processing.
+    with SessionLocal.begin() as db:db.add(Proposal(workspace_id=w,attachment_id=aid,description='หลักฐานที่แชร์',status='pending'))
     while run_once():pass
     proposals=c.get(b+'/proposals').json();assert len(proposals)==1
     age(cid,1);cleanup_once()

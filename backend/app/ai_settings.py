@@ -67,7 +67,7 @@ def target(p):
     return str(url.copy_with(host=ips[0])),{'Host':url.host},{'sni_hostname':url.host}
 
 def serialize(p):
-    return {**{k:getattr(p,k) for k in ('id','kind','model','task','priority','name','endpoint','enabled','timeout_seconds','retries','max_tokens','temperature')},'has_key':bool(p.encrypted_key)}
+    return {**{k:getattr(p,k) for k in ('id','kind','model','task','priority','name','endpoint','enabled','timeout_seconds','retries','max_tokens','temperature','reasoning_effort','supports_images')},'has_key':bool(p.encrypted_key)}
 
 def lock(db,wid):
     db.scalar(select(Workspace).where(Workspace.id==wid).with_for_update())
@@ -90,6 +90,8 @@ def providers(wid:str,db:Session=Depends(get_db,scope='function')):
     return [serialize(p) for p in db.scalars(select(Provider).where(Provider.workspace_id==wid).order_by(Provider.task,Provider.priority,Provider.id))]
 
 def apply(p,data,creating=False):
+    from .ai_parameters import validate
+    validate(data.kind,data.model,data.reasoning_effort)
     values=data.model_dump(exclude={'api_key','clear_key'})
     if data.kind=='compatible':values['endpoint']=public_endpoint(data.endpoint or config.COMPATIBLE_URL)
     elif data.endpoint:raise HTTPException(422,'ตั้ง Custom API URL ได้เฉพาะผู้ให้บริการ Custom API')
@@ -141,7 +143,16 @@ def probe(db,wid,pid,models=False):
             # Models discovery never sends a prompt. Connection test uses a small synthetic prompt.
             method='GET' if models else 'POST'
             path='/models' if models else '/chat/completions'
-            kwargs={} if models else {'json':{'model':p.model,'messages':[{'role':'user','content':'Reply OK.'}],'max_tokens':16,'stream':False}}
+            from .ai_parameters import parameters
+            kwargs={} if models else {'json':{'model':p.model,'messages':[{'role':'user','content':'Reply OK.'}],**parameters(p),'stream':False}}
+            if not models and p.task=='chat':
+                from .chat_dialogue import tool
+                kwargs['json'].update(tools=[tool()],tool_choice='auto')
+                if p.supports_images:
+                    import base64,io
+                    from PIL import Image
+                    buffer=io.BytesIO();Image.new('RGB',(16,16),'white').save(buffer,format='JPEG')
+                    kwargs['json']['messages'][0]['content']=[{'type':'text','text':'Reply OK. This is a synthetic test image.'},{'type':'image_url','image_url':{'url':'data:image/jpeg;base64,'+base64.b64encode(buffer.getvalue()).decode()}}]
             with client.stream(method,url+path,headers=headers,extensions=extensions,**kwargs) as response:
                 response.raise_for_status();raw=b''
                 for chunk in response.iter_bytes():

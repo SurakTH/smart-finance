@@ -46,8 +46,8 @@ Actions → Smart Finance → Run workflow → เลือก main → เป�
 
 - ส่งเฉพาะ source จาก git archive ของ commit ที่ทดสอบไป `/opt/smart-finance/releases/<sha>` ไม่มี working files/.env/ข้อมูลทดสอบติดไป
 - เชื่อม .env และ backups จาก root, ล็อกไม่ให้ deploy พร้อมกัน, pull images ของ SHA เดียวกัน
-- สำรองฐานข้อมูลก่อน migration, หยุด worker เก่า, migrate และเปิด stack จาก images โดยไม่ build บนเซิร์ฟเวอร์
-- ตรวจ health ของ API และเว็บ แล้วบันทึก SHA ลง current-commit
+- หยุด API/worker และ Telegram ถ้ารันอยู่ก่อน backup เพื่อพักการเขียน สำรองฐานข้อมูลก่อน migration แล้วเปิด stack จาก images โดยไม่ build บนเซิร์ฟเวอร์
+- เปิด Telegram กลับถ้าเคยรันอยู่ ตรวจ health ของ API และเว็บ แล้วบันทึก SHA ลง current-commit
 
 GitHub-hosted runner เผยแพร่ images สำหรับ linux/amd64 ตาม Ubuntu Server/Hyper-V ในแผนนี้ ยังไม่มี multi-architecture ARM publish
 

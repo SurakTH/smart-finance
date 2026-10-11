@@ -28,11 +28,22 @@ if not values.get('APP_ORIGIN','').startswith('https://') or values.get('COOKIE_
     raise SystemExit('Production requires HTTPS APP_ORIGIN, COOKIE_SECURE=true and loopback gateway')
 PY
 docker compose pull api worker migrate web proxy
+# Preserve the Telegram profile when it was already running.
+services=(api worker web proxy)
+writers=(api worker)
+while IFS= read -r service; do
+    if [[ "$service" == telegram ]]; then services+=(telegram); writers+=(telegram); fi
+done < <(docker compose ps --status running --services)
+# Quiesce all application writers before the backup/migration boundary.
 # This script upgrades an initialized server, not first-time provisioning.
-sh scripts/backup.sh
-# Avoid old workers writing while the migration and version switch run.
-docker compose stop worker
-if ! docker compose up -d --no-build --wait --wait-timeout 180; then
+docker compose stop "${writers[@]}"
+if ! sh scripts/backup.sh; then
+    # No migration has run yet: starting the unchanged containers is safe.
+    docker compose start "${writers[@]}"
+    echo 'Backup failed; unchanged application restarted. Deployment aborted.'
+    exit 1
+fi
+if ! docker compose up -d --no-build --wait --wait-timeout 180 "${services[@]}"; then
     echo 'Deployment failed. Backup retained. Inspect before rollback; database migrations are not automatically reversed.'
     exit 1
 fi

@@ -143,11 +143,19 @@ def resolve(db,c,user_id,output,attachment_id=None,_collect=False):
     if data.amount is None:return ask('ยอดเท่าไหร่คะ?')
     if not data.description or '\n' in data.description:return ask('รายการนี้เป็นค่าอะไรคะ?')
     allowed=('asset','liability') if data.kind=='expense' else ('asset',)
-    wallet=rows.get(str(data.account_id))
+    from .assistant_preferences import defaults
+    default_account,default_category=defaults(db,c.workspace_id,user_id,data.kind,data.description)
+    wallet=rows.get(str(data.account_id)) if data.account_id else default_account
+    if not wallet and not data.account_id:
+        choices=[a for a in rows.values() if a.kind in allowed]
+        if len(choices)==1:wallet=choices[0]
     if not wallet:return ask('ใช้บัญชีไหนคะ? '+', '.join(a.name for a in rows.values() if a.kind in allowed))
     if wallet.kind not in allowed:return ask('บัญชีนี้ใช้เป็นต้นทางของรายการนี้ไม่ได้ค่ะ เลือกบัญชีอีกครั้งนะคะ')
-    category=rows.get(str(data.category_id));destination=rows.get(str(data.other_account_id))
+    category=rows.get(str(data.category_id)) if data.category_id else default_category;destination=rows.get(str(data.other_account_id))
     if data.kind in ('income','expense'):
+        if not data.category_id:
+            from .assistant_preferences import category_matches
+            if len(category_matches(db,c.workspace_id,user_id,data.kind,data.description))>1:return ask('ความชอบที่ตั้งไว้ตรงหลายหมวดค่ะ จัดเข้าหมวดไหนคะ?')
         if not category or category.kind!=data.kind:return ask('จัดเข้าหมวดไหนคะ? '+', '.join(a.name for a in rows.values() if a.kind==data.kind))
         if destination:return ask('รายรับรายจ่ายใช้หมวดหมู่ค่ะ ขอรายละเอียดอีกครั้งนะคะ')
     else:

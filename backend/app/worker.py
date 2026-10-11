@@ -23,6 +23,8 @@ def run_once():
                 with db.begin_nested(): process_job(db,job)
             except Exception:
                 job.status='failed';job.error='processing_failed';job.payload={}
+            from .ai_usage import recover
+            recover(db,job)
             status=job.status
         # Never announce completion before the transaction has actually committed.
         if live:notify(live,'done' if status=='done' else 'failed')

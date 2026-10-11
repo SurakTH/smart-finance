@@ -113,6 +113,9 @@ def handle(db,c,user_id,text,review_message_id=None,allow_model_dialogue=False):
     The route owns the transaction and workspace lock; no commit occurs here.
     """
     text=text.strip()
+    from .assistant_preferences import handle as preference_handle
+    preference_reply=preference_handle(db,c,user_id,text)
+    if preference_reply is not None:return preference_reply
     command=re.fullmatch(r'(ยืนยัน|ยกเลิก)\s+([0-9a-fA-F]{8})',text)
     scope=(ChatAction.workspace_id==c.workspace_id,ChatAction.conversation_id==c.id,ChatAction.user_id==user_id)
     if text=='ยืนยัน' or (command and command[1]=='ยืนยัน'):
@@ -283,6 +286,7 @@ def bind_review(db,c,user_id,message):
 def begin_request(db,c,user_id):
     """A queued new request must never inherit a previous confirmation binding."""
     context=dict(c.capture_context or {})
+    context.pop('preference_review',None)
     action=db.scalar(select(ChatAction).where(ChatAction.id==context.get('review_action_id'),ChatAction.workspace_id==c.workspace_id,ChatAction.conversation_id==c.id,ChatAction.user_id==user_id))
     context.pop('review_message_id',None)
     if action and action.status!='pending':context.pop('review_action_id',None)

@@ -66,6 +66,8 @@ def normalize(db,c,user_id,text):
         # Do not interpret a shorter account name inside a longer one.
         return [a for a in hits if not any(a.name!=b.name and a.name in b.name for b in hits)]
     names=mentioned(wallets)
+    from .assistant_preferences import defaults
+    default_account,default_category=defaults(db,c.workspace_id,user_id,kind,text)
     destination=None
     if kind in ('transfer','card_payment'):
         targets=[a for a in rows if a.kind==('asset' if kind=='transfer' else 'liability')]
@@ -75,6 +77,7 @@ def normalize(db,c,user_id,text):
         names=[a for a in names if a.id!=destination.id]
     explicit_source=re.search(r'(?:จาก|ด้วย|ผ่าน|บัญชี)\s*([^\d]+)',text)
     if len(names)==1:account=names[0]
+    elif not names and default_account and kind in ('income','expense') and not explicit_source:account=default_account
     elif not names and len(wallets)==1 and not explicit_source:account=wallets[0]
     else:ask('ใช้บัญชีไหนคะ? '+', '.join(a.name for a in wallets), 'account')
     category=None
@@ -85,6 +88,10 @@ def normalize(db,c,user_id,text):
             hits=[a for a in cats if a.name==explicit[1].strip()]
         else:
             hits=mentioned(cats)
+            if not hits:
+                from .assistant_preferences import category_matches
+                if len(category_matches(db,c.workspace_id,user_id,kind,text))>1:ask('ความชอบที่ตั้งไว้ตรงหลายหมวดค่ะ จัดเข้าหมวดไหนคะ? '+', '.join(a.name for a in cats), 'category')
+            if not hits and default_category:hits=[default_category]
             if not hits:hits=[a for a in cats if any(word in text for word in ALIASES.get(a.name,()))]
             if not hits and len(cats)==1:hits=cats
         if len(hits)!=1:ask('จัดเข้าหมวดไหนคะ? '+', '.join(a.name for a in cats), 'category')

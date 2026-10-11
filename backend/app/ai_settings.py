@@ -113,7 +113,14 @@ def create_provider(wid:str,data:ProviderInput,db:Session=Depends(get_db,scope='
 
 @router.put('/providers/{pid}')
 def edit_provider(wid:str,pid:str,data:ProviderInput,db:Session=Depends(get_db,scope='function')):
-    lock(db,wid);p=get_scoped(db,Provider,wid,pid);apply(p,data);db.flush();return serialize(p)
+    lock(db,wid);p=get_scoped(db,Provider,wid,pid)
+    changed=p.kind!=data.kind or p.model!=data.model or (p.endpoint or '')!=(data.endpoint or '')
+    apply(p,data)
+    if changed:
+        from .models import AIUsagePolicy
+        policy=db.get(AIUsagePolicy,wid)
+        if policy:policy.prices={k:v for k,v in policy.prices.items() if k!=pid}
+    db.flush();return serialize(p)
 
 @router.delete('/providers/{pid}')
 def delete_provider(wid:str,pid:str,db:Session=Depends(get_db,scope='function')):
@@ -154,7 +161,11 @@ def probe(db,wid,pid,models=False):
                     from PIL import Image
                     buffer=io.BytesIO();Image.new('RGB',(16,16),'white').save(buffer,format='JPEG')
                     kwargs['json']['messages'][0]['content']=[{'type':'text','text':'Reply OK. This is a synthetic test image.'},{'type':'image_url','image_url':{'url':'data:image/jpeg;base64,'+base64.b64encode(buffer.getvalue()).decode()}}]
-            with client.stream(method,url+path,headers=headers,extensions=extensions,**kwargs) as response:
+            from .ai_usage import tracked_stream
+            from types import SimpleNamespace
+            meter_job=SimpleNamespace(workspace_id=wid,task='probe')
+            stream=client.stream(method,url+path,headers=headers,extensions=extensions,**kwargs) if models else tracked_stream(db,meter_job,p,client,method,url+path,headers=headers,extensions=extensions,**kwargs)
+            with stream as response:
                 response.raise_for_status();raw=b''
                 for chunk in response.iter_bytes():
                     raw+=chunk
@@ -170,6 +181,7 @@ def probe(db,wid,pid,models=False):
         if not isinstance(data['choices'][0]['message']['content'],str):raise ValueError()
         return {'ok':True,'message':'เชื่อมต่อและเรียกโมเดลได้แล้ว'}
     except Exception:
+        db.commit()
         # Never expose URL, key, headers, response body, or traceback.
         raise HTTPException(422,'เชื่อมต่อไม่สำเร็จ ตรวจ URL คีย์ ชื่อโมเดล และสิทธิ์ของผู้ให้บริการ') from None
 

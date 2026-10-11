@@ -370,7 +370,7 @@ def owned_conversation(db,wid,cid,user_id):
 def messages(wid: str, cid: str, focus_id: str | None = Query(None,min_length=36,max_length=36), member: Membership = Depends(workspace_member), db: DBSession = Depends(get_db, scope='function')):
     owned_conversation(db,wid,cid,member.user_id)
     from .chat_search import window
-    return [dict(id=m.id,role=m.role,content=m.content,attachment_id=m.attachment_id) for m in window(db,wid,cid,focus_id)]
+    return [dict(id=m.id,role=m.role,content=m.content,attachment_id=m.attachment_id,references=m.references) for m in window(db,wid,cid,focus_id)]
 
 @app.get('/workspaces/{wid}/conversations/{cid}/messages/page')
 def message_page(wid: str,cid: str,before: str|None=Query(None,min_length=36,max_length=36),after: str|None=Query(None,min_length=36,max_length=36),member: Membership=Depends(workspace_member),db: DBSession=Depends(get_db,scope='function')):
@@ -430,6 +430,10 @@ def capture(wid: str, data: CaptureInput, member: Membership = Depends(workspace
 
 from .ai_settings import router as ai_settings_router
 app.include_router(ai_settings_router)
+from .assistant_preferences import router as preferences_router
+from .ai_usage import router as usage_router
+app.include_router(preferences_router)
+app.include_router(usage_router)
 
 @app.post('/workspaces/{wid}/telegram/link-code')
 def link_code(wid: str, member: Membership = Depends(workspace_member), db: DBSession = Depends(get_db, scope='function')):

@@ -50,6 +50,6 @@ def page(db,wid,cid,before=None,after=None):
     query=base.where(older(target)) if before else base.where(newer(target)) if after else base
     rows=db.scalars(query.order_by(Message.created_at,Message.id).limit(50) if after else query.order_by(Message.created_at.desc(),Message.id.desc()).limit(50)).all()
     if not after:rows=list(reversed(rows))
-    return {'items':[dict(id=m.id,role=m.role,content=m.content,attachment_id=m.attachment_id) for m in rows],
+    return {'items':[dict(id=m.id,role=m.role,content=m.content,attachment_id=m.attachment_id,references=m.references) for m in rows],
             'has_older':bool(rows and db.scalar(base.where(older(rows[0])).with_only_columns(Message.id).limit(1))),
             'has_newer':bool(rows and db.scalar(base.where(newer(rows[-1])).with_only_columns(Message.id).limit(1)))}

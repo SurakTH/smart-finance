@@ -107,6 +107,8 @@ def answer_report(db,job,history):
         if details['total']>20: lines.append('แสดง 20 รายการแรก ยอดรวมรวมทุกรายการแล้วค่ะ ดูที่เหลือได้ในหน้ารายการ')
     else:
         lines.append(f'{focus}ทั้งหมด {details["total"]} รายการ อยากดูว่าจ่ายอะไรหรือจากบัญชีไหน ถามต่อได้เลยค่ะ')
+    from .finance_references import collect
+    collect(job,dict(source='ledger_backend',start=start.isoformat(),end=end.isoformat(),income=report['income'],expense=report['expense'],items=details['items'],account_id=aid,category_id=category,kind=kind,categories=report['categories']))
     lines.append(f'\nรายงานจากระบบโดยตรง · {start.isoformat()} ถึง {end.isoformat()}')
     if any(w in text for w in ('ยอด','มีเงิน')):
         balances=account_balances(db,job.workspace_id)

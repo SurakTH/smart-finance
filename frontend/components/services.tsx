@@ -22,6 +22,7 @@ export function ServicesHub({accounts,pending,owner,onAdd}:{accounts:ManagedAcco
   {group:'จัดการพื้นที่ของคุณ',title:'สมาชิกและคำเชิญ',detail:'ดูสมาชิก ชวนคนที่ไว้ใจ และจัดการสิทธิ์ในพื้นที่',href:'/members',icon:Users,tone:'sage',meta:'เจ้าของพื้นที่ · สมาชิก'},
   {group:'จัดการพื้นที่ของคุณ',title:'จัดการพื้นที่ทำงาน',detail:'สร้างหรือเปลี่ยนชื่อ workspace เก็บเข้าคลัง กู้คืน และชวนเพื่อนสร้างบัญชีส่วนตัว',href:'/workspaces',icon:Settings,tone:'sage',meta:'ตั้งค่า'},
   {group:'จัดการพื้นที่ของคุณ',title:'เชื่อม Telegram',detail:'เชื่อมบอตสำหรับส่งข้อความและสลิปเข้าระบบ',href:'/settings#telegram-settings',icon:Send,tone:'sand',meta:'ต้องตั้งค่าบอตบนเซิร์ฟเวอร์'},
+  {group:'จัดการพื้นที่ของคุณ',title:'ความจำส่วนตัว AI',detail:'เลือกบัญชีเริ่มต้นและหมวดที่ใช้บ่อย เฉพาะคุณในพื้นที่นี้',href:'/ai-settings',icon:Sparkles,tone:'sage',meta:'แก้ไขหรือปิดได้'},
   ...(owner?[{group:'จัดการพื้นที่ของคุณ',title:'ผู้ให้บริการ AI',detail:'จัดการโมเดล งานที่ใช้ และลำดับการสำรอง',href:'/ai-settings',icon:SlidersHorizontal,tone:'rose',meta:'สำหรับเจ้าของพื้นที่'}]:[]),
  ];
  const filtered=services.filter(s=>(s.title+' '+s.detail+' '+s.meta).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));

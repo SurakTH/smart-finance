@@ -1,5 +1,6 @@
 "use client";
 import {useEffect,useState,useRef,type ReactNode} from 'react';
+import {AIPersonalization} from "./ai-personalization";
 import Link from 'next/link';
 import {Sparkles,ShieldCheck,Plus,ArrowUp,ArrowDown,Pencil,Trash2,FlaskConical,RefreshCw,ArrowLeft,Cloud,Server} from 'lucide-react';
 import {Button} from './ui/button';
@@ -30,7 +31,7 @@ export function AISettingsPage({wid,owner}:{wid:string;owner:boolean}){
  async function move(task:string,index:number,direction:number){const list=rows.filter(p=>p.task===task);[list[index],list[index+direction]]=[list[index+direction],list[index]];await run(async()=>{await request(base+'/ai/routes','PUT',{task,provider_ids:list.map(p=>p.id)});await load();setNotice('บันทึกลำดับโมเดลแล้ว');});}
  async function toggle(p:Provider){const previous=rows;setRows(rows.map(row=>row.id===p.id?{...row,enabled:!p.enabled}:row));await run(async()=>{try{const {id,has_key,...data}=p;await request(base+'/providers/'+id,'PUT',{...data,enabled:!p.enabled});await load();}catch(e){setRows(previous);throw e;}});}
  const change=<K extends keyof Draft>(key:K,value:Draft[K])=>setDraft(d=>d?{...d,[key]:value}:d);
- if(!owner)return <section className="panel"><ShieldCheck/><h2>การตั้งค่า AI สำหรับเจ้าของพื้นที่</h2><p>ให้เจ้าของพื้นที่จัดการผู้ให้บริการและการส่งข้อมูลไป Cloud AI</p></section>;
+ if(!owner)return <><AIPersonalization wid={wid} owner={false}/><section className="panel"><ShieldCheck/><h2>การตั้งค่า AI สำหรับเจ้าของพื้นที่</h2><p>ให้เจ้าของพื้นที่จัดการผู้ให้บริการและการส่งข้อมูลไป Cloud AI</p></section></>;
  return <div className="ai-settings-page">
   <Link className="ai-back" href="/settings"><ArrowLeft size={18}/> กลับไปตั้งค่า</Link>
   <section className="ai-hero"><div className="ai-hero-icon"><Sparkles size={28}/></div><div><span className="eyebrow">YOUR AI, YOUR CHOICE</span><h2>เลือก AI ที่เข้ากับคุณ</h2><p>จัดการโมเดล การเชื่อมต่อ และตัวสำรองของพื้นที่นี้ได้ในที่เดียว</p></div><span className="ai-secure"><ShieldCheck size={16}/> คีย์เข้ารหัสบนเซิร์ฟเวอร์</span></section>
@@ -56,6 +57,7 @@ export function AISettingsPage({wid,owner}:{wid:string;owner:boolean}){
     {tested[p.id]&&<p className="ai-test-result">✓ {tested[p.id]}</p>}{models[p.id]&&<p className="muted small">พบ {models[p.id].length} โมเดล · เปิด “แก้ไข” เพื่อเลือก</p>}
    </article>)}</div>
   </section>})}
+  <AIPersonalization wid={wid} owner={owner}/>
   <div className="ai-help"><ShieldCheck size={20}/><div><strong>ทดสอบอย่างไร และ AI ทำอะไรได้บ้าง</strong><p>ปุ่มทดสอบส่งข้อความสั้นที่ไม่มีข้อมูลการเงิน อาจมีค่าบริการตามผู้ให้บริการ การอ่านสลิปเตรียมข้อเสนอเท่านั้น ทุกการบันทึกหรือแก้รายการยังต้องทวนและยืนยันโดยคุณ</p><p>Ollama ใช้บริการ Local ที่เซิร์ฟเวอร์กำหนดไว้ ต้องมี Ollama และดาวน์โหลดโมเดลแล้ว หน้านี้ไม่ติดตั้งโมเดลหรือซอฟต์แวร์ให้</p><p>Custom API รองรับ OpenAI-compatible ผ่าน HTTPS สาธารณะ พอร์ต 443 ไม่เชื่อม URL ภายในเครือข่ายจากช่องนี้ เพื่อแยกข้อมูลระหว่างพื้นที่</p></div></div>
   {removing&&<AIDialog id="ai-remove-title" onClose={()=>setRemoving(null)}><h2 id="ai-remove-title">ลบโมเดลนี้?</h2><p>{removing.name||removing.model} จะถูกนำออกจากลำดับสำรองและลบคีย์ที่เก็บไว้</p><div className="ai-editor-actions"><Button variant="outline" disabled={busy} onClick={()=>setRemoving(null)}>ยกเลิก</Button><Button disabled={busy} onClick={()=>run(async()=>{await request(base+'/providers/'+removing.id,'DELETE');await load();setRemoving(null);setNotice('ลบโมเดลแล้ว');})}>ยืนยันลบโมเดล</Button></div></AIDialog>}
   {draft&&<AIDialog id="ai-editor-title" onClose={close}><form onSubmit={e=>{e.preventDefault();save();}}><div className="ai-section-heading"><h2 id="ai-editor-title">{editing?'แก้ไขโมเดล':'เพิ่มโมเดล AI'}</h2><Button type="button" variant="ghost" disabled={busy} onClick={close}>ปิด</Button></div>

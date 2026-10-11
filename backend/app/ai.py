@@ -14,6 +14,7 @@ from .chat_stream import publish,read_completion
 from .ai_settings import settings, target
 from .ai_parameters import parameters
 from .assistant_response import AssistantReply,completion,read_stream
+from .ai_usage import tracked_stream
 
 def mock_proposals(text):
     # Deliberately limited demo parser. Unknown receipt amounts remain unset.
@@ -36,7 +37,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         if remaining<=0:raise ValueError('Assistant deadline')
         body={'model':p.model,'messages':turns,**parameters(p),'tools':assistant_tools(),'tool_choice':'auto','stream':True}
         publish(job,'start')
-        with client.stream('POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json=body,timeout=httpx.Timeout(min(p.timeout_seconds,remaining),connect=5)) as response:
+        with tracked_stream(db,job,p,client,'POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json=body,timeout=httpx.Timeout(min(p.timeout_seconds,remaining),connect=5)) as response:
             response.raise_for_status()
             if 'text/event-stream' in response.headers.get('content-type',''):answer=read_stream(response,job)
             else:
@@ -49,6 +50,8 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         if read_budget[0]>=3:return AssistantReply('ฉันค้นข้อมูลครบขอบเขตของข้อความนี้แล้วค่ะ ขอระบุช่วงวัน บัญชี หรือรายการให้แคบลงอีกนิด แล้วฉันจะช่วยต่อ ยังไม่ได้เปลี่ยนข้อมูลนะคะ')
         read_budget[0]+=1
         result=read(db,room,answer.draft,job.payload.get('user_message_id'))
+        from .finance_references import collect
+        collect(job,result)
         turns.append({'role':'assistant','content':None,'tool_calls':[{'id':answer.call_id,'type':'function','function':{'name':'query_finance','arguments':answer.draft}}]})
         turns.append({'role':'tool','tool_call_id':answer.call_id,'content':json.dumps(result,ensure_ascii=False)})
     return AssistantReply('ฉันค้นข้อมูลแล้วค่ะ ขอรายละเอียดอีกนิดเพื่อช่วยต่อ ยังไม่ได้เปลี่ยนข้อมูลนะคะ')
@@ -79,6 +82,9 @@ def call_model(db, job):
         if assistant:
             from .chat_dialogue import assistant_instruction
             messages.append({'role':'system','content':assistant_instruction(db,job.workspace_id)})
+            from .assistant_preferences import prompt
+            preference=prompt(db,job.workspace_id,job.user_id)
+            if preference:messages.append({'role':'system','content':preference})
             from .assistant_management import pending_context
             pending=pending_context(db,get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id']))
             if pending:messages.append({'role':'system','content':pending})
@@ -130,7 +136,7 @@ def call_model(db, job):
                     body={'model':p.model,'messages':messages,**parameters(p)}
                     if job.task=='chat' and not job.payload.get('_dialogue'):
                         publish(job,'start')
-                        with client.stream('POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json={**body,'stream':True}) as r:
+                        with tracked_stream(db,job,p,client,'POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json={**body,'stream':True}) as r:
                             r.raise_for_status()
                             if 'text/event-stream' in r.headers.get('content-type',''):
                                 content=read_stream(r,job) if assistant else read_completion(r,job)
@@ -143,7 +149,7 @@ def call_model(db, job):
                                 message=json.loads(raw)['choices'][0]['message']
                                 content=completion(message) if assistant else message['content']
                     else:
-                        with client.stream('POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json=body) as r:
+                        with tracked_stream(db,job,p,client,'POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json=body) as r:
                             r.raise_for_status();raw=b''
                             for chunk in r.iter_bytes():
                                 raw+=chunk
@@ -160,6 +166,7 @@ def call_model(db, job):
             except (httpx.HTTPError,ValueError,KeyError,TypeError):
                 # Never log request, provider response, URL credentials or keys.
                 if attempt<p.retries: time.sleep(0.3)
+    if getattr(job,'_budget_blocked',False) and job.task=='chat':return 'ยังเรียก Cloud AI ไม่ได้ค่ะ วงเงิน AI เดือนนี้ไม่พอ หรือยังไม่ได้ตั้งราคาครบ ตรวจได้ที่ตั้งค่า AI → การใช้งานและงบ ยังไม่ได้เปลี่ยนข้อมูลการเงิน',False
     if not options['demo_fallback']:
         raise ValueError('No available AI provider')
     if job.task=='extract':
@@ -238,7 +245,7 @@ def process_job(db,job):
                 f'อ่านรูปแล้ว เตรียมข้อเสนอ {len(output)} รายการใน AI Inbox กรุณาตรวจสอบยอด บัญชี และหมวดหมู่ก่อนยืนยัน')
             db.add(Message(workspace_id=job.workspace_id,conversation_id=job.payload['conversation_id'],created_at=message_time(db,job.workspace_id,job.payload['conversation_id']),role='assistant',content=reply+(' ครั้งนี้ไม่ได้บันทึกยอดเงินเพิ่ม' if duplicate else ' ยังไม่มีการบันทึกยอดเงิน')))
     else:
-        message=Message(workspace_id=job.workspace_id,conversation_id=job.payload['conversation_id'],created_at=message_time(db,job.workspace_id,job.payload['conversation_id']),role='assistant',content=output)
+        message=Message(workspace_id=job.workspace_id,conversation_id=job.payload['conversation_id'],created_at=message_time(db,job.workspace_id,job.payload['conversation_id']),role='assistant',content=output,references=getattr(job,'_finance_refs',None))
         db.add(message);db.flush()
         if trusted_review:
             from .chat_actions import bind_review

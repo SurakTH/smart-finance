@@ -1,5 +1,16 @@
 # ผลตรวจสอบ Smart Finance
 
+## เลขาส่วนตัว: ความจำ ข้อมูลที่ขาด หลักฐานรายงาน และงบ AI (11 ตุลาคม 2026)
+
+- PostgreSQL ฐาน disposable ชุดรวม **332 passed** (เพิ่ม18เคส; 1 Starlette/httpx deprecation warning เดิม) ชุดเฉพาะ personalization/dialogue/natural/configuration **68 passed** ตรวจบัญชีเริ่มต้น/กฎหมวดข้ามห้อง, explicit override, ยอดที่ยังขาด, กฎชนกัน, version conflict, ปิด/ล้าง, ยืนยันความจำไม่ยืนยันเงิน และข้อมูลแยก user+workspace จริง
+- ความจำผ่านข้อความ authenticated “จำไว้ว่า…” ทวนและรอ plain ยืนยัน มี expiry/latest review/version checks ไม่รับ memory tool หรือคำสั่งจากรูป ข้อเสนอจำยกเลิกร่างเงินเดิมเพื่อป้องกัน confirmation ข้ามชนิด เพิ่ม membership composite FK + cascade ล้างความชอบเมื่อออกจากพื้นที่
+- รายงาน deterministic และ query_finance แนบหลักฐานแบบ structured จาก ledger จริง เก็บพร้อมประวัติและpagination เปิด transaction explorer พร้อมช่วงวัน/บัญชี/หมวด/entry ID โดยไม่รับURLจากโมเดล ปลายทางตรวจ tenant เดิม
+- นับทุก POST โมเดลใน engine/probe รวม tool rounds/retry/fallback ใช้ usage JSON/SSE เมื่อมี ไม่มีก็ประมาณการเผื่อ เก็บเฉพาะ metadata/tokens/ราคา snapshot ไม่เก็บprompt/response/key กู้ accounting หลังworker savepoint rollback ตรวจHTTP failure/usage stream/ราคาไม่ทราบ/เติมราคาย้อนหลัง/เปลี่ยนโมเดลล้างราคา
+- ทดสอบ PostgreSQL concurrent reserve สองงานภายใต้workspace lock: ใช้วงเงินส่วนเดียวกันได้เพียงงานเดียว Cloud ที่เกินงบ/ไม่มีราคาไม่ส่งnetwork และไปOllamaต่อได้ Owner-only usage policy/report; สมาชิกจริงคนที่สองอ่านusageหรือworkspaceอื่นไม่ได้ ไม่ใช่ hard billing cap ของprovider และprocess crashก่อนcommitยังอาจนับไม่ครบ
+- Chrome **16 passed** (desktop8/mobile8): ตั้งความชอบจริง→รีโหลด→ถามยอดที่ขาด→ทวน/ยืนยัน→อ่านรายงาน→เปิดตัวกรองรายการต้นทาง และสั่งจำพร้อมยืนยัน รวม regression settings/Markdown/stream/confirmation/batch/workspace defaults/natural history ไม่พบ horizontal overflow ใช้ UI fixture เฉพาะการแสดงยอดusageที่มีข้อมูลและroleสมาชิก; backendทดสอบusage/สิทธิ์สมาชิกด้วยข้อมูลและคนละผู้ใช้จริง เว็บรอบแรกเริ่มก่อนcontainerพร้อมจึงHTTP failure ตรวจพร้อมแล้วรันใหม่จนผ่านครบ ไม่ถือรอบที่ล้มเป็นผลผ่าน
+- สำรองและกู้คืนฐาน disposable ผ่าน ตรวจจำนวนแถวและsnapshotความจำ/policy/usage/หลักฐานแชท รวม ledger balance Source ZIP ตรวจ integrity/runtime-secret scan แล้ว ไม่ได้deploy VM ของผู้ใช้
+- TypeScript/Next production build ผ่าน local migration และทุกserviceพร้อม ไม่มีการเรียก provider จริงในการทดสอบ คุณภาพภาษาธรรมชาติ/vision และข้อมูลusageของproviderจริงยังต้องตรวจหลังผู้ใช้ตั้งค่า
+
 ## จัดรูปแบบ Web AI Chat ด้วย Markdown (11 ตุลาคม 2026)
 
 - รองรับตัวหนา/เอียง/ขีดฆ่า หัวข้อ รายการ checklist quote ตาราง inline/fenced code พร้อมปุ่มคัดลอก และ ==ไฮไลต์== ทั้งข้อความย้อนหลังและ streaming ใช้ renderer เดียวกัน ตาราง/โค้ดเลื่อนภายใน ไม่ขยายหน้าจอมือถือ

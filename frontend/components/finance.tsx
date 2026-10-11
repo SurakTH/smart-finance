@@ -1,4 +1,5 @@
 "use client";
+import {ChatEvidence,type Evidence} from "./chat-evidence";
 import {ChatMarkdown} from "./chat-markdown";
 import {useChatStream} from "./use-chat-stream";
 import {WorkspaceManager} from "./workspaces";
@@ -78,7 +79,7 @@ type Proposal = {
   category_id?: string | null;
 };
 type Conversation = { id: string; title: string; privacy: string; temporary?:boolean };
-type Message = { id: string; role: string; content: string; attachment_id?: string | null };
+type Message = { references?:Evidence[]|null; id: string; role: string; content: string; attachment_id?: string | null };
 type Job = { id: string; status: string; error: string | null };
 function isReviewCommand(text:string) {
   return /^(?:(?:ยืนยัน|ยกเลิก)(?:\s+[a-fA-F0-9]{8})?|ทวนอีกที|ทวนหน่อย|ทวนรายการ|สรุปที่จะบันทึก|ยกเลิกการกรอก|เริ่มใหม่)$/.test(text.trim());
@@ -265,8 +266,9 @@ export default function Finance() {
   const loadWorkspaces = useCallback(async () => {
     const list = await api<Workspace[]>("/workspaces");
     setWorkspaces(list);
+    const requestedWorkspace=new URLSearchParams(window.location.search).get("workspace")||"";
     let preferred="";
-    try {preferred=sessionStorage.getItem("sf-workspace")||"";} catch {}
+    try {preferred=requestedWorkspace||sessionStorage.getItem("sf-workspace")||"";} catch {}
     setWid((old) => (list.some((w) => w.id === old) ? old : list.some(w=>w.id===preferred)?preferred:list[0]?.id || ""));
   }, []);
   useEffect(()=>{
@@ -869,6 +871,7 @@ export default function Finance() {
                       <span className="message-author">{m.role === "user" ? "คุณ" : <><Sparkles size={17} /> Finance AI</>}</span>
                       {m.attachment_id && <a href={"/api" + base + "/attachments/" + m.attachment_id} target="_blank" rel="noreferrer"><img className="chat-image" src={"/api" + base + "/attachments/" + m.attachment_id} alt="รูปที่แนบในบทสนทนา" loading="lazy" onLoad={() => { const el = chatScroll.current; if (el && followBottom.current && !focusMessage) el.scrollTop = el.scrollHeight; }} /></a>}
                       {m.content && <ChatMarkdown text={m.role==='assistant'?m.content.replace(/\n\nรหัสทางเลือก:\nยืนยัน [A-F0-9]{8}\n$/,''):m.content}/>}
+                      {m.role==='assistant'&&<ChatEvidence wid={wid} items={m.references}/>}
                       {m.role === "assistant" && m.content.includes("AI Inbox") && <Link className="inbox-result" href="/inbox">เปิด AI Inbox เพื่อตรวจสอบ <ArrowUpRight size={16} /></Link>}
                     </div>) : liveDraft ? null : <div className="chat-welcome">
                       <div className="ai-orb"><Sparkles size={32} /></div><p className="eyebrow">YOUR PERSONAL FINANCE COMPANION</p><h1>วันนี้ อยากคุย<br className="mobile-break" />เรื่องอะไร?</h1><p className="muted">มองภาพรวมเงินของคุณ หรือส่งสลิป<br />ให้ช่วยเตรียมรายการและยืนยันที่นี่</p>
@@ -988,8 +991,8 @@ export default function Finance() {
                 </div>
                 {linkCode && <code className="link-code">{linkCode}</code>}
               </section>
-              {workspaces.find((w) => w.id === wid)?.role === "owner" && (
-                <section className="panel" id="ai-provider-settings"><h3><Sparkles size={20}/> ตั้งค่า AI</h3><p className="muted">เลือกผู้ให้บริการและ Custom API จัดลำดับโมเดลแชท/สลิป ทดสอบการเชื่อมต่อ และควบคุม Cloud AI จากเว็บ</p><Link className="workspace-open" href="/ai-settings">เปิดศูนย์ตั้งค่า AI <ArrowUpRight size={16}/></Link></section>
+              {wid && (
+                <section className="panel" id="ai-provider-settings"><h3><Sparkles size={20}/> ตั้งค่า AI</h3><p className="muted">จัดการความจำส่วนตัว บัญชีเริ่มต้น และกฎหมวดหมู่ · เจ้าของพื้นที่จัดการโมเดล Cloud AI และงบใช้งานได้ที่นี่</p><Link className="workspace-open" href="/ai-settings">เปิดศูนย์ตั้งค่า AI <ArrowUpRight size={16}/></Link></section>
               )}
               </>}
             </div>

@@ -47,6 +47,6 @@ const components={
 export const ChatMarkdown=memo(function ChatMarkdown({text}:{text:string}){
  // Financial review must show literal names/descriptions so Markdown characters
  // cannot hide any part of the exact data the user is being asked to approve.
- if(text.startsWith('กรุณาตรวจสอบ — ยังไม่บันทึก\n'))return <p className="chat-review-text">{text}</p>;
+ if(text.startsWith('กรุณาตรวจสอบ — ยังไม่บันทึก\n')||text.startsWith('ทวนความจำส่วนตัว — ยังไม่บันทึก\n'))return <p className="chat-review-text">{text}</p>;
  return <div className="chat-markdown"><Markdown remarkPlugins={[remarkGfm,remarkBreaks,remarkHighlight]} skipHtml urlTransform={safeUrl} components={components}>{text}</Markdown></div>;
 });

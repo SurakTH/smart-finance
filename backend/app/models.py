@@ -127,11 +127,41 @@ class Message(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     workspace_id: Mapped[str] = mapped_column(String(36), index=True)
     conversation_id: Mapped[str] = mapped_column(String(36))
+    references: Mapped[list | None] = mapped_column(JSON,nullable=True)
     role: Mapped[str] = mapped_column(String(15))
     content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[int] = mapped_column(BigInteger, default=lambda: time.time_ns()//1_000_000)
     attachment_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     __table_args__ = (ForeignKeyConstraint(['conversation_id','workspace_id'], ['conversations.id','conversations.workspace_id']), ForeignKeyConstraint(['attachment_id','workspace_id'], ['attachments.id','attachments.workspace_id'], name='fk_message_attachment_workspace'))
+
+class AssistantPreference(Base):
+    __tablename__='assistant_preferences'
+    user_id:Mapped[str]=mapped_column(String(36),primary_key=True)
+    workspace_id:Mapped[str]=mapped_column(String(36),primary_key=True)
+    values:Mapped[dict]=mapped_column(JSON)
+    version:Mapped[int]=mapped_column(Integer,default=1)
+    __table_args__=(ForeignKeyConstraint(['user_id','workspace_id'],['memberships.user_id','memberships.workspace_id'],ondelete='CASCADE'),)
+
+class AIUsagePolicy(Base):
+    __tablename__='ai_usage_policies'
+    workspace_id:Mapped[str]=mapped_column(ForeignKey('workspaces.id'),primary_key=True)
+    monthly_limit:Mapped[int]=mapped_column(BigInteger,default=0)
+    prices:Mapped[dict]=mapped_column(JSON,default=dict)
+
+class AIUsage(Base):
+    __tablename__='ai_usage'
+    id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uid)
+    workspace_id:Mapped[str]=mapped_column(ForeignKey('workspaces.id'),index=True)
+    provider_id:Mapped[str]=mapped_column(String(36))
+    model:Mapped[str]=mapped_column(String(100))
+    task:Mapped[str]=mapped_column(String(15))
+    month:Mapped[str]=mapped_column(String(7))
+    input_tokens:Mapped[int]=mapped_column(BigInteger)
+    output_tokens:Mapped[int]=mapped_column(BigInteger)
+    cost:Mapped[int|None]=mapped_column(BigInteger,nullable=True)
+    estimated:Mapped[bool]=mapped_column(default=True)
+    status:Mapped[str]=mapped_column(String(15))
+    created_at:Mapped[int]=mapped_column(BigInteger,default=now)
 
 class AISettings(Base):
     __tablename__ = 'ai_settings'

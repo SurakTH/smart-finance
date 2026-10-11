@@ -65,9 +65,10 @@ def test_model_clarification_history_and_followup(actor,monkeypatch):
     say(c,b,cid,'ยืนยัน');assert count(w)==1
 
 
-def test_private_never_calls_cloud_and_stale_job_never_creates_draft(actor,monkeypatch):
+def test_workspace_cloud_disabled_and_stale_job_never_creates_draft(actor,monkeypatch):
     c,w,u,b,cid=setup(actor)
     calls=mock_provider(monkeypatch,w,lambda:suggestion(w),kind='openai')
+    c.put(b+'/ai/settings',json={'cloud_enabled':False})
     reply=run(c,w,b,cid,'หักเงินสดสองร้อยให้ร้านเซเว่นหน่อย')
     assert 'โหมดสาธิต' in reply and calls==[] and count(w)==0
     # An older queued utterance cannot bind a new confirmation over a newer review.

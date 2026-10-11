@@ -55,8 +55,10 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
 
 
 def call_model(db, job):
-    private = job.payload.get('privacy','private')=='private'
     options = settings(db,job.workspace_id)
+    # Web Chat follows current workspace routes, including existing/queued rooms.
+    # Explicit privacy remains applicable to standalone capture/Telegram.
+    private = not options['cloud_enabled'] if job.task=='chat' else job.payload.get('privacy','private')=='private'
     providers = db.scalars(select(Provider).where(Provider.workspace_id==job.workspace_id,Provider.task==job.task,Provider.enabled.is_(True)).order_by(Provider.priority,Provider.id)).all()
     providers = [p for p in providers if (p.kind=='ollama' or (not private and options['cloud_enabled']))]
     messages = [];has_images=False

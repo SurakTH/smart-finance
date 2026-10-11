@@ -217,7 +217,6 @@ export default function Finance() {
     [editing, setEditing] = useState<Proposal | "new" | null>(null);
   const [ledgerVersion, setLedgerVersion] = useState(0);
   const [month, setMonth] = useState(today().slice(0, 7)),
-    [privacy, setPrivacy] = useState("private"),
     [capturePrivacy, setCapturePrivacy] = useState("private"),
     [linkCode, setLinkCode] = useState("");
   const [chatFile, setChatFile] = useState<File | null>(null);
@@ -247,6 +246,10 @@ export default function Finance() {
     return()=>cancelAnimationFrame(frame);
   },[path,user,wid,workspaces]);
   useEffect(()=>{if(wid){try{sessionStorage.setItem("sf-workspace",wid);}catch{}}},[wid]);
+  function selectWorkspace(id:string) {
+    try {sessionStorage.setItem("sf-workspace",id);} catch {}
+    setWid(id);
+  }
   const base = "/workspaces/" + wid;
   const activeMonth = useRef(month);
   activeMonth.current = month;
@@ -392,7 +395,7 @@ export default function Finance() {
     await run(async () => {
       const c = await api<Conversation>(base + "/conversations", {
         title: "บทสนทนา " + new Date().toLocaleDateString("th-TH"),
-        privacy, temporary,
+        temporary,
       });
       setTemporaryRoom(c.temporary?c:null);
       setCid(c.id);
@@ -424,7 +427,7 @@ export default function Finance() {
         requestedConsumed.current=true;room=requested;
       }
       if (!room) {
-        const c = await api<Conversation>(base + "/conversations", { privacy, temporary });
+        const c = await api<Conversation>(base + "/conversations", { temporary });
         setTemporaryRoom(c.temporary?c:null);
         room = c.id;
       }
@@ -554,7 +557,7 @@ export default function Finance() {
           <select
             aria-label="เลือก workspace"
             value={wid}
-            onChange={(e) => setWid(e.target.value)}
+            onChange={(e) => selectWorkspace(e.target.value)}
           >
             {workspaces.map((w) => (
               <option key={w.id} value={w.id}>
@@ -605,7 +608,7 @@ export default function Finance() {
             </span>
           </span>
           <div className="topbar-actions">
-            <select aria-label="เลือก workspace บนมือถือ" className="mobile-workspace" value={wid} onChange={(e) => setWid(e.target.value)}>{workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
+            <select aria-label="เลือก workspace บนมือถือ" className="mobile-workspace" value={wid} onChange={(e) => selectWorkspace(e.target.value)}>{workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
             <span className="status-dot">พื้นที่ส่วนตัว</span>
             <Link href="/settings" className="icon-button" aria-label="ตั้งค่า"><Settings size={21} /></Link>
           </div>
@@ -845,8 +848,7 @@ export default function Finance() {
                 <Button className="new-chat" disabled={busy} onClick={newChat}><Plus size={19} /> บทสนทนาใหม่</Button>
                 <label className="temporary-switch"><input type="checkbox" checked={temporary} onChange={e=>setTemporary(e.target.checked)}/>ห้องใหม่เป็นแชทชั่วคราว<small>ไม่อยู่ในประวัติ · หมดอายุใน 24 ชม.</small></label><ChatHistory key={wid} wid={wid} selected={cid} revision={JSON.stringify(conversations.map(c=>[c.id,c.title]))+latestMessage} onSelect={c=>{setTemporaryRoom(null);setRenaming(false);setMessages([]);setFocusMessage(c.message_id||'');setCid(c.id);if(compact)setHistoryOpen(false);}}/>
                 <div className="history-settings"><AssistantHistory key={wid} wid={wid}/>
-                  <label>โหมดของห้องใหม่<select value={privacy} onChange={(e) => setPrivacy(e.target.value)}><option value="private">Private · Local AI เท่านั้น</option><option value="standard">Standard · อนุญาต Cloud AI</option></select></label>
-                  <label>Workspace<select aria-label="เลือก workspace ในแชท" value={wid} onChange={(e) => { setWid(e.target.value); if (compact) setHistoryOpen(false); }}>{workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
+                  <label>Workspace<select aria-label="เลือก workspace ในแชท" value={wid} onChange={(e) => { selectWorkspace(e.target.value); if (compact) setHistoryOpen(false); }}>{workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
                   {cid&&!selectedRoom?.temporary&&<button className="rename-chat" onClick={()=>{setRoomTitle(selectedRoom?.title||'');setRenaming(true);if(compact)setHistoryOpen(false);}}><Pencil size={16}/>เปลี่ยนชื่อบทสนทนา</button>}
                   {cid && <button className="delete-chat" onClick={() => run(async () => { await api(base + "/conversations/" + cid, undefined, "DELETE"); setCid(""); setMessages([]); await refresh(); })}><Trash2 size={16} /> ลบบทสนทนานี้</button>}
                   <Link href="/settings" className="back-finance"><Settings size={17} /> ตั้งค่า AI และความเป็นส่วนตัว</Link>
@@ -854,8 +856,8 @@ export default function Finance() {
               </aside>
               <section className="chat">
                 <header className="chat-topbar">
-                  <div><Link href="/" className="icon-button chat-back" aria-label="กลับหน้าการเงิน"><ArrowLeft size={21} /></Link><button ref={historyToggle} className="icon-button" aria-label="เปิดประวัติการสนทนา" aria-expanded={historyOpen} aria-controls="chat-history" onClick={() => setHistoryOpen(!historyOpen)}><Menu size={22} /></button><strong>Finance AI<span>ผู้ช่วยการเงินของคุณ</span></strong></div>
-                  <div><span className="privacy-pill"><ShieldCheck size={15} />{(selectedRoom?.privacy || privacy) === "standard" ? "Cloud AI" : "Local AI"}</span><button className="icon-button" aria-label="เริ่มบทสนทนาใหม่" disabled={busy} onClick={newChat}><Plus size={23} /></button></div>
+                  <div><Link href="/" className="icon-button chat-back" aria-label="กลับหน้าการเงิน"><ArrowLeft size={21} /></Link><button ref={historyToggle} className="icon-button" aria-label="เปิดประวัติการสนทนา" aria-expanded={historyOpen} aria-controls="chat-history" onClick={() => setHistoryOpen(!historyOpen)}><Menu size={22} /></button><strong>Finance AI<span>{workspaces.find(w=>w.id===wid)?.name || 'ผู้ช่วยการเงินของคุณ'}</span></strong></div>
+                  <div><span className="privacy-pill"><ShieldCheck size={15} />AI ตามลำดับ</span><button className="icon-button" aria-label="เริ่มบทสนทนาใหม่" disabled={busy} onClick={newChat}><Plus size={23} /></button></div>
                 </header>
                 {renaming&&<form className="chat-rename-form" onSubmit={e=>{e.preventDefault();run(async()=>{await api(base+'/conversations/'+cid+'/rename',{title:roomTitle.trim()});setRenaming(false);await refresh();});}}><label>ชื่อบทสนทนา<input aria-label="ชื่อบทสนทนา" value={roomTitle} onChange={e=>setRoomTitle(e.target.value)} maxLength={100} required autoFocus disabled={busy}/></label><Button type="submit" size="sm" disabled={busy||!roomTitle.trim()}>บันทึกชื่อ</Button><button className="icon-button" aria-label="ยกเลิกเปลี่ยนชื่อแชท" type="button" disabled={busy} onClick={()=>setRenaming(false)}><X size={18}/></button></form>}
                 {focusMessage&&<div className="chat-focus-banner"><span>ส่วนของบทสนทนาที่ตรงคำค้น</span><button onClick={()=>setFocusMessage('')}>ดูข้อความล่าสุด</button></div>}
@@ -921,7 +923,7 @@ export default function Finance() {
                   </Button>
                 </form>
 
-                  <div className="composer-meta"><span><ShieldCheck size={13} />{(selectedRoom?.privacy || privacy) === "standard" ? "อาจส่งรูปและข้อความไปยัง Cloud AI" : "Private · ใช้ Local AI หรือโหมดสาธิต"}</span><details><summary>เกี่ยวกับรูปและข้อมูล</summary><p>รูปสลิปจะเข้า AI Inbox ของ workspace สมาชิกจะเห็นข้อเสนอและรูปหลักฐานเมื่ออ่านเสร็จ คุณต้องตรวจสอบและยืนยันเองทุกครั้ง AI อาจให้ข้อมูลผิดพลาด ประวัติเก็บบนเซิร์ฟเวอร์ของคุณ โหมดสาธิตยังอ่านยอดจากรูปไม่ได้</p></details></div>
+                  <div className="composer-meta"><span><ShieldCheck size={13} />ใช้ AI ตามการตั้งค่าของ workspace นี้</span><details><summary>เกี่ยวกับรูปและข้อมูล</summary><p>รูปสลิปจะเข้า AI Inbox ของ workspace สมาชิกจะเห็นข้อเสนอและรูปหลักฐานเมื่ออ่านเสร็จ คุณต้องตรวจสอบและยืนยันเองทุกครั้ง AI อาจให้ข้อมูลผิดพลาด ประวัติเก็บบนเซิร์ฟเวอร์ของคุณ โหมดสาธิตยังอ่านยอดจากรูปไม่ได้</p></details></div>
                 </div>
               </section>
             </div>
@@ -939,9 +941,9 @@ export default function Finance() {
                   <ShieldCheck size={20} /> ความเป็นส่วนตัวและ Workspace
                 </h3>
                 <p className="muted">
-                  Private ใช้เฉพาะ Ollama หรือ mock ภายในเครื่อง Cloud AI
-                  เปิดได้จากหน้าตั้งค่า AI ของพื้นที่ และเลือก Standard
-                  เมื่อสร้างห้อง
+                  แชทใช้ลำดับ AI ของ workspace ที่เลือกอยู่ทุกห้อง
+                  เปิดหรือปิด Cloud AI ได้จากศูนย์ตั้งค่า AI ของพื้นที่
+                  ไม่ต้องเลือกโหมดเมื่อสร้างห้อง
                 </p>
                 <p className="muted small">
                   รหัสผ่านและ API key ไม่ถูกเก็บในเบราว์เซอร์ แชทชั่วคราวเลือกได้จากเมนูในหน้าแชท

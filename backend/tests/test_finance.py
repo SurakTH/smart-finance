@@ -108,11 +108,12 @@ def test_worker_mock_inbox_never_posts(actor):
     assert all(p['source']=='demo' and p['status']=='pending' for p in rows)
     assert c.get(b+'/transactions').json()==[]
 
-def test_private_chat_never_calls_cloud_and_delete(actor,monkeypatch):
+def test_workspace_cloud_disabled_never_calls_cloud_and_delete(actor,monkeypatch):
     c,w,u=actor;b=f'/workspaces/{w}'
     monkeypatch.setattr(config,'EXTERNAL_AI_ENABLED',True)
     with SessionLocal.begin() as db:
         db.add(Provider(workspace_id=w,kind='openai',task='chat',model='fake',priority=1,encrypted_key='must-never-decrypt'))
+    c.put(b+'/ai/settings',json={'cloud_enabled':False})
     def forbidden(*args,**kwargs): raise AssertionError('Private mode attempted external network')
     monkeypatch.setattr(ai.httpx,'Client',forbidden)
     room=c.post(b+'/conversations',json={'privacy':'private'}).json()['id']

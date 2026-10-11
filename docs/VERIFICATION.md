@@ -1,5 +1,15 @@
 # ผลตรวจสอบ Smart Finance
 
+## ใช้ลำดับ AI และ workspace ที่เลือกเป็นค่าเริ่มต้น (11 ตุลาคม 2026)
+
+- PostgreSQL ชุดรวม **297 passed** เพิ่ม Web Chat route tests ทั้งห้องใหม่/legacy private/standard ใช้ Cloud switch + priority/fallback ปัจจุบันของ workspace เหมือนกัน ไม่มี room privacy gate อีกต่อไป ทดสอบ Cloud ล้มแล้วใช้ Ollama, ปิด Cloud แล้วไม่เรียก cloud, รูปข้ามโมเดล text-only และเปลี่ยนสวิตช์ก่อนประมวลผลงานที่รอ
+- บริบท native assistant มี ID/ชื่อ workspace ปัจจุบันและคำสั่งให้ใช้พื้นที่นี้โดยไม่ถามซ้ำ ไม่มี tool เปลี่ยนพื้นที่หรืออ่านพื้นที่อื่น ยังคง membership/tenant checks เดิม การรับข้อมูลนอก Web Chat ยังคง explicit privacy เดิม
+- Chrome **14 passed** (desktop7/mobile7) รวมเลือกพื้นที่จากหน้าการเงิน → เข้าแชท → สร้างห้อง/เตรียมรายการในพื้นที่นั้น → เปลี่ยนเอง → ยืนยันลงพื้นที่ใหม่เท่านั้น → กลับหน้าการเงิน/รีโหลดจำตัวเลือกเดิม ไม่พบตัวเลือก Private/Standard รายห้อง ชื่อ workspace ยาวบนหัวแชทไม่ทำให้หน้าล้น
+- TypeScript/Next production build ผ่าน ไม่มี migration ใหม่ คง privacy metadata เดิมสำหรับ client เก่า เพิ่ม routing=workspace ใน conversation response และงาน chat; สวิตช์ Cloud ไม่ถูกเปิดเอง ค่าปัจจุบันใช้กับห้องเดิมด้วย
+- รอบแรกพื้นที่ Docker เต็มจน PostgreSQL/ชุดทดสอบขัดข้อง ลบเฉพาะ image เก่าจากงานนี้ที่ไม่ใช้งาน ไม่แตะ volumes จากนั้นทุก service healthy ชุดรวมและ browser ผ่าน พร้อมสำรอง/restore ในฐาน disposable ตรวจ row counts/snapshots/ledger balance ผ่าน
+- Model transport ยังเป็น mock ไม่ได้ยืนยันคุณภาพกับ provider จริง ไม่มีการอัปเดต VM ผู้ใช้ Source ZIP ตรวจ integrity/runtime-secret scan แล้ว ยังอยู่ขั้น3จาก4
+
+
 ## แก้การส่ง ยืนยัน แบบไม่มีเครื่องหมายคำพูด (11 ตุลาคม 2026)
 
 - พบ composer ล็อกปุ่มส่งเมื่อมี pending job ใด ๆ ใน workspace จึงส่ง ยืนยัน ไม่ได้แม้งานนั้นเป็นรูปหรือข้อความอื่น แก้ให้ปุ่มส่งใช้ได้เมื่อพิมพ์คำสั่งยืนยัน/ทวน และคำสั่ง ยืนยัน/ยกเลิก/ทวนอีกที ส่งตรงไปยัง backend ได้ ข้อความคุยใหม่หรือรูปยังรอคำตอบก่อน และไม่ล้างร่างที่พิมพ์ไว้

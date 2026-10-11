@@ -13,7 +13,7 @@ def expired(db,c):
     pref=db.get(ChatPreference,(c.user_id,c.workspace_id))
     return c.created_at<=now()-86400 if c.temporary else bool(pref and pref.retention_days and c.updated_at<=now()-pref.retention_days*86400)
 
-def serialize(c):return dict(id=c.id,title=c.title,privacy=c.privacy,temporary=bool(c.temporary))
+def serialize(c):return dict(id=c.id,title=c.title,privacy=c.privacy,routing='workspace',temporary=bool(c.temporary))
 
 def erase(db,c):
     wid=c.workspace_id

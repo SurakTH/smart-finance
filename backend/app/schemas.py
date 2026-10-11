@@ -36,7 +36,7 @@ class ChatRetentionInput(BaseModel):
 class ConversationInput(BaseModel):
     temporary: bool = Field(default=False,strict=True)
     title: str = Field(default='บทสนทนาใหม่', min_length=1, max_length=100)
-    privacy: Literal['private','standard'] = 'private'
+    privacy: Literal['private','standard'] = Field(default='private',description='Legacy metadata only; Web Chat follows workspace AI settings and routes.')
 
 class ProposalInput(BaseModel):
     description: str = Field(min_length=1, max_length=300)

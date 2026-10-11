@@ -34,7 +34,7 @@ def test_chat_image_history_private_fallback_and_duplicate(actor,monkeypatch):
     assert c.get(root+f'/attachments/{aid}').headers['content-type']=='image/jpeg'
     with SessionLocal() as db:
         job=db.get(Job,r.json()['job_id'])
-        assert job.payload['privacy']=='private' and job.task=='chat'
+        assert job.payload['routing']=='workspace' and 'privacy' not in job.payload and job.task=='chat'
     while run_once(): pass
     assert c.get(root+'/proposals').json()==[]
     assert 'ยังอ่านรูปนี้ไม่ได้' in c.get(root+f'/conversations/{cid}/messages').json()[-1]['content']

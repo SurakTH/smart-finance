@@ -1,0 +1,308 @@
+# ผลตรวจสอบ Smart Finance
+
+## ตัวเลือก Nginx (11 ตุลาคม 2026)
+
+Compose overlay ตรวจผ่าน; Nginx stable-alpine ตรวจ syntax ของ internal gateway และ snippet สำหรับ Nginx เดิมผ่าน ทดสอบ gateway ชั่วคราวกับแอปจริงผ่าน: หน้าเว็บ, API พร้อม query string, login/session cookie, workspace ที่ต้อง login, SSE ส่ง ready ทันที, ลบห้องทดสอบและ logout แอปที่พอร์ต 8080 ยังใช้ gateway เดิม ไม่แก้ Nginx ภายนอกของผู้ใช้ โดเมน/ใบรับรอง/HTTPS ของเครื่องปลายทางยังไม่ได้ตรวจ
+
+## ยืนยันอีเมลและกู้รหัสผ่าน — ล่าสุด (11 ตุลาคม 2026)
+
+- PostgreSQL **187 passed** รวมทดสอบระบบเดิมและกรณีใหม่ 13 กรณี: คำตอบขอกู้บัญชีไม่แยกอีเมลที่มี/ไม่มี, ปิด SMTP, เข้ารหัส outbox/hash token, ตั้งรหัสผ่านและเพิกถอนทุก session, ใช้ซ้ำ/หมดอายุ/ขอใหม่/ผิดประเภท, เปลี่ยนรหัสผ่านยกเลิกลิงก์เดิม, validation ไม่สะท้อน token/password, rate limit, retry 3 ครั้งและล้าง payload, สมัครแล้วเข้าคิว verification, STARTTLS transport ที่จำลอง, รหัสยืนยันไม่ตรงไม่ใช้ token, สอง transaction ใช้ token พร้อมกันสำเร็จครั้งเดียว และล้าง outbox หมดอายุแม้ SMTP ปิด
+- SQLite ชุดรวมก่อนเพิ่ม cleanup **166 passed, 19 skipped**; หลังเพิ่ม concurrency/cleanup ทดสอบเฉพาะ email recovery **12 passed, 1 PostgreSQL-only skipped**. TypeScript และ Next.js production build ผ่าน
+- Chrome ชุดรวม **44 passed** (คอม 22/มือถือ 22) รวมหน้าลืมรหัสผ่าน/SMTP ปิด, ยืนยันอีเมลแบบกดเอง, รหัสผ่านไม่ตรง/ตรง และ fragment ไม่ค้างในแถบที่อยู่ ตรวจภาพมือถือ `artifacts/email-recovery-mobile.png` แล้ว ไม่มีการล้นแนวนอน
+- หน้าจอลืมรหัสผ่านและแจ้งสถานะ SMTP; ลิงก์ fragment ถูกนำออกหลังอ่าน; เปิดลิงก์อย่างเดียวยังไม่ทำงาน ต้องกด/กรอกรหัสผ่านยืนยันเอง; หน้า reset สำเร็จล้าง vault ของเครื่องนี้และไม่ auto-login
+- คิวอีเมลอยู่ใน transaction เดียวกับการออก token; worker ใช้ User → EmailToken locks เหมือน request/consume/password change. SMTP timeout 10 วินาที, TLS certificate validation, retry ไม่เกิน 3 ครั้ง, ไม่บันทึก exception/recipient/body/password ลง log
+- สำรองและ restore ลงฐานชั่วคราวผ่านหลังทดสอบ UI จบ รวม schema/จำนวนแถว email_tokens และ snapshot email_verified_at ใน users; จำนวนแถวและ snapshots ตรงกัน journal สมดุล
+- SMTP ปิดเป็นค่าเริ่มต้น ไม่มีอีเมลจริงถูกส่งในการทดสอบ การยืนยันอีเมลยังเป็นทางเลือก ไม่บังคับ login. 2FA/รายการอุปกรณ์/เปลี่ยนอีเมล และการส่ง–รับ SMTP จริงยังไม่ผ่านการตรวจ
+
+## แชทธรรมชาติ / Telegram และ PWA — ผลก่อนเพิ่มบัญชีกู้คืน (11 ตุลาคม 2026)
+
+- PostgreSQL **174 passed**; SQLite **155 passed, 19 PostgreSQL-only skipped**. TypeScript และ Next.js production build ผ่าน
+- Chrome ชุดรวม **38 passed** (คอม 19/มือถือ 19) รวมแชทที่ถามข้อมูลขาด/แก้รายการ/โหลดข้อความเก่าต่อเนื่องโดย polling ไม่ทิ้งประวัติ และตัดอินเทอร์เน็ตจริง เปิดแอปจาก navigation fallback ปลดล็อกผิด/ถูก เก็บร่าง เข้ารหัสไม่เห็น plaintext ตรวจเจ้าของบัญชี ส่งทวนแต่ยอดไม่เปลี่ยนจนพิมพ์ยืนยัน logout ล้าง vault และ pending encryption เขียนกลับไม่ได้
+- หลังเพิ่ม guard การล็อกระหว่าง async decryption ตรวจ PWA ซ้ำ **2 passed** ทั้งคอม/มือถือ การล็อกระหว่างปลดล็อกไม่ทำให้ข้อมูลเปิดกลับมาเอง
+- สำรองและ restore ลงฐานชั่วคราวผ่าน รวม capture_context ของแชท จำนวนแถวและ snapshots ตรงกัน journal สมดุล
+- 15 tests ใหม่: รายจ่าย/รายรับ/เมื่อวาน/ยอดทศนิยม, ถามบัญชีและหมวดต่อ, หมดอายุข้อมูลที่ขาด, โอน/จ่ายบัตร/แก้รายการล่าสุดเฉพาะห้อง, จำนวนหลายยอด/ติดลบ/ทศนิยมเกิน/วันที่ผิด, ยกเลิกข้อมูลที่กรอก, คำถามรายงานไม่สร้าง draft, Telegram message ID dedup และห้อง/ผู้ใช้แยกกัน รวม history cursor ที่มี timestamp ซ้ำ/ก่อน–หลัง/ห้องอื่น
+- Telegram text ใช้ trusted handler โดยตรงและ transaction หลัก ไม่ผ่าน worker/savepoint เมื่อยืนยัน ledger ยอดสมดุล ยืนยันข้อความเดิมซ้ำไม่บันทึกเพิ่ม ทดสอบ handler ภายใน ยังไม่ได้เรียก Telegram จริงหรือทดสอบ delivery ของ aiogram กับ token จริง
+- PWA มี manifest id/scope และ PNG icons 192/512, service worker cache เฉพาะไฟล์ public/static, offline navigation fallback, install prompt/fallback guidance และปุ่มอัปเดตรุ่นใหม่ หน้า offline จำกัด CSP เฉพาะไฟล์/การเชื่อมต่อ same-origin
+- Vault ปิดเป็นค่าเริ่มต้น เก็บ snapshot 100 รายการล่าสุดหนึ่ง workspace และ 20 ร่างข้อความโดยเลือกเก็บ เข้ารหัส AES-256-GCM/PBKDF2-SHA256 210,000 รอบ salt/IV ใหม่ ไม่เก็บรหัสปลดล็อก ข้อมูล API/ภาพ/แชท/credentials ไม่อยู่ใน service worker cache ล็อกเมื่อไปเบื้องหลัง ล้างเมื่อ logout ป้องกัน pending encryption เขียนกลับหลัง clear
+- ข้อจำกัด: natural language ใช้กฎภาษาไทยที่รองรับและยังไม่ครอบคลุมทุกสำนวน รูปยังต้องยืนยันใน Inbox บนเว็บ ออฟไลน์ไม่เรียก AI/ไม่ลง ledger/ไม่ส่งร่างอัตโนมัติ ต้องใช้ HTTPS หรือ localhost และยังไม่ได้ติดตั้งตรวจบนมือถือจริง Snapshot บนเครื่องออฟไลน์ไม่หายทันทีเมื่อ server revoke สิทธิ์ แต่ส่ง/ยืนยันต้องตรวจบัญชีและสมาชิกใหม่ ภาพรวมยังอยู่ขั้น 3 จาก 4
+
+
+## สมัครบัญชีผ่านเว็บ — รุ่นก่อนหน้า (11 ตุลาคม 2026)
+
+- PostgreSQL **159 passed**; SQLite **140 passed, 19 PostgreSQL-only skipped**; TypeScript และ Docker/Next.js production build ผ่าน
+- เพิ่ม `/auth/options`, `/auth/register`, `/register` และปุ่มสมัครในหน้าเข้าสู่ระบบตามค่า runtime `ALLOW_REGISTRATION` ค่าเริ่มต้น false และบล็อก API โดยตรงเมื่อปิด ไม่ต้อง build frontend ใหม่เมื่อเปลี่ยนค่า
+- 10 tests ใหม่ตรวจเปิด–ปิด, สมัคร/ชื่อ/ปรับอีเมลเป็นตัวเล็ก/Argon2/session/logout/login, พื้นที่ส่วนตัวใหม่กับ 6 บัญชีเริ่มต้นและไม่มีรายการ, การอ่านข้าม tenant, อีเมลซ้ำไม่สร้างพื้นที่เพิ่ม, validation ที่ไม่สะท้อนรหัสผ่าน, password confirmation, throttle และ request origin รวมการจำลองสร้าง session ล้มเหลวแล้ว rollback บัญชี/พื้นที่ทั้งหมด
+- Chrome โหมดเปิดสมัคร **2 passed** (คอม/มือถือ): สมัครจากหน้าเข้าสู่ระบบ ยืนยันรหัสไม่ตรงแล้วแก้ไข สมัครเพื่อนใน session แยก ตรวจข้ามพื้นที่ 404 แล้ว logout/login ด้วยบัญชีที่สมัครใหม่ ภาพหน้าสมัคร 1440/393/360px ไม่มีส่วนล้นแนวนอนและตรวจภาพมือถือแล้ว
+- Chrome ชุดรวมเมื่อปิดสมัคร **34 passed** (คอม 17/มือถือ 17) รวมบัญชีเดิม คำเชิญ และระบบการเงิน
+- หลังแก้ transaction ตรวจหน้าเว็บสมัครซ้ำ **2 passed** เมื่อเปิด และ **2 passed** เมื่อปิด; สำรอง/restore ลงฐาน disposable ผ่าน row counts/snapshots ตรงกันและ ledger สมดุล
+- คืนค่าเว็บในเครื่องเป็นปิดสมัครหลังทดสอบ บัญชีเดิมและคำเชิญยังใช้ได้ ยังไม่มีอีเมลยืนยัน กู้รหัสผ่าน หรือ 2FA ภาพรวมยังอยู่ขั้น 3 จาก 4
+
+
+## รุ่นก่อนหน้า — พื้นที่ทำงานและบัญชีแยกคน (11 ตุลาคม 2026)
+
+- PostgreSQL **149 passed**; SQLite **130 passed, 19 PostgreSQL-only skipped**; TypeScript และ Next.js production build ผ่าน
+- เปลี่ยนชื่อพร้อม trim/ป้องกันชื่อว่าง, version เก่าได้ 409, owner เท่านั้น, member ไม่มีสิทธิ์, พื้นที่คนอื่นไม่แสดงใน management list และแก้ไขไม่ได้
+- เก็บ/กู้คืนต้องพิมพ์ชื่อให้ตรง พื้นที่ที่เก็บไม่อยู่ในรายการ active และข้อมูล/API/ledger post/SSE/Telegram linking หรือ capture ผ่าน linked helper/งานคิว/การสร้างข้อเสนอ recurring ถูกพัก ทดสอบ restore แล้ว job ที่ยังใช้ได้ทำต่อ และ recurring สร้างข้อเสนอ pending ได้อีกครั้ง
+- ลบถาวรได้เฉพาะ default workspace ที่ยังว่าง มี owner คนเดียว ไม่มีข้อมูลอื่น ตรวจสดใต้ lock; พื้นที่ที่มีรายการหรือคำเชิญ/ประวัติลบไม่ได้ PostgreSQL ตรวจลบพื้นที่สุดท้าย commit ผ่านโดยยังเก็บ user/session และสร้างพื้นที่ใหม่ได้
+- PostgreSQL archive 2 threads ใช้ version เดียวกัน ได้หนึ่งสำเร็จ/หนึ่ง 409 พร้อมรักษา owner guard และ immutable ledger เดิม
+- รหัสบัญชีส่วนตัวเก็บ hash เท่านั้น แสดง preview ประเภท personal, ผูกอีเมล/วันหมดอายุ/ยกเลิก/ใช้ครั้งเดียว; validation ไม่สะท้อน password/token การสมัครได้ personal workspace เพียงหนึ่งพื้นที่ ผู้เชิญไม่เป็นสมาชิกในพื้นที่นั้นและผู้รับไม่เป็นสมาชิกพื้นที่ผู้เชิญ ทดสอบ cross-tenant read ถูกปฏิเสธทั้งสองฝั่ง และแชร์ได้หลังรับ shared invite แยกต่างหากเท่านั้น
+- Chrome **32 passed ในรอบเดียว** (desktop 16 + mobile emulation 16) รวมตรวจสร้าง/ค้นหา/เปลี่ยนชื่อ/พิมพ์ชื่อผิดแล้วปุ่ม disabled/เก็บ/กู้คืนและรายการเดิมยังอยู่/ลบพื้นที่ว่าง/รหัสบัญชีส่วนตัว/สมัครผ่าน browser context แยก/เข้าข้อมูลของกันและกันไม่ได้/เก็บพื้นที่สุดท้ายแล้วกู้คืน ทั้งคอมและมือถือจำลอง
+
+- หลังแบ่งหน้าครั้งละ 6 พื้นที่ ตรวจ workspace scenario อีก **2 passed** ทั้ง desktop/mobile รวมหน้าถัดไปและค้นหาแล้วกลับหน้าแรก ตรวจ 14 หน้าที่ 1440/393/360px รวม **42 จุด** หลังการ์ดพื้นที่โหลดแล้ว ไม่มี horizontal overflow
+- สำรองและ restore ลงฐาน disposable ผ่าน ตรวจสถานะ/ชื่อ/version workspace และชนิด/สถานะ/token hash คำเชิญตรงกัน ledger สมดุล API/worker/web พร้อมใช้งาน
+
+ข้อจำกัด: ไม่มีการล้างประวัติการเงินถาวร ณ รุ่นนี้ signup ยังเป็น invitation-only โดยเจ้าของพื้นที่ที่ใช้งานอยู่ (รุ่นล่าสุดด้านบนเพิ่มสมัครผ่านเว็บที่เปิด–ปิดได้แล้ว) โค้ดผูกพื้นที่ที่ออกและพักระหว่าง archive ไม่มีอีเมลส่งอัตโนมัติหรือ public registration ไม่มีการลบบัญชีผู้ใช้หรือกู้รหัสผ่าน มี version guard แต่ไม่มีประวัติชื่อ/สถานะ workspace แบบ audit log อายุคำเชิญและนโยบายล้างแชทไม่หยุดระหว่าง archive; recurring อาจสร้างข้อเสนอ backlog เมื่อกู้คืน ยังไม่ได้ทดสอบ Telegram/provider จริง มือถือจริง หรือ Ubuntu/Hyper-V ภาพรวมขั้น 3 จาก 4
+
+## แชททวนและพิมพ์ยืนยันรายการ — รุ่นก่อนหน้า (11 ตุลาคม 2026)
+
+- PostgreSQL **142 passed**; SQLite **124 passed, 18 PostgreSQL-only skipped**. TypeScript และ Next.js production build ผ่าน
+- ทดสอบทวนรายละเอียด/ยอด/วันที่/บัญชี/หมวดก่อนบันทึก, บาททศนิยม 2 ตำแหน่ง, รายรับ/รายจ่าย/โอน/จ่ายบัตร, ข้อมูลไม่ครบ/ผิด/ชื่อซ้ำไม่สร้างข้อเสนอ
+- `ยืนยัน CODE` ต้องเป็นข้อความผู้ใช้ที่ส่งผ่าน authenticated text endpoint ทั้งข้อความ: ยืนยันเปล่า/รหัสผิด/ต่อท้ายข้อความไม่ลง ledger รหัสจากห้องอื่นหรือ workspace อื่นใช้ไม่ได้ สมาชิก workspace เดียวกันเข้าห้องของคนอื่นไม่ได้
+- รหัสอายุ 15 นาที; ยกเลิก/หมดอายุ/ข้อเสนอใหม่แทนทำให้รหัสเดิมใช้ไม่ได้ ยืนยันซ้ำไม่บันทึกซ้ำ PostgreSQL 4 threads ยืนยันพร้อมกันได้เพียงรายการเดียว ทุก journal สมดุล
+- การแก้แสดงก่อน/หลัง/เหตุผลและใช้ original + inverse + replacement พร้อมประวัติ รายการที่ถูกแก้ไปแล้วหรือชื่อบัญชีเปลี่ยนหลังทวนถูกปฏิเสธ การจำลองล้มเหลวหลังสร้าง journal rollback ทั้งคำขอ รวม lines/messages/status (pending ยังอยู่เพื่อให้ลองใหม่)
+- ใช้ top-level transaction สำหรับ posting เพื่อคง PostgreSQL xmin guard ของ immutable ledger ไม่ลดข้อจำกัดฐานข้อมูล; ผู้ใช้/ข้อความ/สถานะ/ledger commit พร้อมกันก่อน HTTP success ข้อเสนอและการยืนยันไม่ผ่าน worker/model/OCR; จำลองโมเดลตอบ `ยืนยัน CODE` แล้ว ledger ยังว่าง
+- ลบห้องแล้วข้อเสนอหาย แต่รายการเงินและประวัติที่ยืนยันไว้ยังอยู่ โมเดลยังไม่มีเครื่องมือเขียน ledger และไม่ได้อ่านรหัสยืนยันกลับมาเป็นสิทธิ์ดำเนินการ
+- Chrome **30 passed ในรอบเดียว** (desktop 15 + mobile emulation 15) รวมตรวจคำแนะนำ/ใส่ตัวอย่าง/ทวน/ยืนยันเปล่า/ยืนยันจริง/ส่งซ้ำ/คัดลอกคำขอแก้จากรายละเอียดผ่าน clipboard จริง/ก่อน-หลัง/ยอดใหม่/ประวัติ ทั้ง desktop และ mobile emulation
+
+- ตรวจ 13 หน้าที่ 1440/393/360px รวม **39 จุด** ไม่มี horizontal overflow และช่องแชทอยู่ใน viewport
+- สำรองและ restore ลงฐาน disposable ผ่าน ตรวจจำนวนแถวรวม chat_actions และ snapshot payload/status/code/entry_id ตรงกัน ledger สมดุล API/worker/web รุ่นล่าสุดพร้อมใช้งาน Source archive ไม่รวม .env, credentials, รูป/ฐานข้อมูล runtime หรือไฟล์สำรอง
+
+ข้อจำกัด: ใช้คำขอระบุช่อง/ชื่อที่ตรงแน่นอนบน backend และคำขอสั้นบางแบบ ไม่ได้ตีความภาษาธรรมชาติอิสระทุกสำนวน ไม่แก้ยอดตั้งต้นหรือข้อมูลบัญชี/หมวด/งบ/สมาชิก/รหัสผ่านผ่านแชท ไม่ลบหรือย้อนยกเลิกรายการผ่านแชท รูปยังยืนยันใน Inbox ไม่มีโอนเงินจริง ยังไม่ได้ทดสอบ provider ภายนอก โทรศัพท์จริง หรือ Ubuntu/Hyper-V อยู่ขั้น 3 จาก 4
+
+## แชททยอยตอบ — รุ่นก่อนหน้า (11 ตุลาคม 2026)
+
+- PostgreSQL **135 passed**; SQLite **118 passed, 17 PostgreSQL-only skipped**. TypeScript และ Next.js production build ผ่าน ไม่มี migration ใหม่ API/worker/web อัปเดตแล้ว
+- ทดสอบ OpenAI-compatible SSE ด้วย HTTP MockTransport: ข้อความไทย/HTML untrusted, ข้อความเกิน 16,000 ตัวอักษร, JSON ผิดรูปแบบ/ชนิดผิด/provider error/จบกลางทางถูกปฏิเสธ และ retry ล้าง preview ก่อนตอบใหม่
+- PostgreSQL + Redis Pub/Sub จริง: preview มาถึงระหว่าง worker ยังไม่ commit และยังไม่มี assistant Message; หลังปล่อย HTTP stream ให้จบจึงมีข้อความเต็มหนึ่งรายการและได้ done หลัง job เป็น done แล้ว ไม่มีการโพสต์ ledger
+- ตรวจ auth/foreign workspace/สมาชิกอื่นในพื้นที่เดียวกัน/เซสชันที่ถูกเพิกถอน; generator ตรวจสิทธิ์ซ้ำและปิด Redis resources; การตรวจสิทธิ์ stream ไม่รอ workspace lock ของ worker
+- ตรวจ HTTP SSE ผ่าน Caddy และ Redis จริงบน localhost: รับ ready แล้วส่ง preview ได้ทันที ไม่รอ response จบ และ preview ไม่สร้าง Message หรือรายการเงิน ทดสอบนี้เป็นข้อความ fixture ไม่ได้เรียก provider จริง
+- Chrome **28/28 passed ในรอบเดียว** (desktop 14 + mobile 14) รวม live preview แบบข้อความธรรมดา/ไม่รัน HTML, snapshot หลังพลาด start, provider retry ล้างคำตอบเดิม, done ล้าง preview แม้ history ID เดิม, reconnect และเปลี่ยนห้องปิด stream เดิม เคส UI streaming ใช้ EventSource fixture; backend/HTTP wire/Redis ตรวจแยกตามด้านบน
+- รอบแรกชุดทดสอบใช้ชื่อปุ่มเก่าจึงหมดเวลา แก้ selector ให้ตรง UI แล้วตรวจใหม่ครบ 28 เคส ไม่เพิ่ม retry หรือลดการป้องกัน login เตรียมเฉพาะตัวนับของบัญชีสมมติและ proxy ภายในก่อนรันทดสอบ
+
+
+- ตรวจ 13 หน้า × 1440/393/360px = **39 จุดไม่พบ horizontal overflow** ช่องพิมพ์แชทยังอยู่ใน viewport ตรวจภาพ preview ทั้งคอมและมือถือแล้ว
+- สำรอง/กู้คืนฐาน disposable หลัง browser tests และตรวจ HTTP SSE รุ่นสุดท้ายผ่าน จำนวนแถวและ snapshot ชื่อบัญชี/แชท/นโยบายอายุ/สมาชิก/คำเชิญ/ตารางประจำ/แผนออมตรงกัน ledger สมดุล Source ZIP ไม่รวม credentials/.env/DB dumps/runtime screenshots
+
+ข้อจำกัด: โหมดสาธิต/รายงานตรง/compatible server ที่ไม่ส่ง SSE ยังแสดงคำตอบเต็มทันที ไม่มีปุ่มยกเลิกงานโมเดล ปิดหน้าแค่หยุดรับ stream; ไม่มี replay ทุก event และ load test ของ connection จำนวนมาก External provider/Ollama vision จริงและ Ubuntu/Hyper-V ยังไม่ได้ตรวจ อยู่ขั้น 3/4
+
+
+## ตั้งค่าบัญชีผู้ใช้ — รุ่นก่อนหน้า (11 ตุลาคม 2026)
+
+- PostgreSQL **129 passed**; SQLite **114 passed, 15 PostgreSQL-only skipped**. TypeScript และ Next.js production build ผ่าน เพิ่ม migration `user_profile` โดยคงอีเมลและ hash รหัสผ่านเดิม แล้วเปิด API/worker/web รุ่นล่าสุด
+- ชื่อที่แสดงตัดช่องว่างหัวท้าย จำกัด 1–100 ตัวอักษร ห้ามอักขระควบคุม บันทึกเฉพาะผู้ใช้ที่เข้าสู่ระบบ แม้ส่ง ID ของคนอื่นมา ชื่อไม่เปลี่ยน memberships หรือบัญชีเงิน
+- เปลี่ยนรหัสตรวจรหัสปัจจุบัน ความยาว 12–200 การยืนยันและต้องต่างจากเดิม ก่อนเขียน Argon2 hash เพิกถอนทุกเซสชันเก่าและสร้าง opaque session ใหม่ให้เครื่องที่เปลี่ยน ตรวจ HttpOnly/SameSite และรหัสเก่าเข้าไม่ได้
+- ทดสอบรหัสผิด/ยืนยันไม่ตรง/รหัสสั้น/ช่องว่างทั้งหมด แล้วเซสชันอื่นยังใช้ได้ ไม่มี password hash ในข้อมูลโปรไฟล์ ผล validation ของ `/auth/password` ไม่สะท้อนค่ารหัสกลับ ตรวจ CSRF และ identity ของ rate limiter
+- PostgreSQL ทดสอบเปลี่ยนรหัสพร้อมกันด้วยเซสชันเดียว ได้ผลสำเร็จหนึ่งคำขอ อีกคำขอ 401 หลังตรวจเซสชันซ้ำภายใต้ user lock เหลือเซสชันใหม่หนึ่งรายการ Login ใช้ user lock เดียวกัน
+- Chrome **26/26 passed** ในรอบเดียว ทั้ง desktop/mobile รวมตั้งชื่อ reload ตรวจรหัสไม่ตรง/รหัสเดิมผิด แล้วเปลี่ยนสำเร็จ เครื่องอื่นได้ 401 รหัสเก่าเข้าไม่ได้ รหัสใหม่เข้าได้ และชื่อยังอยู่ ตรวจภาพการ์ดจริงทั้งสองขนาดแล้ว
+- ตรวจซ้ำเฉพาะตั้งค่าบัญชี **2/2 passed** หลังปรับชุดทดสอบให้สร้าง workspace แยก สมาชิกสมมติจากรอบแรกที่เข้าไปในพื้นที่ของบัญชีทดสอบถูกนำออกผ่าน service เดิมพร้อม audit ไม่ลบบัญชีหรือประวัติ
+- รอบแรกติด login throttle จากการทดสอบก่อนหน้า เตรียมเฉพาะ counters ของบัญชีสมมติ/proxy ภายในก่อนรันใหม่ ไม่เปลี่ยน threshold หรือปิด rate limiter
+- ตรวจ 13 หน้า × 1440/393/360px = **39 จุดไม่พบ horizontal overflow** ช่องพิมพ์แชทอยู่ใน viewport
+- สำรองและกู้คืนฐาน disposable หลัง browser tests ผ่าน จำนวนแถว/ledger และ snapshot บัญชีผู้ใช้ (email/name/password hash) ตรงกัน ไม่แสดง hash ในผลตรวจหรือรวม backup/credentials ใน source ZIP
+
+ข้อจำกัด: อีเมลอ่านอย่างเดียว ไม่มี email verification/reset password/2FA/device list/account deletion การเพิกถอนเซสชันไม่ยกเลิก Telegram link หรือย้อนธุรกรรมที่เริ่มทำงานแล้ว ชื่อที่แสดงยังไม่มีประวัติแก้ไข อยู่ขั้น 3/4 และยังไม่ได้ยืนยัน Ubuntu/Hyper-V หรือ provider/Telegram จริง
+
+
+## ค้นหาและเปลี่ยนชื่อแชท — รุ่นก่อนหน้า (11 ตุลาคม 2026)
+
+- PostgreSQL **124 passed**; SQLite **110 passed, 14 PostgreSQL-only skipped**. TypeScript และ Next.js production build ผ่าน อัปเดต API/worker/web แล้ว ไม่มี migration ใหม่
+- Chrome **24/24 passed** ทั้ง desktop/mobile รวมค้นหาจากชื่อและข้อความ แบ่งหน้า 20 ห้อง เปิดข้อความที่พบ กลับข้อความล่าสุด เปลี่ยนชื่อ ค้นหาชื่อใหม่ และคุยต่อ ตรวจภาพค้นหาจริงทั้งสองขนาดแล้ว
+- ตรวจ 13 หน้า × 1440/393/360px = **39 จุดไม่พบ horizontal overflow** ช่องพิมพ์แชทอยู่ใน viewport
+- ทดสอบคำค้นภาษาไทย/อังกฤษ ตัวพิมพ์เล็กใหญ่ และ literal `%`, `_`, backslash; snippets จำกัดความยาว; ห้องชั่วคราว/หมดอายุไม่อยู่ในผลค้นหา แยกผู้ใช้แม้เป็นสมาชิก workspace เดียวกัน ตรวจ foreign room/message และชื่อว่าง
+- สร้าง 650 ข้อความเพื่อยืนยันหน้าปกติเปิด 500 ข้อความล่าสุด ค้นหาข้อความเก่ากว่านั้นและเปิดบริบทก่อน/หลังอย่างละไม่เกิน 50 ได้ เปลี่ยนชื่อไม่ต่ออายุประวัติ ไม่เรียกโมเดลหรือแก้ ledger จากการค้นหา
+- สำรองและกู้คืนฐาน disposable ผ่าน จำนวนแถวและ snapshot ชื่อห้อง/privacy/temporary/created_at/updated_at ตรงกัน พร้อมนโยบายอายุ สมาชิก คำเชิญ ตารางประจำและแผนออม ledger สมดุล
+
+ข้อจำกัด: ค้นหาข้อความแบบ substring ไม่ใช่ semantic search/OCR ไม่มี full-text index หรือผลทดสอบประวัติปริมาณมาก หน้าปกติยังไม่เลื่อนโหลดประวัติเก่าแบบต่อเนื่อง อยู่ขั้น 3/4 ยังเหลือคำตอบแบบทยอยและ PWA offline; ยังไม่ได้ทดสอบ Ubuntu/Hyper-V, provider หรือ Telegram จริง
+
+
+## แชทชั่วคราวและอายุประวัติ — รุ่นก่อนหน้า (11 ตุลาคม 2026)
+
+PostgreSQL จริงผ่าน **121 เคส** SQLite ชั่วคราวผ่าน **107 เคส/ข้าม PostgreSQL-only 14 เคส** TypeScript และ Next.js production build ผ่าน อัปเกรด migration `chat_retention` และเปิด API/worker/web รุ่นล่าสุดแล้ว
+
+Chrome desktop/mobile ผ่าน **22/22** พร้อมตรวจขั้นตอนแชทชั่วคราว/ตั้งอายุซ้ำ 2/2 หลังปรับระยะเมนู ตรวจ 13 หน้า × 3 ความกว้าง (1440/393/360) = **39 จุดไม่พบ horizontal overflow** ตรวจภาพแชทชั่วคราว desktop/mobile จริงแล้ว
+
+เคสใหม่ตรวจแชทชั่วคราวไม่อยู่ในประวัติ หมดอายุแล้วส่ง/อ่าน/ดูรูปไม่ได้ งานหมดอายุไม่เรียกโมเดล ล้างข้อความ/งาน/รูปที่ไม่เหลือการอ้างอิง เก็บรูป Inbox และรูปที่ห้องอื่นอ้างอิง อายุประวัติแยกผู้ใช้/พื้นที่ ต่ออายุจากข้อความผู้ใช้ PostgreSQL ล้างพร้อมกันไม่ซ้ำ และข้อจำกัด privacy/temporary บนฐานข้อมูลยังอยู่ครบ
+
+สำรองก่อนอัปเกรดและกู้คืนหลังอัปเกรดในฐาน disposable ผ่าน ตรวจจำนวนแถวแชท/ข้อความ/งาน/นโยบายอายุ และ snapshot นโยบายร่วมกับสมาชิก/คำเชิญ/ตารางประจำ/แผนออม ledger ยังสมดุล ห้องเก่าเริ่มนับอายุใหม่ตอน migration และไม่ถูกล้างเองโดยค่าเริ่มต้น
+
+ข้อจำกัด: เก็บชั่วคราวใน PostgreSQL ไม่ใช่ Incognito แบบไม่เขียนดิสก์ Worker อาจทยอยล้างหลังหมดอายุ API ปิดการเข้าถึงแล้วแต่ backup/Cloud ไม่ถูกลบด้วย อายุไม่ครอบคลุม Inbox/หลักฐานการเงิน ยังอยู่ขั้น 3/4 ไม่มีผลยืนยันบริการจริงหรือ Ubuntu/Hyper-V
+
+
+## สมาชิกและคำเชิญ — รุ่นก่อนหน้า (11 ตุลาคม 2026)
+
+- PostgreSQL จริงในฐาน `finance_test`: **114 passed**; SQLite ชั่วคราว: **101 passed, 13 PostgreSQL-only skipped**
+- TypeScript และ Next.js production build ผ่าน Docker Compose อัปเกรดถึง migration `workspace_members` แล้ว API/ฐานข้อมูล/Redis ทำงานปกติ
+- Chrome desktop และ Pixel 7 emulation: **20/20 ผ่าน** รวมบริการเดิมและการรับคำเชิญสร้างบัญชี เปลี่ยนสิทธิ์ และตัดสิทธิ์หลังนำออก
+- ตรวจ 13 หน้า × 1440/393/360px = **39 จุด ไม่พบ horizontal overflow** ตรวจภาพสมาชิก desktop/mobile และหน้ารับคำเชิญจริงแล้ว
+- สำรองก่อนอัปเกรดและกู้คืน backup หลังอัปเกรดในฐาน disposable ผ่าน จำนวนแถวและ snapshot สมาชิก/คำเชิญ/ตารางประจำ/การจัดสรรตรงกัน และ ledger สมดุล
+
+เคสใหม่ตรวจรหัสเก็บเฉพาะ hash/ไม่คืนรหัสเดิม, หมดอายุ/ยกเลิก/อีเมลไม่ตรง, สมาชิกเชิญ/จัดการเจ้าของไม่ได้, register-invite rollback ทั้งชุดเมื่อเต็มพื้นที่, cookie ใช้งานได้หลังตอบสำเร็จ, ไม่เพิ่มสมาชิกซ้ำเมื่อรับรหัสพร้อมกัน, อีเมลเดียวสร้างบัญชีพร้อมกันจากสองพื้นที่ได้ครั้งเดียว และประวัติแบ่งหน้า/ห้ามแก้ย้อนหลัง
+
+ตรวจ PostgreSQL concurrency เมื่อเจ้าของสองคนออกพร้อมกันต้องเหลือหนึ่งคน และ worker ถือ workspace authorization lock แล้วการนำออกต้องรอให้ธุรกรรมเดิมจบก่อน ไม่กลับสิทธิ์จากรหัสเชิญเก่าหลังนำออก Telegram link/code ถูกลบ งานค้างของสมาชิกที่ถูกนำออกไม่เรียกโมเดล แชทส่วนตัวไม่เปิดให้เจ้าของคนอื่นอ่านทั้งก่อนและหลังจัดการสมาชิก
+
+ผลนี้เป็น Docker/Colima บนเครื่องพัฒนา ยังไม่ใช่การยืนยัน Ubuntu/Hyper-V, email delivery, provider/Telegram จริง หรือ load/security audit แผนรวมยังอยู่ขั้น 3/4 รายละเอียดงานที่เหลืออยู่ใน ROADMAP.md
+
+## บันทึกการตรวจรุ่นก่อนหน้า
+
+ตรวจวันที่ 10 ตุลาคม 2026 (Asia/Bangkok) บน macOS host และ Docker/Colima Linux ARM64 ไม่ได้เข้าถึง Ubuntu/Hyper-V ของผู้ใช้
+
+| การตรวจ | ผล |
+|---|---|
+| Docker Compose build ของ Next.js standalone และ Python backend | ผ่าน |
+| Alembic migrations บน PostgreSQL 17 | ผ่าน |
+| API / PostgreSQL / Redis health checks | ผ่าน |
+| Backend tests บน PostgreSQL จริงใน finance_test | **47 passed** |
+| Backend tests บน SQLite แยกชั่วคราว | **44 passed, 3 PostgreSQL-only cases skipped** |
+| TypeScript typecheck | ผ่าน |
+| Next.js production build | ผ่าน |
+| Chrome desktop 1440×1000 / Pixel 7 emulation | **10 passed** (รวมงบประมาณ แชท รายงาน และเมนู) |
+| ตรวจ layout จาก screenshot desktop/mobile | ผ่าน; ไม่พบ horizontal page overflow |
+| npm audit ของ production dependencies | ไม่พบช่องโหว่ที่รายงาน ณ เวลาตรวจ |
+| pip-audit หลังอัปเดตชุด dependencies | ไม่พบช่องโหว่ที่รายงาน ณ เวลาตรวจ |
+| pip check | ไม่พบ dependency conflict |
+| HTTPS Compose override syntax พร้อม placeholder domain | ผ่าน; ไม่ได้ขอ certificate จริง |
+| pg_dump backup + pg_restore ในฐานข้อมูล disposable | ผ่าน; จำนวนแถวตรงและ ledger สมดุล |
+
+Backend tests ครอบคลุม:
+
+- รายรับ/รายจ่าย/โอน/จ่ายบัตร ยอดตั้งต้นสินทรัพย์และหนี้สิน รายงานไม่รวมโอน/จ่ายบัตรซ้ำ
+- จำนวนเงินผิดรูปแบบ ศูนย์ ติดลบ ทศนิยมสตางค์ผิด type และเกินขอบเขต
+- Workspace membership, cross-workspace account rejection และ composite FK ระดับฐานข้อมูล
+- Deferred balance check, journal immutability และป้องกันเติม line ภายหลัง
+- Concurrent idempotent posting 4 threads และ request replay/conflict
+- Proposal ต้องยืนยัน ยืนยันซ้ำไม่ลงบัญชีซ้ำ และรายการปฏิเสธยืนยันไม่ได้
+- รูปผิดชนิด รูปซ้ำ และข้าม workspace ดูรูปไม่ได้
+- Worker demo extraction, model output ผิด schema, retry/fallback, model ไม่ได้สิทธิ์บันทึก ledger
+- Private chat ไม่เรียก Cloud แม้มี Cloud provider, history/delete, history privacy ระหว่างสมาชิก
+- API key encryption, ไม่คืน key ผ่าน API และ owner-only provider configuration
+- CSRF origin/header, session cookie flags, logout/revocation, invalid password, throttle/fail-closed
+- Telegram linking ใช้รหัสได้ครั้งเดียว และยกเลิก link
+
+Browser tests ครอบคลุมล็อกอิน → dashboard → ส่งข้อความเข้า Inbox → worker → เลือกบัญชี/หมวดหมู่ → manual confirm → เห็นรายการจริง → private chat/mock reply → logout ทั้ง desktop และ mobile
+
+ตัวเลขและภาพหน้าจอทั้งหมดเป็น workspace สาธิต ไม่ใช่ข้อมูลการเงินจริง Tests เพิ่มรายการสมมติในบัญชี demo; source archive ไม่รวม credentials, screenshots, database dumps หรือ .env
+
+Warnings ที่เหลือ: Starlette เตือนว่า TestClient ที่ใช้ httpx จะเลิกใช้ในอนาคต ไม่มี test failure รุ่นนี้ยังใช้ httpx สำหรับ provider adapter และทดสอบผ่านครบ
+
+ยังไม่ได้ยืนยัน: Cloud API/ภาพจริงผ่าน provider, Ollama model จริง, Telegram long polling จริง, domain/TLS จริง, Hyper-V VM เป้าหมาย, load test, formal penetration test, container OS vulnerability scan และ browser PWA installation/offline audit ข้อจำกัดฟีเจอร์ทั้งหมดอยู่ใน README หัวข้อขอบเขตรุ่นนี้
+
+การตรวจ package vulnerabilities เป็นผลตามฐานข้อมูลที่เครื่องมือเข้าถึง ณ เวลาตรวจ ไม่ได้แทนการตรวจความปลอดภัยทั้งระบบ ควรตรวจซ้ำก่อนอัปเดตหรือเปิดบริการให้ผู้อื่น
+
+## UI refresh — โทนสว่างและตัวอักษรใหญ่ขึ้น
+
+ปรับพื้นหลังเป็นขาวนวล/ลาเวนเดอร์ การ์ดสีขาว ตัวอักษรหลัก 17px หัวข้อหลัก 36px และยอดเงิน 36px; ปุ่มหลักสูง 48px บนมือถือแสดงเมนูครบ 6 รายการและการ์ดยอดเงินเต็มแถว
+
+Production build และ TypeScript ผ่าน Browser flow เดิมผ่าน 2/2 บน desktop/mobile อีกครั้ง ตรวจทุกหน้า (Dashboard, Transactions, Accounts, Inbox, Assistant, Settings) ที่ความกว้าง 1440, 393, 360px รวม 18 จุด ไม่พบ horizontal overflow และยืนยัน computed body font 17px/palette light ภาพผลอยู่ใน artifacts/light-*.png ไม่รวมใน source ZIP การแก้ครั้งนี้เป็น UI เท่านั้น
+
+## Web Chat Images
+
+เพิ่ม migration `chat_images` และทดสอบ PostgreSQL 31/31, SQLite 29 ผ่าน (ข้าม 2 PostgreSQL-only): ส่งรูปพร้อมข้อความ/รูปอย่างเดียว, ประวัติและการดูภาพ, ownership ก่อนเผยแพร่เป็น Inbox, ข้าม workspace ไม่ได้, ลบห้องยกเลิกงาน, รูปไม่ถูกต้องไม่สร้างข้อความ/งานค้าง, Private ไม่เรียก Cloud, caption ไม่ถูก mock แปลเป็นยอดสลิป, model vision request ส่ง JPEG และ caption, ผลโมเดลไม่ลงบัญชีเอง และรูปซ้ำไม่สร้างข้อเสนอเพิ่ม
+
+การอ่านภาพด้วย provider ใช้ mock HTTP ตรวจรูปแบบ request/response ยังไม่ได้ใช้ API key หรือ Ollama vision model จริง
+
+Chrome desktop/mobile ผ่าน 2/2: เลือกรูป → แสดง preview → นำออก → ส่งรูปอย่างเดียว → แสดงคำตอบและรูป → reload และเปิดห้องเดิม → รูปยังเปิดได้ → จำนวนรายการเงินไม่เปลี่ยน พร้อมตรวจ horizontal overflow แก้ race ที่งาน AI เสร็จก่อนหน้าเว็บเห็นสถานะ pending แล้วทำให้คำตอบไม่อัปเดต
+
+ทดสอบ browser รอบนี้ใช้บัญชีสมมติแยกใน artifacts/e2e-access.json เพราะ credentials ของ demo เดิมไม่ตรง ไม่แก้รหัสหรือข้อมูลของบัญชีเดิม รันซ้ำได้ด้วย SF_DEMO_CREDENTIALS='../artifacts/e2e-access.json' ใน frontend หรือสร้าง demo ใหม่ตาม README บนเครื่องติดตั้งใหม่ ไฟล์ credentials ไม่รวมใน source archive
+
+## UX/UI rebuild — โครงหน้าการเงินและแอป AI Chat แยกกัน
+
+เปลี่ยน stylesheet เดิมที่ซ้อนหลายรุ่นเป็นชุดเดียว โทนขาวนวล/เขียวอ่อน desktop sidebar 216px, mobile bottom navigation 5 รายการและ header สั้น แชทเต็ม viewport มี history drawer, focus trap/Escape บนมือถือ, แยกส่วนข้อความเลื่อนจากช่องพิมพ์, auto-scroll คำตอบล่าสุด, textarea ยืดตามเนื้อหา, Enter/Shift+Enter บน desktop และ VisualViewport resize เพื่อปรับพื้นที่ compose ดูข้อกำหนดใน UI.md
+
+TypeScript และ Next production build ผ่าน; Chrome 4/4 ครอบคลุม flow การเงิน/แชทรูปเดิมทั้ง desktop/mobile และเพิ่มตรวจเมนู/หน้าต้อนรับ/ข้อความแนะนำ/ซ่อนและเปิด history/ปิด drawer ด้วย Escape พร้อมคืน focus/ย่อ viewport ให้ composer ยังอยู่ในจอ
+
+ตรวจทุกหน้า (overview, transactions, accounts, inbox, assistant, settings) ที่ 1440, 393, 360px รวม 18 จุดหลังโหลดข้อมูลครบ ไม่พบ horizontal overflow แชทสูงเท่า viewport และ composer อยู่ในจอ ภาพผลอยู่ใน artifacts/redesign-*.png, assistant-new-*.png และ chat-*.png เป็นข้อมูลบัญชีทดสอบ ไม่รวมใน source ZIP
+
+ยังไม่ได้ตรวจแป้นพิมพ์บน iOS/Android เครื่องจริงหรือ accessibility audit เต็มรูปแบบ Browser mobile เป็น Chrome emulation การเปลี่ยนนี้ไม่เพิ่มฟีเจอร์การเงินที่ยัง pending ใน ROADMAP.md และไม่ได้แก้ backend/ledger
+
+## Monthly reports / transaction explorer / chat reports
+
+- Backend: PostgreSQL **36 passed**; SQLite **34 passed, 2 skipped**. เพิ่ม tests ช่วงวันแบบ inclusive, page totals จากข้อมูลเต็ม, wildcard search literal, กรองบัญชี/หมวดร่วมกัน, transfer ไม่ซ้ำ, foreign workspace filter rejection, dashboard recent เฉพาะเดือน, ย้อนเดือนข้ามปี, เดือนผิดรูปแบบ และ report chat ไม่เรียก provider/ไม่ลงบัญชี
+- AI report: ทดสอบเดือนที่แล้ว → คำถามต่อเนื่องบัญชีไหน → เดือนที่ระบุ → วันไม่ถูกต้อง → บัญชีไม่รู้จัก → บัญชีที่มีจริง มีการระบุช่วงวัน/ขอบเขตชัดเจน และตอบจากข้อมูลจริง ตัวกรองบัญชีใน query ใช้ correlated EXISTS ที่ผูกกับ Entry โดยตรง
+- Chrome desktop/mobile **6 passed**: flow เดิมครบและเพิ่มเลือกเดือนก่อน/เปิด dialog/กลับเดือนปัจจุบัน, category drilldown, เลือกช่วงวัน, ค้นหาและล้างค้นหา, กรองหมวด และไม่ล้นจอ
+- ตรวจ screenshot ทั้ง 6 หน้าที่ 1440/393/360px รวม 18 จุด ไม่พบ horizontal page overflow; chat composer ยังอยู่ใน viewport
+- TypeScript/Next production build ผ่าน ไม่มี migration ใหม่ แกน ledger เดิมและการยืนยัน manual ไม่เปลี่ยน ยอดบัญชีแสดง latest ชัดเจน ไม่อ้างเป็นยอดสิ้นเดือน
+- ข้อจำกัด: เทียบเต็มเดือนกับเต็มเดือนก่อน ไม่ใช่ MTD เท่ากัน; report chat รองรับรูปแบบที่กำหนด ไม่ใช่ SQL/tool-calling อิสระ; แสดง 20 รายการต่อคำตอบ (รวมยอดเต็ม) และย้อนหลังไม่เกิน 366 วันต่อคำถาม บริการ AI จริงและเครื่อง Ubuntu/Hyper-V ยังไม่ได้ทดสอบ
+
+## Services hub / accounts and categories
+
+เพิ่ม `/services` และ `/categories` แยกบัญชีเงิน/หนี้จากหมวดรายรับ/รายจ่าย; Mobile 5 tab ใช้ “ทั้งหมด” เข้าบริการรอง Desktop มีเมนูบริการทั้งหมดและส่วนจัดการ เมนูเลื่อนได้เมื่อจอเตี้ย จัดการ loading ให้ไม่แสดงจำนวนศูนย์/หมวดว่างก่อนข้อมูลพร้อม
+
+Browser เพิ่มทดสอบค้นหาบริการ/empty/reset, เลือกบัญชีจาก hub, focus form ที่ปุ่มหัวหน้า, เพิ่มบัญชีเงินจริงผ่าน API, หมวดไม่แสดงบัญชีเงิน, สลับหมวดรายรับแล้ว form ตรงประเภท, สร้างหมวดและกดไป filtered transactions, ลิงก์ Telegram ไปส่วน settings และ mobile navigation ครบ 5 tab
+
+ตรวจ screenshot ทั้ง 8 หน้าที่ 1440/393/360px รวม 24 จุด ไม่พบ horizontal overflow TypeScript/Next production build ผ่าน Ledger, backend API และสิทธิ์ workspace ใช้ชุดเดิม ผล backend รอบล่าสุดยังเป็น PostgreSQL 36 ผ่าน (ไม่มีการแก้ backend ในรอบนี้)
+
+รอบ browser แรกชน login rate limit จากการทดสอบหลายรอบติดกัน จัดการเฉพาะ counters ของบัญชีทดสอบและ development proxy แล้วรันทดสอบใหม่ ไม่เปลี่ยนหรือลดการป้องกัน login ของระบบ
+
+รันทดสอบ browser รอบสุดท้ายครบ **8 passed** ทั้ง desktop/mobile หลังปรับ loading และเมนูใหม่
+
+## Monthly budgets
+
+- PostgreSQL **47 passed** รวม concurrent budget upsert 4 threads ได้เพียงหนึ่งวงเงินต่อหมวด/เดือน; SQLite **44 passed, 3 PostgreSQL-only cases skipped** (หลังแก้ copy count ตรวจ budget tests เพิ่ม 10 passed, 1 skipped)
+- Migration `monthly_budgets` เพิ่มตารางโดยไม่แก้ ledger พร้อม composite FK category/workspace, unique workspace/month/category และ amount check สำรองข้อมูลก่อนอัปเดต local DB แล้ว migration/health checks ผ่าน
+- รวมยอดใช้จริงตามวันที่เกิด expense ในเดือน ไม่รวม pending Inbox/โอน/จ่ายบัตรซ้ำ ทดสอบยอดขอบเดือน, หมวดไม่มีงบ, status ใกล้เต็ม/ครบ/เกิน, แก้ไข/ลบไม่เปลี่ยนยอดบัญชี, validation จำนวนเงินและประเภทบัญชี, ข้าม workspace ทั้ง API และ DB FK
+- คัดลอกเดือนก่อนข้ามปี เติมเฉพาะหมวดที่ขาด เรียกซ้ำไม่เพิ่มซ้ำ PostgreSQL driver รายงาน rowcount ไม่แน่นอน จึงนับจาก `RETURNING` ของแถวที่เพิ่มจริง
+- AI budget reports คำนวณบน backend ไม่เรียก model/ไม่สร้างหรือแก้งบและไม่ลง ledger
+- Chrome **10 passed**: รวมสร้าง disposable workspace/รายการรายจ่าย, ตั้งงบและเงินเหลือจริง, แก้เป็นเกินงบ, reload แล้วข้อมูลอยู่, เลือก workspace อยู่ต่อข้ามหน้า/reload, คัดลอกเดือนถัดไปแบบไม่ทับของเดิม, นำวงเงินออกแล้ว ledger ยังอยู่ครบ ทั้ง desktop/mobile
+- ตรวจทั้ง 9 หน้าที่ 1440/393/360px รวม 27 จุด ไม่พบ page overflow ตรวจภาพงบที่มีข้อมูล/เกินงบทั้ง desktop/mobile ด้วย
+- Next production build/TypeScript ผ่าน Source archive ไม่รวม DB backup, credentials หรือ .env
+- ข้อจำกัด: ไม่มี rollover เงินเหลือ/งบรายสัปดาห์/แจ้งเตือน push/ประวัติแก้งบ (shared plan แก้ล่าสุดมีผล) เป้าหมายออม รายการประจำ และ correction/reversal ยัง pending
+
+ตรวจ backup/restore หลัง migration ด้วยฐานข้อมูล disposable แล้ว จำนวนแถวรวม budgets ตรงกันและ ledger สมดุล
+
+
+## Transaction correction / reversal — 11 ตุลาคม 2026
+
+- PostgreSQL **61 passed**; SQLite **55 passed, 6 PostgreSQL-only cases skipped**. รองรับแก้ไขและกลับรายการครบ opening/income/expense/transfer/card payment โดยไม่แก้ ledger เดิม
+- ทดสอบแก้ยอดแล้ว balances/report totals/dashboard/budget/AI direct report ตรงกัน ย้ายวันที่ไปเดือนก่อนและเปลี่ยนบัญชี/หมวดแล้วเดือนเดิมเป็นศูนย์ เดือนใหม่ใช้ยอดทดแทน กลับรายการล่าสุดแล้ว balances และรายงานเป็นศูนย์
+- ตรวจเดบิต=เครดิตทุก journal; idempotency replay คืนผลเดิมและ key reuse กับข้อมูลอื่น 409; กดแก้/ยกเลิกรายการเก่าหรือ journal ภายในไม่ได้; foreign account/workspace/member isolation; invalid replacement rollback ทั้งชุด; PostgreSQL correction พร้อมกัน 4 threads ได้ audit เดียวและ ledger 3 journals
+- Migration `entry_revisions` เป็น additive มี composite tenant FKs, unique original/reversal/replacement/action key, audit immutability trigger, inverse journal ตรวจ account sums ต้องตรงข้ามต้นฉบับและสร้างใน transaction เดียวกัน ทดสอบ DB ปฏิเสธปลอม inverse/foreign audit/update/delete audit
+- พบ race หลัง HTTP login response ก่อน session commit ใน Chrome จึงเปลี่ยน DB dependency ทั้ง API/security เป็น `scope='function'` เพื่อ commit ก่อนส่ง response ไม่เพิ่ม retry กลบปัญหา เพิ่ม ASGI regression ตรวจจาก connection แยกตอน `http.response.start` ว่า session/workspace commit แล้ว และ commit failure ต้องตอบ 500 พร้อม rollback
+- Browser setup ของ test ใหม่ต้อง reload membership ก่อนเลือก workspace ที่เพิ่งสร้าง แก้ test ให้รอข้อมูลจริง ไม่เปลี่ยนข้อมูลบัญชีเดิม ใช้เฉพาะ workspace สาธิตแยกกัน
+- Chrome รอบสุดท้าย **12 passed** ทั้ง desktop/mobile รวมแก้ยอด 75 → 125.50 บาท ตรวจ dashboard/budget/balance ก่อนและหลังยกเลิก ยอดกลับเป็นศูนย์ เปิดต้นฉบับที่ยกเลิกเป็น read-only และรีโหลดแล้วประวัติ 2 เหตุการณ์ยังครบ
+- TypeScript และ Next production build ผ่าน ตรวจ 9 หน้าที่ 1440/393/360px รวม 27 จุดไม่พบ page overflow แชท composer ยังอยู่ใน viewport ตรวจภาพรายละเอียด/ประวัติทั้ง desktop/mobile แล้ว
+- สำรองก่อน migration และทดสอบ restore หลังทดสอบ browser ในฐาน disposable แล้ว จำนวนแถวรวม entry_revisions ตรงกันและ ledger สมดุล
+- การรันทดสอบซ้ำล้างเฉพาะ login counters ของบัญชีสมมติและ proxy local ไม่เปลี่ยน threshold หรือปิด throttle ของระบบ
+
+ข้อจำกัด: การแก้ใช้ประเภทรายการเดิม ยอดตั้งต้นคงบัญชีเดิม แต่แก้จำนวนเงิน/วันที่ได้; ไม่มี restore ปุ่มเดียวสำหรับรายการที่ยกเลิก; ประวัติแชร์ตามสิทธิ์ workspace ไม่ใช่ chat ส่วนตัว; การแก้วงเงินงบยังไม่มี audit trail; ไม่ได้ทดสอบมือถือเครื่องจริง Ubuntu/Hyper-V หรือ provider/Telegram จริง
+
+
+## CSV exports — 11 ตุลาคม 2026
+
+- PostgreSQL **77 passed**, SQLite **71 passed, 6 PostgreSQL-only cases skipped**. เพิ่ม export transactions/history, ใช้ filter conditions ชุดเดียวกับรายงาน และไม่แบ่งตามหน้าจอ 30 แถว
+- ทดสอบ UTF-8 BOM/Thai/CSV quoting ของ comma/quotes/newline, จำนวนเงิน 0.01 และ 1,000,000,000.00 บาทแบบไม่มี float, inclusive dates, literal wildcard search, account/category/type filters, ทิศ transfer/card payment และไม่รวม pending
+- แก้ยอด/ย้ายเดือนแล้วไฟล์ปัจจุบันมีเฉพาะรายการทดแทน ยกเลิกแล้วหายจาก export ปัจจุบัน ประวัติยังมีข้อมูลเดิม/ใหม่ เหตุผลและผู้แก้ ทดสอบ 31 เหตุการณ์เพื่อยืนยันว่าไม่ตัดตาม pagination
+- History filter ใช้ created_at ของการแก้ไขตาม Asia/Bangkok ตรวจขอบ 00:00:00.000 และ 23:59:59.999 รวมทั้งก่อน/หลัง 1 ms เทียบรายการบนหน้าและ CSV ให้ตรงกัน โดยวันที่เกิดรายการต้นฉบับเป็นคนละเดือน
+- Guard จำกัด 10,000 แถว ตรวจด้วยการลด threshold เฉพาะ test: เกินขีดจำกัดได้ JSON 413 ไม่มี attachment หรือไฟล์บางส่วน Empty export มี header, invalid filters 422, unauthenticated 401, foreign member/workspace/account/category 404 สมาชิก workspace ดาวน์โหลดได้ตามสิทธิ์รายงาน
+- ข้อความที่เสี่ยง spreadsheet formula (`=`, `+`, `-`, `@`, leading whitespace/control/BOM) เติม apostrophe โดยไม่แก้ต้นทาง ทดสอบทั้ง description/account/category/reason; ไม่มี chat/รูป/provider secrets ใน schema ไฟล์
+- Chrome **14 passed** ทั้ง desktop/mobile รวมดาวน์โหลดจริง 32 รายการข้ามหน้า, กรองเหลือ 1, แก้ 1.31 → 76.54, export history ก่อน/หลัง, empty header-only, error message และ balances ไม่เปลี่ยนจาก export ค้นหา CSV ใน service hub แล้วเข้าหน้าส่งออกได้
+- TypeScript/Next production build ผ่าน ตรวจ 9 หน้าที่ 1440/393/360px รวม 27 จุด ไม่พบ page overflow ตรวจภาพ history export ทั้ง desktop/mobile แล้ว สำรองและ restore ฐาน disposable หลัง browser tests ผ่าน จำนวนแถวและ ledger balance ตรงกัน
+- ไม่มี migration ใหม่ ไม่มีไฟล์ export เก็บบนเซิร์ฟเวอร์ Runtime credentials/downloads/screenshots/backups ไม่รวมใน source ZIP ล้างเฉพาะ counters ของบัญชีทดสอบ/proxy local เพื่อรันทดสอบซ้ำ ไม่เปลี่ยน login throttle
+
+ข้อจำกัด: CSV เท่านั้น ไม่มี XLSX/PDF/import หรือ export background job; ไม่เกิน 10,000 แถวต่อไฟล์; ไม่มี export แชท/รูปแบบ bundle; CSV export ไม่ใช่ DB backup เปิดไฟล์ด้วย Excel/Numbers และทดสอบมือถือเครื่องจริงยังไม่ได้ทำ เครื่อง Ubuntu/Hyper-V และ provider/Telegram จริงยัง pending เช่นเดิม
+
+## Savings goals — 11 ตุลาคม 2026
+
+- PostgreSQL **87 passed**; SQLite **80 passed, 7 PostgreSQL-only cases skipped**. TypeScript และ Next production build ผ่าน
+- Migration `savings_goals` เพิ่ม goals/goal_movements พร้อม composite workspace FK, idempotency uniqueness, amount checks และ PostgreSQL immutable allocation trigger/deferred aggregate guard สำรองก่อน migration แล้วอัปเดต local Docker สำเร็จ ไม่แก้ ledger เดิม
+- ทดสอบ create/replay/conflict, validation จำนวนเงินแบบ strict/ชื่อว่าง/วันที่ผิด/วันที่อนาคต, เพิ่ม/นำออกเกินยอด, edit stale version, ถึงเป้า/เลยกำหนด, archive/reopen และ safe replay หลัง archive, scope/API/DB FK/สิทธิ์ member, ประวัติ 31 เหตุการณ์แบ่ง 30/1, limit 500 เป้าหมายและยอดจัดสรรสูงสุด
+- PostgreSQL ทดสอบ 4 threads สร้างรหัสเดิมได้หนึ่งเป้าหมาย จัดสรรรหัสเดิมได้หนึ่งเหตุการณ์ นำออกพร้อมกันไม่ติดลบ ทดสอบ SQL update/delete ประวัติถูกปฏิเสธ และ direct insert ที่ทำให้ยอดติดลบ commit ไม่ผ่าน ยอดบัญชีและ ledger ไม่เปลี่ยนจากแผนออม
+- Chrome **16 passed** รวม desktop 8 + Pixel 7 emulation 8 (รันแยก project และล้างเฉพาะ local test login counters ระหว่างรอบ ไม่เปลี่ยน throttle) ครอบคลุมสร้างแผนออม/จัดสรร 250/นำออก 50/แก้เป้าเป็น 200/ถึงเป้า/reload/ประวัติสองเหตุการณ์/archive/reopen/workspace isolation และฟีเจอร์เดิม
+- ตรวจ 10 หน้าที่ 1440/393/360px รวม **30 จุด** ไม่พบ horizontal page overflow แชท composer อยู่ใน viewport ตรวจภาพหน้าเป้าหมายที่มีข้อมูลทั้ง desktop/mobile แล้ว (ภาพใช้ข้อมูลสมมติและไม่รวม source ZIP)
+- สำรองและ restore ฐาน disposable หลัง browser tests จำนวนแถวรวม goals/goal_movements และยอดจัดสรรรายเป้าหมายตรงกัน ledger สมดุล Runtime credentials/.env/DB dump ไม่รวม source archive
+
+ข้อจำกัด: เป็นแผนจัดสรรที่ผู้ใช้บันทึกเอง ไม่ผูกบัญชี ไม่ตรวจว่ามีเงินจริง และไม่โอน/กันเงินอัตโนมัติ ไม่มี recurrence/แจ้งเตือน/AI goal reports/goal export หรือประวัติแก้ชื่อ/ยอดเป้า ยังไม่ได้ตรวจมือถือเครื่องจริง Ubuntu/Hyper-V หรือ provider/Telegram จริง อยู่ในขั้น 3 จาก 4 ตาม ROADMAP.md
+
+## Recurring schedules — 11 ตุลาคม 2026
+
+- PostgreSQL **104 passed**; SQLite **96 passed, 8 PostgreSQL-only cases skipped**. TypeScript และ Next production build ผ่าน
+- Migration `recurring_rules` ต่อจาก `savings_goals` เพิ่มตารางกำหนดรอบ/ประวัติ และ unique proposal/workspace เพื่อทำ composite tenant FK มี PostgreSQL trigger ป้องกัน update/delete ประวัติรอบ สำรองก่อน migration และอัปเดต Docker local ผ่าน ไม่เปลี่ยน ledger เดิม
+- ทดสอบ daily/weekly/monthly, มกราคมวันที่ 30/31 → กุมภาพันธ์ 28/29 → มีนาคมวันที่เดิม, inclusive end, create/replay/conflict, strict amounts/blank descriptions/past start/end/invalid frequency/year, account/category kinds, tenant/API/DB isolation และ member access
+- ตรวจ pause/resume พร้อม backlog, ครั้งละไม่เกิน 10 รอบต่อตาราง, pending cap และไม่เลื่อนวันข้ามรอบเมื่อเต็ม, ประวัติ 32 รอบแบ่ง 30/2, worker scheduling และ pending-first Inbox แม้มี rejected ใหม่กว่า 101 รายการ
+- PostgreSQL 4 threads สร้างตารางรหัสเดิมได้หนึ่งตาราง และสร้างข้อเสนอของรอบเดียวกันได้หนึ่งรายการ ทดสอบ crash ก่อน commit แล้วข้อเสนอ/ประวัติ/วันถัดไป rollback พร้อมกัน สั่ง SQL แก้/ลบประวัติรอบถูกปฏิเสธ
+- ข้อเสนอเก็บวันที่ บัญชี หมวด และยอดตามแผนตอนสร้าง แก้ตารางแล้วข้อเสนอเก่าไม่เปลี่ยน ยืนยันซ้ำไม่สร้าง ledger ซ้ำ ยกเลิกรอบหนึ่งแล้วไม่สร้างรอบนั้นซ้ำและไม่หยุดรอบถัดไป การสร้างข้อเสนอไม่เปลี่ยน balances/ledger
+- Chrome **18 passed ในรอบเดียว**: desktop 9 + Pixel 7 emulation 9 รวมตั้งรายการ 600 บาท/ตรวจถึงกำหนด/แก้ตารางเป็น 650/พัก-เปิดใหม่/reload/ตรวจ snapshot 600 ใน Inbox/เปลี่ยนยอดจริงเป็น 555 ก่อนยืนยัน/ประวัติยังแสดงยอดตามแผน 600/เปิดรายละเอียดตรง ID เห็นยอดจริง 555 และ workspace isolation
+- ทดสอบ worker ที่รันจริงใน Docker เพิ่มอีกรายการผ่าน API โดยไม่กดตรวจถึงกำหนด รอจนมีข้อเสนอ pending อัตโนมัติทั้ง desktop/mobile และตรวจว่า ledger ยังมีเฉพาะรายการที่ผู้ใช้ยืนยันไว้
+- ปรับ browser auth helper ให้ reuse session ที่ยังใช้ได้ใน memory ภายใน Playwright worker ตรวจ `/auth/me` ก่อนใช้และยังทดสอบ UI login/logout จริง ไม่เก็บ cookies ลงไฟล์ ไม่ลด throttle รอบสุดท้ายทั้ง 18 tests ผ่านโดยไม่ต้องล้าง counters ระหว่าง desktop/mobile (เตรียมเฉพาะบัญชีทดสอบก่อนเริ่มรอบ)
+- ตรวจ 11 หน้าที่ 1440/393/360px รวม **33 จุด** ไม่มี horizontal overflow แชท composer อยู่ใน viewport ตรวจภาพการ์ดรายการประจำและประวัติบน desktop/mobile แล้ว ช่อง select มีชื่อ aria-label ชัดเจน และทดสอบ dialog ไม่ล้นความกว้าง
+- สำรองและ restore ฐาน disposable หลัง browser tests ผ่าน จำนวนแถวรวม recurring_rules/recurring_occurrences ตรงกัน รวมวันถัดไป/สถานะพัก/ข้อมูลรอบ และยอดจัดสรรเป้าหมายออมตรงกัน ledger สมดุล Source archive ไม่รวม credentials/.env/session states/DB dumps/runtime screenshots
+
+ข้อจำกัด: รองรับรายรับ/รายจ่ายรายวัน สัปดาห์ เดือนเท่านั้น ไม่มี transfer/card payment ประจำ รอบรายปี กำหนดหลายวัน ปุ่มข้าม backlog รวม หรือแจ้งเตือน push/Telegram ไม่มี auto-post/auto-pay ตารางเดิมเปลี่ยนรายละเอียดได้แต่เปลี่ยนความถี่/วันเริ่ม-สิ้นสุดต้องพักแล้วสร้างใหม่ ไม่มี audit trail การแก้รายละเอียดตาราง และยังไม่มี AI อ่าน/สร้างรายการประจำ การตรวจอัตโนมัติต้องเปิด worker และอาจช้าลงตามงานในคิว ยังไม่ได้ตรวจมือถือเครื่องจริง Ubuntu/Hyper-V หรือ provider/Telegram จริง อยู่ระหว่างขั้น 3 จาก 4

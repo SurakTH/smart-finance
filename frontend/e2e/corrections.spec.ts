@@ -1,0 +1,32 @@
+import {signIn} from './auth';
+import {test,expect} from '@playwright/test';
+
+test('edit and reverse with persistent history and consistent reports',async({page},info)=>{
+ await signIn(page);await expect(page.locator('.overview-hero')).toBeVisible();
+ const headers={'X-SF-Request':'1'};
+ const workspace=await (await page.request.post('/api/workspaces',{headers,data:{name:'ทดสอบแก้รายการ '+info.project.name+' '+Date.now()}})).json();
+ const base=`/api/workspaces/${workspace.id}`;
+ const accounts=await (await page.request.get(base+'/accounts')).json();const wallet=accounts.find((a:any)=>a.kind==='asset'),category=accounts.find((a:any)=>a.kind==='expense');
+ const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Bangkok',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());const month=today.slice(0,7);
+ const row=await (await page.request.post(base+'/transactions',{headers,data:{kind:'expense',account_id:wallet.id,category_id:category.id,amount:7500,description:'ข้าวตรวจยอด',occurred_on:today,idempotency_key:crypto.randomUUID()}})).json();
+ await page.request.put(`${base}/budgets/${month}/${category.id}`,{headers,data:{amount:20000}});
+ const compact=(page.viewportSize()?.width||1440)<=900;
+ await page.goto('/transactions');
+ await page.getByLabel(compact?'เลือก workspace บนมือถือ':'เลือก workspace',{exact:true}).selectOption(workspace.id);
+await page.getByRole('button',{name:'รายละเอียด ข้าวตรวจยอด',exact:true}).click();
+ const dialog=page.locator('dialog[open]');await expect(dialog.getByRole('heading',{name:'รายละเอียดรายการ',exact:true})).toBeVisible();await expect(dialog).toContainText('฿75.00');
+ await dialog.getByRole('button',{name:'แก้ไขรายการ',exact:true}).click();await dialog.getByLabel('แก้จำนวนเงิน',{exact:true}).fill('125.50');await dialog.getByLabel('แก้รายละเอียดรายการ',{exact:true}).fill('ข้าวแก้ยอดแล้ว');await dialog.getByLabel('เหตุผลการเปลี่ยนรายการ',{exact:true}).fill('ตรวจสลิปพบยอดที่ถูกต้อง');
+ await dialog.getByRole('button',{name:'ยืนยันแก้ไขรายการ',exact:true}).click();await expect(page.locator('dialog[open]')).toHaveCount(0);await expect(page.locator('.ledger-row')).toHaveCount(1);await expect(page.locator('.filtered-totals')).toContainText('฿125.50');
+ const budget=await (await page.request.get(base+'/budgets?month='+month)).json();expect(budget.spent).toBe(12550);expect(budget.remaining).toBe(7450);
+ const dashboard=await (await page.request.get(base+'/dashboard?month='+month)).json();expect(dashboard.expense).toBe(12550);expect(dashboard.net_worth).toBe(-12550);
+ await page.getByRole('button',{name:'รายละเอียด ข้าวแก้ยอดแล้ว',exact:true}).click();await expect(dialog.locator('.revision-card')).toContainText('฿75.00');await expect(dialog.locator('.revision-card')).toContainText('฿125.50');
+ await page.screenshot({path:`../artifacts/correction-${info.project.name}.png`,fullPage:true});
+ await dialog.getByRole('button',{name:'ยกเลิกรายการ',exact:true}).click();await dialog.getByLabel('เหตุผลการเปลี่ยนรายการ',{exact:true}).fill('พบว่าบันทึกซ้ำ');await dialog.getByRole('button',{name:'ยืนยันยกเลิกรายการ',exact:true}).click();await expect(page.locator('dialog[open]')).toHaveCount(0);await expect(page.locator('.ledger-row')).toHaveCount(0);await expect(page.locator('.filtered-totals')).toContainText('฿0.00');
+ await page.getByRole('button',{name:'ประวัติการแก้ไข',exact:true}).click();await expect(dialog.locator('.revision-card')).toHaveCount(2);await expect(dialog).toContainText('ตรวจสลิปพบยอดที่ถูกต้อง');await expect(dialog).toContainText('พบว่าบันทึกซ้ำ');
+ await page.screenshot({path:`../artifacts/correction-history-${info.project.name}.png`,fullPage:true});
+ await dialog.locator('.revision-card').filter({hasText:'ยกเลิกรายการ'}).getByRole('button',{name:'เปิดรายการนี้',exact:true}).click();await expect(dialog).toContainText('รายการที่ยกเลิกแล้ว');await expect(dialog.getByRole('button',{name:'แก้ไขรายการ',exact:true})).toHaveCount(0);
+ await dialog.getByRole('button',{name:'ปิดรายละเอียดรายการ',exact:true}).click();await page.reload();await expect(page.locator('.ledger-row')).toHaveCount(0);await page.getByRole('button',{name:'ประวัติการแก้ไข',exact:true}).click();await expect(dialog.locator('.revision-card')).toHaveCount(2);
+ expect(await (await page.request.get(base+'/transactions')).json()).toHaveLength(0);expect((await (await page.request.get(base+'/dashboard?month='+month)).json()).net_worth).toBe(0);expect((await (await page.request.get(base+'/budgets?month='+month)).json()).spent).toBe(0);
+ await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+ const original=await (await page.request.get(base+'/transactions/'+row.id)).json();expect(original.amount).toBe(7500);expect(original.status).toBe('corrected');
+});

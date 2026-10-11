@@ -1,0 +1,21 @@
+import {signIn} from './auth';
+import {test,expect} from '@playwright/test';
+test('savings plans persist, retain history, archive safely and never change real balances',async({page},info)=>{
+ await signIn(page);await expect(page.locator('.overview-hero')).toBeVisible();
+ const workspace=await (await page.request.post('/api/workspaces',{headers:{'X-SF-Request':'1'},data:{name:'แผนออม '+info.project.name+' '+Date.now()}})).json();
+ const before=await (await page.request.get(`/api/workspaces/${workspace.id}/accounts`)).json();
+ await page.goto('/services');const label=(page.viewportSize()?.width||1440)<=900?'เลือก workspace บนมือถือ':'เลือก workspace';await page.getByLabel(label,{exact:true}).selectOption(workspace.id);
+ await page.locator('.service-card').filter({has:page.getByRole('heading',{name:'เป้าหมายออม',exact:true})}).click();await expect(page.locator('.goals-empty')).toBeVisible();
+ await page.getByRole('button',{name:'ตั้งเป้าหมายแรก',exact:true}).click();const dialog=page.locator('dialog[open]');
+ await dialog.getByLabel('ชื่อเป้าหมาย',{exact:true}).fill('ทริปพักผ่อน');await dialog.getByLabel('ยอดเป้าหมาย (บาท)',{exact:true}).fill('1000');await dialog.getByLabel('วันที่อยากไปถึง (ไม่บังคับ)',{exact:true}).fill('2026-12-31');await dialog.getByRole('button',{name:'บันทึกเป้าหมาย',exact:true}).click();
+ const card=page.locator('.goal-card');await expect(card).toContainText('ทริปพักผ่อน');await expect(card).toContainText('฿1,000.00');
+ await card.getByRole('button',{name:'จัดสรรเพิ่ม',exact:true}).click();await dialog.getByLabel('จำนวนเงิน (บาท)',{exact:true}).fill('250');await dialog.getByLabel('บันทึกช่วยจำ',{exact:true}).fill('แบ่งจากเงินเดือน');await dialog.getByRole('button',{name:'บันทึกการจัดสรร',exact:true}).click();await expect(card.locator('.goal-amount strong')).toHaveText('฿250.00');await expect(card).toContainText('25%');
+ await card.getByRole('button',{name:'นำออก',exact:true}).click();await dialog.getByLabel('จำนวนเงิน (บาท)',{exact:true}).fill('251');await dialog.getByLabel('บันทึกช่วยจำ',{exact:true}).fill('ปรับแผน');await dialog.getByRole('button',{name:'บันทึกการจัดสรร',exact:true}).click();await expect(dialog.getByRole('alert')).toContainText('นำออกได้ไม่เกิน');await dialog.getByLabel('จำนวนเงิน (บาท)',{exact:true}).fill('50');await dialog.getByRole('button',{name:'บันทึกการจัดสรร',exact:true}).click();await expect(card.locator('.goal-amount strong')).toHaveText('฿200.00');
+ await page.getByRole('button',{name:'แก้เป้าหมาย ทริปพักผ่อน',exact:true}).click();await dialog.getByLabel('ยอดเป้าหมาย (บาท)',{exact:true}).fill('200');await dialog.getByRole('button',{name:'บันทึกเป้าหมาย',exact:true}).click();await expect(card.locator('.goal-status')).toHaveText('ถึงเป้าแล้ว');await page.reload();await expect(card.locator('.goal-status')).toHaveText('ถึงเป้าแล้ว');
+ await page.screenshot({path:`../artifacts/goals-${info.project.name}.png`,fullPage:true});
+ await card.getByRole('button',{name:'ประวัติ',exact:true}).click();await expect(dialog.locator('.goal-history article')).toHaveCount(2);await expect(dialog).toContainText('แบ่งจากเงินเดือน');await expect(dialog).toContainText('ปรับแผน');await dialog.getByRole('button',{name:'ปิดฟอร์มเป้าหมาย',exact:true}).click();
+ await page.getByRole('button',{name:'เก็บเป้าหมาย ทริปพักผ่อน',exact:true}).click();await dialog.getByRole('button',{name:'ยืนยัน',exact:true}).click();await expect(card).toHaveCount(0);await page.getByRole('button',{name:/^เก็บไว้แล้ว/}).click();await expect(card).toHaveCount(1);await card.getByRole('button',{name:'เปิดใช้อีกครั้ง',exact:true}).click();await dialog.getByRole('button',{name:'ยืนยัน',exact:true}).click();await page.getByRole('button',{name:/^กำลังใช้อยู่/}).click();await expect(card.locator('.goal-amount strong')).toHaveText('฿200.00');
+ expect(await (await page.request.get(`/api/workspaces/${workspace.id}/accounts`)).json()).toEqual(before);expect(await (await page.request.get(`/api/workspaces/${workspace.id}/transactions`)).json()).toEqual([]);
+ await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+ await page.getByLabel(label,{exact:true}).selectOption({index:0});await expect(page.locator('.goal-card')).toHaveCount(0);
+});

@@ -1,0 +1,12 @@
+# Prebuilt images from the tested commit. Never build on the production host.
+services:
+  api:
+    image: ${BACKEND_IMAGE:?set BACKEND_IMAGE}
+  worker:
+    image: ${BACKEND_IMAGE:?set BACKEND_IMAGE}
+  migrate:
+    image: ${BACKEND_IMAGE:?set BACKEND_IMAGE}
+  telegram:
+    image: ${BACKEND_IMAGE:?set BACKEND_IMAGE}
+  web:
+    image: ${WEB_IMAGE:?set WEB_IMAGE}

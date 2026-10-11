@@ -1,0 +1,84 @@
+name: smart-finance
+x-backend: &backend
+  build: ./backend
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql+psycopg://finance:${POSTGRES_PASSWORD:?run scripts/configure.py}@postgres:5432/finance
+    REDIS_URL: redis://redis:6379/0
+    ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
+  restart: unless-stopped
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  extra_hosts: ['host.docker.internal:host-gateway']
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: finance
+      POSTGRES_USER: finance
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run scripts/configure.py}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U finance -d finance]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+  redis:
+    image: redis:7-alpine
+    command: [redis-server, --save, '60', '1', --appendonly, 'yes']
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+  migrate:
+    <<: *backend
+    command: [alembic, upgrade, head]
+    restart: 'no'
+    depends_on:
+      postgres: {condition: service_healthy}
+  api:
+    <<: *backend
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      retries: 10
+  worker:
+    <<: *backend
+    command: [python, -m, app.worker]
+    depends_on:
+      api: {condition: service_healthy}
+  telegram:
+    <<: *backend
+    profiles: [telegram]
+    command: [python, -m, app.bot]
+    depends_on:
+      api: {condition: service_healthy}
+  ollama:
+    image: ollama/ollama:latest
+    profiles: [local-ai]
+    volumes: [ollamadata:/root/.ollama]
+    restart: unless-stopped
+  web:
+    build: ./frontend
+    environment:
+      API_INTERNAL_URL: http://api:8000
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    depends_on:
+      api: {condition: service_healthy}
+  proxy:
+    image: caddy:2-alpine
+    ports: ['${BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8080}:80']
+    volumes: ['./Caddyfile:/etc/caddy/Caddyfile:ro']
+    restart: unless-stopped
+    depends_on: [web]
+volumes:
+  pgdata:
+  redisdata:
+  ollamadata:

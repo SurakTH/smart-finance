@@ -1,0 +1,34 @@
+import {signIn} from './auth';
+import { test, expect } from '@playwright/test';
+
+test('monthly picker, category drilldown, inclusive dates and search', async ({page})=>{
+ await signIn(page);
+ await expect(page.locator('.overview-hero')).toBeVisible();
+ const currentLabel=await page.locator('.period-current').innerText();
+ await page.getByRole('button',{name:'เดือนก่อนหน้า',exact:true}).click();
+ await expect(page.locator('.period-current')).not.toHaveText(currentLabel);
+ await expect(page.locator('.overview-hero')).toBeVisible();
+ await page.getByRole('button',{name:'เลือกเดือน',exact:true}).click();
+ await expect(page.getByRole('dialog')).toBeVisible();
+ await page.getByRole('button',{name:'กลับเดือนปัจจุบัน',exact:true}).click();
+ await expect(page.getByRole('dialog')).toBeHidden();
+ await expect(page.locator('.period-current')).toHaveText(currentLabel);
+ await expect(page.locator('.breakdown-list a').first()).toBeVisible();
+ await page.locator('.breakdown-list a').first().click();
+ await expect(page).toHaveURL(/transactions\?.*category_id=/);
+ await expect(page.locator('.ledger-row').first()).toBeVisible();
+ await page.getByRole('button',{name:'ตัวกรอง',exact:true}).click();
+ await expect(page.getByLabel('กรองหมวดหมู่')).not.toHaveValue('');
+ await page.getByRole('button',{name:'ล้างตัวกรอง',exact:true}).click();
+ await page.getByLabel('วันเริ่มต้น').fill('2026-09-01');
+ await page.getByLabel('วันสิ้นสุด').fill('2026-09-30');
+ await expect(page.getByRole('button',{name:'เลือกวัน',exact:true})).toHaveAttribute('aria-pressed','true');
+ await expect(page.locator('.explorer-results')).toHaveAttribute('aria-busy','false');
+ for(const day of await page.locator('.ledger-day-heading h3').allTextContents()) expect(day).toContain('กันยายน');
+ await page.getByLabel('ค้นหารายการ').fill('ไม่มีรายการชื่อนี้แน่นอน');
+ await expect(page.getByRole('heading',{name:'ไม่พบรายการในช่วงนี้'})).toBeVisible();
+ await page.getByRole('button',{name:'ล้างคำค้นหา',exact:true}).click();
+ await page.getByRole('button',{name:'เดือนนี้',exact:true}).click();
+ await expect(page.locator('.ledger-row').first()).toBeVisible();
+ await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+});

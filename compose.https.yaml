@@ -1,0 +1,9 @@
+services:
+  proxy:
+    ports: !override ['80:80','443:443']
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?configure APP_DOMAIN}
+    volumes: !override ['./Caddyfile.https:/etc/caddy/Caddyfile:ro', 'caddydata:/data', 'caddyconfig:/config']
+volumes:
+  caddydata:
+  caddyconfig:

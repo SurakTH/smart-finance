@@ -1,0 +1,124 @@
+name: Smart Finance
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy this tested main commit to the configured Ubuntu server
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: pipeline-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMPOSE_FILE: compose.yaml:compose.nginx.yaml
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Deployment helper checks
+        run: |
+          python3 -m unittest discover -s scripts/tests -v
+          bash -n scripts/deploy.sh
+      - name: Prepare ephemeral configuration
+        run: python3 scripts/configure.py
+      - name: Build and start isolated app
+        run: docker compose up -d --build --wait --wait-timeout 180
+      - name: PostgreSQL tests and migration checks
+        run: python3 scripts/test_docker.py
+      - name: Frontend types and browser runtime
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run typecheck
+          npx playwright install --with-deps chromium
+      - name: Seed disposable browser account
+        run: python3 scripts/seed_demo.py
+      - name: Desktop and mobile browser tests
+        working-directory: frontend
+        run: npx playwright test
+      - name: Backup and restore verification
+        run: |
+          sh scripts/backup.sh
+          python3 scripts/verify_restore.py
+      - name: Remove ephemeral databases and credentials
+        if: always()
+        run: |
+          docker compose down --volumes --remove-orphans
+          rm -rf .env artifacts backups
+  publish:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      backend: ${{ steps.images.outputs.backend }}
+      web: ${{ steps.images.outputs.web }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Name images by exact commit
+        id: images
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          repo="${REPOSITORY,,}"
+          echo "backend=ghcr.io/$repo/backend:$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "web=ghcr.io/$repo/web:$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      - name: Log in to GitHub Container Registry
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+      - name: Build and publish tested source
+        env:
+          BACKEND_IMAGE: ${{ steps.images.outputs.backend }}
+          WEB_IMAGE: ${{ steps.images.outputs.web }}
+        run: |
+          docker build -t "$BACKEND_IMAGE" backend
+          docker build -t "$WEB_IMAGE" frontend
+          docker push "$BACKEND_IMAGE"
+          docker push "$WEB_IMAGE"
+      - name: Remove registry session
+        if: always()
+        run: docker logout ghcr.io
+  deploy:
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy && github.ref == 'refs/heads/main'
+    needs: [verify, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      BACKEND_IMAGE: ${{ needs.publish.outputs.backend }}
+      WEB_IMAGE: ${{ needs.publish.outputs.web }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Transfer exact source and deploy through verified SSH
+        run: python3 scripts/ci_deploy.py

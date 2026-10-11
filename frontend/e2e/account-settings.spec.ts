@@ -1,0 +1,19 @@
+import {signIn} from './auth';
+import {test,expect} from '@playwright/test';
+test('personal name, password validation, session revocation and new login',async({page,browser},info)=>{
+ await signIn(page);const headers={'X-SF-Request':'1'};
+ const created=await page.request.post('/api/workspaces',{headers,data:{name:'ตั้งค่าบัญชีทดสอบ '+info.project.name+' '+Date.now()}});expect(created.ok()).toBe(true);const wid=(await created.json()).id;
+ const email=`profile-${crypto.randomUUID()}@example.test`,password=crypto.randomUUID()+'Ab1!',newPassword=crypto.randomUUID()+'Cd2!';
+ const invitation=await page.request.post(`/api/workspaces/${wid}/invitations`,{headers,data:{email}});expect(invitation.ok()).toBe(true);const {token}=await invitation.json();
+ const context=await browser.newContext({baseURL:process.env.SF_BASE_URL||'http://localhost:8080',viewport:page.viewportSize()!});const other=await browser.newContext({baseURL:process.env.SF_BASE_URL||'http://localhost:8080'});
+ try{
+  expect((await context.request.post('/api/auth/register-invite',{headers,data:{email,password,token}})).ok()).toBe(true);
+  expect((await other.request.post('/api/auth/login',{headers,data:{email,password}})).ok()).toBe(true);
+  const account=await context.newPage();await account.goto('/settings');await account.getByLabel('ชื่อที่แสดง',{exact:true}).fill('สมุดเงินของฉัน');await account.getByRole('button',{name:'บันทึกชื่อ',exact:true}).click();await expect(account.locator('.account-settings [role=status]')).toContainText('บันทึกชื่อ');await account.reload();await expect(account.getByLabel('ชื่อที่แสดง',{exact:true})).toHaveValue('สมุดเงินของฉัน');await expect(account.getByLabel('อีเมลเข้าสู่ระบบ',{exact:true})).toHaveValue(email);await expect(account.getByLabel('อีเมลเข้าสู่ระบบ',{exact:true})).toHaveAttribute('readonly','');
+  async function fill(current:string,confirm:string){await account.getByLabel('รหัสผ่านปัจจุบัน',{exact:true}).fill(current);await account.getByLabel('รหัสผ่านใหม่',{exact:true}).fill(newPassword);await account.getByLabel('ยืนยันรหัสผ่านใหม่',{exact:true}).fill(confirm);await account.getByRole('button',{name:'เปลี่ยนรหัสผ่าน',exact:true}).click();}
+  await fill(password,'different-confirmation');await expect(account.locator('.account-settings [role=alert]')).toContainText('ไม่ตรงกัน');await fill('wrong-password',newPassword);await expect(account.locator('.account-settings [role=alert]')).toContainText('ปัจจุบันไม่ถูกต้อง');expect((await other.request.get('/api/auth/me')).ok()).toBe(true);
+  await fill(password,newPassword);await expect(account.locator('.account-settings [role=status]')).toContainText('เปลี่ยนรหัสผ่านแล้ว');await expect(account.getByLabel('รหัสผ่านปัจจุบัน',{exact:true})).toHaveValue('');expect((await other.request.get('/api/auth/me')).status()).toBe(401);expect((await context.request.get('/api/auth/me')).ok()).toBe(true);await account.reload();await expect(account.getByLabel('ชื่อที่แสดง',{exact:true})).toHaveValue('สมุดเงินของฉัน');await account.locator('#account-settings').screenshot({path:`../artifacts/account-settings-${info.project.name}.png`});expect(await account.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+  expect((await other.request.post('/api/auth/login',{headers,data:{email,password}})).status()).toBe(401);
+  const loginPage=await other.newPage();await loginPage.goto('/');await loginPage.getByLabel('อีเมล',{exact:true}).fill(email);await loginPage.getByLabel('รหัสผ่าน',{exact:true}).fill(newPassword);await loginPage.getByRole('button',{name:'เข้าสู่ระบบ',exact:true}).click();await expect(loginPage.getByRole('heading',{name:'การเงินของคุณ',exact:true})).toBeVisible();expect((await(await other.request.get('/api/auth/me')).json()).name).toBe('สมุดเงินของฉัน');
+ }finally{await context.close();await other.close();}
+});

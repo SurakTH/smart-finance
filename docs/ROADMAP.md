@@ -29,3 +29,5 @@
 อัปเดตการอ่านข้อมูล AI: Web Chat เริ่มด้วยบริบทเล็ก ค้นบัญชี/ยอด/หมวด/งบ/เป้า/รายการประจำ/ความชอบตามงาน มี cursor ดูต่อ รายงาน SQL แยกจากdashboard ผลจำกัดขนาดแต่ยอดและfingerprintครบ Cacheเฉพาะงานและindexเพิ่มแล้ว ยังอยู่ขั้น3จาก4 ต้องตรวจคุณภาพtool selectionกับproviderจริงและทดสอบปริมาณข้อมูล/โหลดตามเครื่องปลายทางก่อนอ้างสมรรถนะ
 
 อัปเดตปุ่มหยุด AI และ diagnostics: Web Chat หยุดได้ทั้งรอคิว/คิด/ทยอยตอบ มี durable stop flag และ commit fence กันข้อความหรือ draft มาช้า ตรวจเจ้าของห้องและ workspace ข้อผิดพลาด AI แยกสาเหตุและแนะนำจุดแก้จากหน้าเว็บ พร้อมคง provider fallback ยังอยู่ขั้น 3 จาก 4 การทดสอบ provider/การปิด socket จริงบนเครื่อง Ubuntu และค่าใช้งานจริงยังต้องตรวจขั้น 4; ไม่อ้างว่าปิดงานหรือยกเลิกค่าบริการบน upstream ได้แน่นอน
+
+อัปเดต responsiveness ระหว่าง AI ช้า: อ่าน dashboard/บัญชี/รายการ/แชท/settings จาก committed state ได้โดยไม่รอ workspace write lock; mutation authorization และ ledger guards เดิมคงอยู่ งานเขียนใน workspace เดียวกันยังอาจรอ inference การย้าย inference ออกนอก transaction พร้อม budget reservation/evidence revalidation เป็นงานต่อไป ไม่ได้ทำในแพตช์นี้

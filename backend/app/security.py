@@ -35,9 +35,12 @@ def current_user(request: Request, db: DBSession = Depends(get_db, scope='functi
     if not session or session.expires <= now(): raise HTTPException(401, 'กรุณาเข้าสู่ระบบ')
     return db.get(User, session.user_id)
 
-def workspace_member(wid: str, user: User = Depends(current_user), db: DBSession = Depends(get_db, scope='function')):
-    # Serialize authorization with membership changes, ledger writes and workers.
-    ws=db.scalar(select(Workspace).where(Workspace.id==wid).with_for_update())
+def workspace_member(wid: str, request: Request, user: User = Depends(current_user), db: DBSession = Depends(get_db, scope='function')):
+    # Reads authorize against committed membership without waiting for inference.
+    # Mutations still serialize authorization with membership/ledger changes.
+    query=select(Workspace).where(Workspace.id==wid)
+    if request.method not in ('GET','HEAD','OPTIONS'):query=query.with_for_update()
+    ws=db.scalar(query)
     if not ws or ws.archived_at is not None:raise HTTPException(404,'พื้นที่ถูกเก็บเข้าคลัง หรือไม่พบพื้นที่')
     member = db.get(Membership, (user.id, wid))
     if not member: raise HTTPException(404, 'ไม่พบ workspace')

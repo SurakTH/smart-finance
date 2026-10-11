@@ -461,3 +461,10 @@ Browser เพิ่มทดสอบค้นหาบริการ/empty/re
 - ข้อจำกัด: upstream close เป็น best effort หลัง headers อาจรอ timeout ก่อนจบ และไม่รับประกันยกเลิกการประมวลผลหรือค่าบริการฝั่ง provider; ปุ่มหยุดครอบคลุม Web Chat เท่านั้น ยังต้องทดสอบกับ Ollama/provider จริงบนเครื่องผู้ใช้
 
 - Backup/restore หลัง migration ผ่านใน disposable DB รวมจำนวนแถวและ snapshot `chat_generations.stop_requested` และ ledger สมดุล (backup `finance-20261011T144653Z.dump`)
+
+## 2026-10-11 — อ่านหน้าเว็บระหว่าง AI ตอบช้า
+
+- Backend PostgreSQL disposable DB: **387 tests passed** รวมทดสอบคำขอ GET dashboard/accounts/transactions/proposals/conversations/jobs/message history/AI settings/providers/preferences/usage ระหว่าง worker ถือ workspace lock และ mock upstream ยังไม่ส่ง response headers ทุก endpoint ตอบ 200 ภายใน 2 วินาทีและเห็นเฉพาะ committed state งานใน jobs ยัง pending ตามจริง
+- ตรวจ workspace ที่ archive และสมาชิกที่ถูกนำออกแล้วได้ 404 ตามเดิม ตรวจ mutation dependency ถือ Workspace FOR UPDATE จริงจาก connection อิสระด้วย NOWAIT รวม regression ledger, isolation, membership และปุ่มหยุดทั้งชุด
+- เปลี่ยนเฉพาะ read authorization ไม่เพิ่ม schema migration และไม่ลด write guards การเขียนใน workspace เดียวกันยังอาจรอ inference ไม่ได้ตรวจสาเหตุ RAM/OOM/502/restart บน Ubuntu ของผู้ใช้
+- Backend Docker build และ Compose health ผ่าน; HTTP root 200; browser chat-defaults และ chat-stop ผ่านทั้ง desktop/mobile **4 tests** หลังอัปเดต backend ในเครื่อง ไม่มีการ deploy Ubuntu server

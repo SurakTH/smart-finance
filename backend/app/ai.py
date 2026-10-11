@@ -65,6 +65,14 @@ def call_model(db, job):
     assistant=bool(job.payload.get('_assistant'))
     if job.task=='chat':
         history = db.scalars(select(Message).where(Message.workspace_id==job.workspace_id, Message.conversation_id==job.payload['conversation_id']).order_by(Message.created_at.desc(),Message.id.desc()).limit(20)).all()
+        # Keep the newest turns within a total text budget, rather than allowing
+        # twenty individually large messages to grow every provider request.
+        budget=24000;bounded=[]
+        for message in history:
+            size=min(len(message.content),4000)
+            if bounded and size>budget:break
+            bounded.append(message);budget-=size
+        history=bounded
         from .finance_chat import answer_report
         direct = None if job.payload.get('_dialogue') else answer_report(db,job,history)
         if direct is not None and (not assistant or not providers): return direct, False
@@ -86,9 +94,11 @@ def call_model(db, job):
         snapshot=[{'name':a['name'],'kind':a['kind'],'balance_satang':a['balance']} for a in account_balances(db,job.workspace_id)]
         messages.append({'role':'system','content':'ยอดสะสมจริงในหน่วยสตางค์ (ไม่ใช่ยอดรายเดือน): '+json.dumps(snapshot,ensure_ascii=False)})
         image_ids=list(dict.fromkeys(m.attachment_id for m in history if m.attachment_id))[:3] if assistant else []
+        sent_images=set()
         for m in reversed(history):
             content=re.sub(r'\n\nรหัสทางเลือก:\nยืนยัน [A-F0-9]{8}\n$','',m.content)[:4000]
-            if m.role=='user' and m.attachment_id in image_ids:
+            if m.role=='user' and m.attachment_id in image_ids and m.attachment_id not in sent_images:
+                sent_images.add(m.attachment_id)
                 image=get_scoped(db,Attachment,job.workspace_id,m.attachment_id)
                 content=[{'type':'text','text':'รูปจากระบบ attachment_id='+image.id+'; คำอธิบายผู้ใช้: '+content},
                     {'type':'image_url','image_url':{'url':'data:image/jpeg;base64,'+base64.b64encode(image.data).decode()}}]

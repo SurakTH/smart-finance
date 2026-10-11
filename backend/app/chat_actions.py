@@ -151,9 +151,15 @@ def handle(db,c,user_id,text,review_message_id=None,allow_model_dialogue=False):
         if p.get('type')=='management':
             from .assistant_management import apply
             return apply(db,c,user_id,action)
+        if p.get('type')=='transactions':
+            from .chat_batch import apply
+            return apply(db,c,user_id,action)
         image_id=p.get('attachment_id')
         if image_id and db.scalar(select(Proposal.id).where(Proposal.workspace_id==c.workspace_id,Proposal.attachment_id==image_id,Proposal.status=='confirmed').limit(1)):
             action.status='conflict';return 'รูปนี้มีรายการบันทึกแล้วค่ะ ไม่บันทึกซ้ำ'
+        from .chat_batch import duplicate_state
+        if p.get('duplicate_checks') is not None and duplicate_state(db,c.workspace_id,p)[0]!=p['duplicate_checks']:
+            action.status='conflict';return 'มีรายการที่อาจซ้ำเพิ่มหรือเปลี่ยนไปค่ะ ยังไม่บันทึก กรุณาส่งคำขอใหม่เพื่อตรวจอีกครั้ง'
         # Validate stale reviews before any writes. Posting must remain in the
         # top-level transaction: PostgreSQL's immutable-ledger xmin guard rejects
         # journals inserted in a savepoint. Any posting failure rolls back the
@@ -180,6 +186,9 @@ def handle(db,c,user_id,text,review_message_id=None,allow_model_dialogue=False):
         return ('แก้ไขและเก็บประวัติเดิมเรียบร้อยแล้ว' if p['target'] else 'บันทึกรายการเรียบร้อยแล้ว')+'\n'+p['after']
     if text.startswith(('ยืนยัน','ยกเลิก')):
         return 'พิมพ์แค่ ยืนยัน หรือ ยกเลิก สำหรับรายการที่ฉันเพิ่งทวนได้เลยค่ะ'
+    from .chat_batch import edit
+    batch_reply=edit(db,c,user_id,text)
+    if batch_reply is not None:return batch_reply
     # An explicit short correction changes only the pending draft, never the ledger.
     change=re.fullmatch(r'(?:จริง\s*ๆ|แก้ยอด|เปลี่ยนยอด|เอาเป็น|เปลี่ยนเป็น|แก้เป็น|ยอดจริง)(?:\s*(?:เป็น|คือ))?\s*([\d,.]+)\s*(?:บาท)?\s*(?:นะ|ค่ะ|ครับ|จ้า)?',text)
     if change:
@@ -189,6 +198,7 @@ def handle(db,c,user_id,text,review_message_id=None,allow_model_dialogue=False):
             if allow_model_dialogue and available(db,c):return None
             return 'ยังไม่มีรายการที่รอยืนยันค่ะ บอกฉันก่อนว่าอยากจดหรือแก้รายการไหน'
         if action.payload.get('type')=='management':return None
+        if action.payload.get('type')=='transactions':return 'ต้องการแก้รายการที่เท่าไหร่คะ? เช่น แก้ยอดรายการที่ 2 เป็น 80 บาท'
         try:
             payload={**action.payload,'transaction':{**action.payload['transaction'],'amount':amount(change[1]),'idempotency_key':str(uuid4())},'revision_key':str(uuid4())}
             payload['transaction']=TransactionInput(**payload['transaction']).model_dump(mode='json')
@@ -196,6 +206,14 @@ def handle(db,c,user_id,text,review_message_id=None,allow_model_dialogue=False):
         except (ValueError,ValidationError):return 'ยอดยังไม่ชัดค่ะ ขอเป็นจำนวนบาทที่มีทศนิยมไม่เกิน 2 ตำแหน่งนะคะ'
         except HTTPException:return 'ข้อมูลบัญชีเปลี่ยนไปแล้วค่ะ ขอเริ่มรายการใหม่อีกครั้ง'
         return prepare_review(db,c,user_id,payload)
+    # Fully explicit multi-line commands need no provider call. Ambiguous prose
+    # still goes through the configured assistant and its scoped validation.
+    blocks=re.split(r'\n(?=(?:บันทึกรายจ่าย|บันทึกรายรับ|โอนเงิน|จ่ายบัตร)(?:\s|$))',text)
+    if len(blocks)>1 and text.startswith(tuple(KINDS)):
+        if len(blocks)>10:return 'หนึ่งชุดรองรับไม่เกิน 10 รายการค่ะ ยังไม่ได้บันทึก'
+        try:items=[parse(db,c.workspace_id,block.strip()) for block in blocks]
+        except (ValueError,ValidationError,HTTPException):return 'ข้อมูลบางรายการยังไม่ครบค่ะ กรุณาตรวจบัญชี หมวด จำนวน และวันที่ ยังไม่ได้บันทึกทั้งชุด'
+        return prepare_review(db,c,user_id,dict(type='transactions',items=items,attachment_id=None))
     structured=text.splitlines()[0] in KINDS or ('\n' in text and text.startswith(tuple(KINDS))) or (text.startswith(('บันทึกรายจ่าย','บันทึกรายรับ')) and bool(re.search(r'\sบัญชี\s.+\sหมวด\s',text))) or bool(re.match(r'แก้รายการ\s+[0-9a-fA-F-]{36}',text))
     try:
         if not structured:
@@ -218,6 +236,8 @@ def handle(db,c,user_id,text,review_message_id=None,allow_model_dialogue=False):
 
 def prepare_review(db,c,user_id,payload):
     """Freeze validated data, never post it. Used by trusted parsers and validated AI drafts."""
+    from .chat_batch import annotate
+    payload=annotate(db,c.workspace_id,payload)
     scope=(ChatAction.workspace_id==c.workspace_id,ChatAction.conversation_id==c.id,ChatAction.user_id==user_id)
     # Only a successfully validated new draft supersedes the old pending draft.
     for old in db.scalars(select(ChatAction).where(*scope,ChatAction.status=='pending')):old.status='superseded'
@@ -235,10 +255,16 @@ def review_text(action):
     payload=action.payload
     if payload.get('type')=='management':
         review='แผนจัดการ '+str(len(payload['steps']))+' ขั้นตอน (ยืนยันแล้วทำทั้งชุด):\n\n'+payload['after']
+    elif payload.get('type')=='transactions':
+        review='จะบันทึก '+str(len(payload['items']))+' รายการ (ยืนยันครั้งเดียว บันทึกทั้งชุด):\n\n'+'\n\n'.join(str(i)+'. '+item['after'] for i,item in enumerate(payload['items'],1))
+        review+='\nแก้ยอดได้ เช่น แก้ยอดรายการที่ 2 เป็น 80 บาท หรือ ลบรายการที่ 2'
+        if payload.get('attachment_id'):review+='\nหลักฐาน: รูปที่แนบในข้อความทวนนี้'
     else:
         review=('ก่อนแก้ไข:\n'+payload['before']+'\n\nหลังแก้ไข:\n' if payload['target'] else 'จะบันทึกรายการ:\n')+payload['after']
         if payload.get('attachment_id'):review+='\nหลักฐาน: รูปที่แนบในข้อความทวนนี้'
         if payload['target']:review+='\nเหตุผล: '+payload['reason']
+    if payload.get('duplicate_warnings'):
+        review+='\n\n⚠ อาจซ้ำ กรุณาตรวจสอบก่อนยืนยัน:\n'+'\n'.join(payload['duplicate_warnings'])
     # Retain the optional code for older clients and advanced use. Ordinary users only type ยืนยัน.
     return 'กรุณาตรวจสอบ — ยังไม่บันทึก\n\n'+review+f'\n\nถ้าถูกต้อง พิมพ์ ยืนยัน ได้เลยค่ะ หรือ ยกเลิก ถ้าไม่เอารายการนี้ (ไม่ต้องใส่เครื่องหมายคำพูดหรือรหัส)\nอยากเปลี่ยนอะไรบอกได้เลย ข้อเสนอนี้รอได้ 15 นาที\n\nรหัสทางเลือก:\nยืนยัน {action.code}\n'
 

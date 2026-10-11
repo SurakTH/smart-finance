@@ -1,5 +1,15 @@
 # ผลตรวจสอบ Smart Finance
 
+## ชุดรายการแชทและลดการใช้ AI (11 ตุลาคม 2026)
+
+- PostgreSQL ฐานทดสอบ disposable ชุดรวม **310 passed** (เพิ่ม13เคส; 1 Starlette/httpx deprecation warning เดิม) ชุดเฉพาะ batch/confirmation/dialogue **36 passed** ตรวจหนึ่ง tool call เตรียมหลายรายการ, ทุก item scoped/strict integer, invalid ทั้งชุดไม่สร้าง review, จำกัด10, แก้/นำรายการในร่างออกโดยไม่เรียกโมเดล, plain confirm/replay และ ledger balance
+- Fault injection ล้มเหลวที่ post รายการที่2 ผ่าน HTTP จริง: response500, ไม่มี Entry/Line ใหม่และ action ยัง pending; ลองยืนยันใหม่สำเร็จทั้งชุด ตรวจหลักฐานรูปสอง Proposal และบล็อกรูปเดิมเมื่ออัปโหลดห้องอื่น ตรวจ tenant isolation ของคำเตือนซ้ำ และ conflict เมื่อมีรายการซ้ำเพิ่มหลังทวน
+- Prompt transport mock ตรวจรูปซ้ำส่งครั้งเดียวและข้อความย้อนหลังรวมไม่เกิน24,000ตัวอักษร สูงสุด20ข้อความ/4,000ต่อข้อความ; ข้อความหลายรายการระบุครบใช้ parser แม้ตั้ง provider โดยไม่มี model call ยืนยัน/ยกเลิก/แก้ยอดตามหมายเลข/ตรวจซ้ำใช้ backend ไม่เสีย model call เพิ่ม ไม่ได้วัดค่าใช้จ่ายเงินจริงหรือ token accounting
+- Chrome **16 passed** (desktop8/mobile8) เพิ่ม batch review→แก้รายการ2→ยืนยันครั้งเดียว→replay→เตือนซ้ำ→ยกเลิก ผ่าน API/ledger จริง รวมหน้า AI settings/workspace defaults/management/history/stream/finance/natural chat เดิม ไม่พบ horizontal overflow
+- Next.js production build และ TypeScript ผ่าน local Docker ทุก service healthy ไม่มี migration ใหม่ สำรอง/restore ฐาน disposable ตรวจ snapshots และสมดุล ledger ผ่าน
+- ชุดรวมรอบแรกสะดุดที่190 passed เพราะ Docker เต็มและ PostgreSQL restart; คืนพื้นที่เฉพาะ image/build cache เก่าที่เลือกจากงานนี้ ไม่ลบ volumes จากนั้นรันชุดรวมใหม่ในฐาน disposable จนครบ310 ไม่ใช้ผลรอบที่ล้มเป็นผลผ่าน
+- ภาษาธรรมชาติ/vision ใช้ mock transport ทดสอบ ไม่ได้รับรองคุณภาพ provider จริง การตรวจซ้ำเป็น heuristic วันเดียวกัน/ชนิด/ยอด/บัญชีและคำอธิบายคล้ายกัน ไม่รับประกันพบทุกกรณี ยังไม่มี multi-correction/Telegram native batch/AI cost dashboard/memory summarization; อยู่ขั้น3จาก4 ไม่ได้อัปเดต VM ผู้ใช้ Source ZIP ตรวจ integrity/runtime-secret scan แล้ว
+
 ## ใช้ลำดับ AI และ workspace ที่เลือกเป็นค่าเริ่มต้น (11 ตุลาคม 2026)
 
 - PostgreSQL ชุดรวม **297 passed** เพิ่ม Web Chat route tests ทั้งห้องใหม่/legacy private/standard ใช้ Cloud switch + priority/fallback ปัจจุบันของ workspace เหมือนกัน ไม่มี room privacy gate อีกต่อไป ทดสอบ Cloud ล้มแล้วใช้ Ollama, ปิด Cloud แล้วไม่เรียก cloud, รูปข้ามโมเดล text-only และเปลี่ยนสวิตช์ก่อนประมวลผลงานที่รอ

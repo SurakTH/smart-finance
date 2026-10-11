@@ -147,7 +147,8 @@ def probe(db,wid,pid,models=False):
             kwargs={} if models else {'json':{'model':p.model,'messages':[{'role':'user','content':'Reply OK.'}],**parameters(p),'stream':False}}
             if not models and p.task=='chat':
                 from .chat_dialogue import tool
-                kwargs['json'].update(tools=[tool()],tool_choice='auto')
+                from .assistant_management import tool as management_tool
+                kwargs['json'].update(tools=[tool(),management_tool()],tool_choice='auto')
                 if p.supports_images:
                     import base64,io
                     from PIL import Image

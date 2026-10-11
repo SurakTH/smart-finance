@@ -148,6 +148,9 @@ def handle(db,c,user_id,text,review_message_id=None,require_review_id=False,allo
         if command[1]=='ยกเลิก':
             action.status='cancelled'; return 'ยกเลิกข้อเสนอแล้ว ยังไม่ได้เปลี่ยนข้อมูลทางการเงิน'
         p=action.payload
+        if p.get('type')=='management':
+            from .assistant_management import apply
+            return apply(db,c,user_id,action)
         image_id=p.get('attachment_id')
         if image_id and db.scalar(select(Proposal.id).where(Proposal.workspace_id==c.workspace_id,Proposal.attachment_id==image_id,Proposal.status=='confirmed').limit(1)):
             action.status='conflict';return 'รูปนี้มีรายการบันทึกแล้วค่ะ ไม่บันทึกซ้ำ'
@@ -182,6 +185,7 @@ def handle(db,c,user_id,text,review_message_id=None,require_review_id=False,allo
     if change:
         action=db.scalar(select(ChatAction).where(*scope,ChatAction.status=='pending').with_for_update())
         if not action or action.expires<=now():return 'ยังไม่มีรายการที่รอยืนยันค่ะ บอกฉันก่อนว่าอยากจดหรือแก้รายการไหน'
+        if action.payload.get('type')=='management':return None
         try:
             payload={**action.payload,'transaction':{**action.payload['transaction'],'amount':amount(change[1]),'idempotency_key':str(uuid4())},'revision_key':str(uuid4())}
             payload['transaction']=TransactionInput(**payload['transaction']).model_dump(mode='json')
@@ -226,9 +230,12 @@ def prepare_review(db,c,user_id,payload):
 
 def review_text(action):
     payload=action.payload
-    review=('ก่อนแก้ไข:\n'+payload['before']+'\n\nหลังแก้ไข:\n' if payload['target'] else 'จะบันทึกรายการ:\n')+payload['after']
-    if payload.get('attachment_id'):review+='\nหลักฐาน: รูปที่แนบในข้อความทวนนี้'
-    if payload['target']:review+='\nเหตุผล: '+payload['reason']
+    if payload.get('type')=='management':
+        review='แผนจัดการ '+str(len(payload['steps']))+' ขั้นตอน (ยืนยันแล้วทำทั้งชุด):\n\n'+payload['after']
+    else:
+        review=('ก่อนแก้ไข:\n'+payload['before']+'\n\nหลังแก้ไข:\n' if payload['target'] else 'จะบันทึกรายการ:\n')+payload['after']
+        if payload.get('attachment_id'):review+='\nหลักฐาน: รูปที่แนบในข้อความทวนนี้'
+        if payload['target']:review+='\nเหตุผล: '+payload['reason']
     # Retain the optional code for older clients and advanced use. Ordinary users only type ยืนยัน.
     return 'กรุณาตรวจสอบ — ยังไม่บันทึก\n\n'+review+f'\n\nถ้าถูกต้อง พิมพ์ “ยืนยัน” ได้เลยค่ะ หรือ “ยกเลิก” ถ้าไม่เอารายการนี้\nอยากเปลี่ยนอะไรบอกได้เลย ข้อเสนอนี้รอได้ 15 นาที\n\nรหัสทางเลือก:\nยืนยัน {action.code}\n'
 

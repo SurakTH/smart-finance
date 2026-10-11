@@ -36,6 +36,9 @@ def call_model(db, job):
         if assistant:
             from .chat_dialogue import assistant_instruction
             messages.append({'role':'system','content':assistant_instruction(db,job.workspace_id)})
+            from .assistant_management import pending_context
+            pending=pending_context(db,get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id']))
+            if pending:messages.append({'role':'system','content':pending})
             if direct is not None:messages.append({'role':'system','content':'ข้อมูลรายงานจากระบบ ใช้ตอบผู้ใช้โดยไม่แต่งตัวเลขเพิ่ม:\n'+direct})
         elif job.payload.get('_dialogue'):
             from .chat_dialogue import instruction
@@ -78,7 +81,8 @@ def call_model(db, job):
                     body={'model':p.model,'messages':messages,**parameters(p)}
                     if assistant:
                         from .chat_dialogue import tool
-                        body.update(tools=[tool()],tool_choice='auto')
+                        from .assistant_management import tool as management_tool
+                        body.update(tools=[tool(),management_tool()],tool_choice='auto')
                     if job.task=='chat' and not job.payload.get('_dialogue'):
                         publish(job,'start')
                         with client.stream('POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json={**body,'stream':True}) as r:
@@ -162,8 +166,11 @@ def process_job(db,job):
             from .natural_capture import is_question
             text=job.payload.get('text','')
             previous=(c.capture_context or {}).get('review_action_id')
-            if (is_question(text) or re.search(r'รูป.*(?:คืออะไร|เป็นอะไร)',text)) and not re.search(r'จด|บันทึก|เพิ่มรายการ|แก้รายการ',text):
+            if (is_question(text) or re.search(r'รูป.*(?:คืออะไร|เป็นอะไร)',text)) and not re.search(r'จด|บันทึก|เพิ่ม|แก้|สร้าง|ตั้งงบ|เปลี่ยน|พัก|เปิด|เก็บ|คัดลอก|นำ.*ออก|ลบงบ',text):
                 output='ฉันยังไม่เตรียมรายการจากคำถามนี้ค่ะ ถ้าต้องการจด บอกฉันว่าให้บันทึกรายการไหนนะคะ'
+            elif output.tool_name=='prepare_management_plan':
+                from .assistant_management import resolve as management_resolve
+                output=management_resolve(db,c,job.user_id,output.draft)
             else:output=resolve(db,c,job.user_id,output.draft,job.payload.get('attachment_id'))
             trusted_review=(c.capture_context or {}).get('review_action_id')!=previous
         else:output=output.content

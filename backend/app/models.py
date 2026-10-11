@@ -343,3 +343,14 @@ def message_time(db,wid,cid):
     from sqlalchemy import select,func
     latest=db.scalar(select(func.max(Message.created_at)).where(Message.workspace_id==wid,Message.conversation_id==cid)) or 0
     return max(time.time_ns()//1_000_000,latest+1)
+
+
+class AssistantChange(Base):
+    __tablename__='assistant_changes'
+    id: Mapped[str]=mapped_column(String(36),primary_key=True,default=uid)
+    workspace_id: Mapped[str]=mapped_column(ForeignKey('workspaces.id'),index=True)
+    user_id: Mapped[str]=mapped_column(ForeignKey('users.id'))
+    action_id: Mapped[str]=mapped_column(String(36),unique=True)
+    summary: Mapped[str]=mapped_column(String(12000))
+    payload: Mapped[dict]=mapped_column(JSON)
+    created_at: Mapped[int]=mapped_column(BigInteger,default=now)

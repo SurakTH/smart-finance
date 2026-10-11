@@ -17,7 +17,7 @@ def version(ws,data):
     if ws.version!=data.version:raise HTTPException(409,'พื้นที่นี้เปลี่ยนไปแล้ว กรุณาเปิดข้อมูลล่าสุด')
 
 
-CONTENT=(m.Entry,m.Proposal,m.Attachment,m.Conversation,m.Job,m.Provider,m.LinkCode,m.TelegramLink,m.Budget,m.EntryRevision,m.Goal,m.GoalMovement,m.RecurringRule,m.RecurringOccurrence,m.Invitation,m.MembershipEvent,m.ChatPreference,m.ChatAction)
+CONTENT=(m.Entry,m.Proposal,m.Attachment,m.Conversation,m.Job,m.Provider,m.LinkCode,m.TelegramLink,m.Budget,m.EntryRevision,m.Goal,m.GoalMovement,m.RecurringRule,m.RecurringOccurrence,m.Invitation,m.MembershipEvent,m.ChatPreference,m.ChatAction,m.AssistantChange)
 DEFAULTS={('เงินสด','asset'),('ยอดตั้งต้น','equity'),('อาหารและเครื่องดื่ม','expense'),('เดินทาง','expense'),('อื่น ๆ','expense'),('เงินเดือน','income')}
 
 

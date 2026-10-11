@@ -3,6 +3,7 @@ import {useChatStream} from "./use-chat-stream";
 import {WorkspaceManager} from "./workspaces";
 import {PwaSettings} from "./pwa";
 import {clearVault} from "../public/offline-store.js";
+import {AssistantHistory} from "./assistant-history";
 import {AISettingsPage} from "./ai-settings";
 import {AccountSettings} from "./account-settings";
 import {
@@ -832,7 +833,7 @@ export default function Finance() {
                 <Link href="/" className="back-finance"><ArrowLeft size={17} /> กลับหน้าการเงิน</Link>
                 <Button className="new-chat" disabled={busy} onClick={newChat}><Plus size={19} /> บทสนทนาใหม่</Button>
                 <label className="temporary-switch"><input type="checkbox" checked={temporary} onChange={e=>setTemporary(e.target.checked)}/>ห้องใหม่เป็นแชทชั่วคราว<small>ไม่อยู่ในประวัติ · หมดอายุใน 24 ชม.</small></label><ChatHistory key={wid} wid={wid} selected={cid} revision={JSON.stringify(conversations.map(c=>[c.id,c.title]))+latestMessage} onSelect={c=>{setTemporaryRoom(null);setRenaming(false);setMessages([]);setFocusMessage(c.message_id||'');setCid(c.id);if(compact)setHistoryOpen(false);}}/>
-                <div className="history-settings">
+                <div className="history-settings"><AssistantHistory key={wid} wid={wid}/>
                   <label>โหมดของห้องใหม่<select value={privacy} onChange={(e) => setPrivacy(e.target.value)}><option value="private">Private · Local AI เท่านั้น</option><option value="standard">Standard · อนุญาต Cloud AI</option></select></label>
                   <label>Workspace<select aria-label="เลือก workspace ในแชท" value={wid} onChange={(e) => { setWid(e.target.value); if (compact) setHistoryOpen(false); }}>{workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
                   {cid&&!selectedRoom?.temporary&&<button className="rename-chat" onClick={()=>{setRoomTitle(selectedRoom?.title||'');setRenaming(true);if(compact)setHistoryOpen(false);}}><Pencil size={16}/>เปลี่ยนชื่อบทสนทนา</button>}
@@ -865,7 +866,7 @@ export default function Finance() {
                   </div>
                 </div>
                 <div className="chat-composer-dock">
-                <details className="chat-action-help"><summary>คุยเพื่อจดรายการได้เลย</summary><p>เช่น “กาแฟ 75 จากเงินสด” หรือ “รับเงินเดือน 30,000” ถ้าขาดอะไร ฉันจะถามเพิ่ม แล้วทวนให้ตรวจ พิมพ์แค่ “ยืนยัน” เพื่อบันทึก หรือ “ยกเลิก” ถ้าไม่เอาค่ะ</p><button type="button" onClick={()=>{if(chatInput.current){chatInput.current.value="กาแฟ 75 จากเงินสด";chatInput.current.style.height="auto";chatInput.current.focus();}}}>ใส่ตัวอย่างคำขอบันทึก</button><p>ยังไม่ยืนยันก็แก้ยอดได้ เช่น “จริง ๆ 90 บาท” ถ้าบันทึกไปแล้ว ใช้ “แก้รายการล่าสุดเป็น 90 บาท” หรือเลือกคำขอแก้จากหน้ารายการ</p><small>ข้อเสนอรอยืนยันได้ 15 นาทีในห้องนี้ ถ้าหาข้อความทวนไม่เจอ พิมพ์ “ทวนอีกที” แนบรูปพร้อมคำอธิบายได้ เมื่อโมเดลแชทรองรับภาพ ฉันจะทวนให้ยืนยันในห้องนี้</small></details>
+                <details className="chat-action-help"><summary>ให้ผู้ช่วยจัดการอะไรได้บ้าง?</summary><p>คุยทั่วไป จดจากข้อความหรือรูป สร้าง/เปลี่ยนชื่อบัญชีและหมวด ตั้งงบ สร้างเป้าออม หรือตั้งรายการประจำ สั่งเป็นชุดได้ ฉันจะทวนทั้งชุดก่อนให้พิมพ์ “ยืนยัน” ดูงานที่ทำแล้วได้ในเมนูแชท → ประวัติงานผู้ช่วย</p><p>เช่น “กาแฟ 75 จากเงินสด” หรือ “รับเงินเดือน 30,000” ถ้าขาดอะไร ฉันจะถามเพิ่ม แล้วทวนให้ตรวจ พิมพ์แค่ “ยืนยัน” เพื่อบันทึก หรือ “ยกเลิก” ถ้าไม่เอาค่ะ</p><button type="button" onClick={()=>{if(chatInput.current){chatInput.current.value="กาแฟ 75 จากเงินสด";chatInput.current.style.height="auto";chatInput.current.focus();}}}>ใส่ตัวอย่างคำขอบันทึก</button><p>ยังไม่ยืนยันก็แก้ยอดได้ เช่น “จริง ๆ 90 บาท” ถ้าบันทึกไปแล้ว ใช้ “แก้รายการล่าสุดเป็น 90 บาท” หรือเลือกคำขอแก้จากหน้ารายการ</p><small>ข้อเสนอรอยืนยันได้ 15 นาทีในห้องนี้ ถ้าหาข้อความทวนไม่เจอ พิมพ์ “ทวนอีกที” แนบรูปพร้อมคำอธิบายได้ เมื่อโมเดลแชทรองรับภาพ ฉันจะทวนให้ยืนยันในห้องนี้</small></details>
                 {chatPreview && <div className="chat-attachment-preview">
                   <img src={chatPreview} alt="ตัวอย่างรูปก่อนส่ง" />
                   <div><strong>{chatFile?.name}</strong><p className="small muted">พร้อมอ่านสลิป · ยังไม่ส่งจนกว่าจะกดส่งข้อความ</p></div>

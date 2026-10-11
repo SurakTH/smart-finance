@@ -7,6 +7,7 @@ from dataclasses import dataclass
 class AssistantReply:
     content: str
     draft: str | None = None
+    tool_name: str | None = None
 
 def visible(text):
     return re.sub(r'<think\b[^>]*>.*?(?:</think>|$)','',text,flags=re.S|re.I).strip()
@@ -24,10 +25,10 @@ def completion(message):
     if not isinstance(tool,dict):raise ValueError('Invalid tool')
     function=tool.get('function',{})
     if not isinstance(function,dict):raise ValueError('Invalid function')
-    if tool.get('type','function')!='function' or function.get('name')!='prepare_transaction':raise ValueError('Unknown tool')
+    if tool.get('type','function')!='function' or function.get('name') not in ('prepare_transaction','prepare_management_plan'):raise ValueError('Unknown tool')
     arguments=function.get('arguments')
     if not isinstance(arguments,str) or len(arguments)>16000:raise ValueError('Invalid arguments')
-    return AssistantReply('',arguments)
+    return AssistantReply('',arguments,function['name'])
 
 def read_stream(response,job):
     from .chat_stream import publish

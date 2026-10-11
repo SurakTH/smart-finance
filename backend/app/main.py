@@ -653,3 +653,10 @@ def delete_workspace(wid:str,data:WorkspaceConfirm,user:User=Depends(current_use
 def invite_personal_account(wid:str,data:InviteEmail,member:Membership=Depends(owner),db:DBSession=Depends(get_db,scope='function')):
     from .members import invite
     return invite(db,wid,member.user_id,data.email,mode='personal')
+
+
+@app.get('/workspaces/{wid}/assistant-changes', dependencies=[Depends(workspace_member)])
+def assistant_changes(wid: str, page: int = Query(1,ge=1,le=10000), db: DBSession = Depends(get_db, scope='function')):
+    from .models import AssistantChange
+    rows=db.execute(select(AssistantChange,User.name).join(User,User.id==AssistantChange.user_id).where(AssistantChange.workspace_id==wid).order_by(AssistantChange.created_at.desc(),AssistantChange.id.desc()).offset((page-1)*10).limit(11)).all()
+    return {'items':[dict(id=r.id,summary=r.summary,created_at=r.created_at,actor=name or 'สมาชิก') for r,name in rows[:10]],'has_more':len(rows)>10,'page':page}

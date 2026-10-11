@@ -1,4 +1,4 @@
-"""Owner-only AI configuration. Keys never leave the backend; endpoints are not arbitrary URLs."""
+"""Owner-only AI configuration. Keys never leave the backend; custom HTTP(S) endpoints are owner-managed."""
 import ipaddress
 import socket
 from urllib.parse import urlsplit
@@ -28,43 +28,48 @@ def settings(db,wid):
         demo_fallback=row.demo_fallback if row else True,
         max_attempted_providers=row.max_attempted_providers if row else 3)
 
-def public_endpoint(value):
+def allowed_ip(value):
+    ip=ipaddress.ip_address(value)
+    if isinstance(ip,ipaddress.IPv6Address) and ip.ipv4_mapped:ip=ip.ipv4_mapped
+    if str(ip) in ('100.100.100.200','fd00:ec2::254'):return False
+    if ip.is_loopback:return True
+    # Local AI may use LAN, loopback, Docker and Tailscale. Never metadata,
+    # link-local, unspecified or multicast destinations, even through DNS.
+    return not (ip.is_link_local or ip.is_unspecified or ip.is_multicast or ip.is_reserved) and (ip.is_global or ip.is_private or ip.is_loopback or ip in ipaddress.ip_network('100.64.0.0/10'))
+
+def custom_endpoint(value):
+    """Validate an owner-supplied custom HTTP(S) base URL without echoing it."""
     try:
         u=urlsplit(value)
-        if u.scheme!='https' or not u.hostname or u.username is not None or u.password is not None or u.query or u.fragment or (u.port not in (None,443)):
-            raise ValueError()
+        if u.scheme not in ('http','https') or not u.hostname or u.username is not None or u.password is not None or u.query or u.fragment or (u.port is not None and not 1<=u.port<=65535):raise ValueError()
         if any(c.isspace() or ord(c)<32 for c in value) or '\\' in value:raise ValueError()
         host=u.hostname.encode('idna').decode()
-        if host=='localhost' or host.endswith(('.localhost','.local','.internal')):raise ValueError()
-        try:
-            if not ipaddress.ip_address(host).is_global:raise ValueError()
-        except ValueError:
-            # Distinguish a non-global IP literal from an ordinary hostname.
-            try:ipaddress.ip_address(host)
-            except ValueError:pass
-            else:raise
+        try:ip=ipaddress.ip_address(host)
+        except ValueError:ip=None
+        if ip is not None and not allowed_ip(str(ip)):raise ValueError()
         return value.rstrip('/')
     except (ValueError,UnicodeError):
-        raise HTTPException(422,'Custom API ต้องเป็น HTTPS สาธารณะ พอร์ต 443 ไม่มีรหัสผ่าน query หรือ fragment ใน URL')
+        raise HTTPException(422,'URL ต้องเป็น HTTP หรือ HTTPS พร้อมพอร์ตที่ถูกต้อง ไม่มีรหัสผ่าน query หรือ fragment และไม่ใช่ metadata/link-local')
 
 def target(p):
-    """Resolve on every call and pin the checked IP; retain TLS hostname verification.
+    """Resolve and pin custom destinations; keep Host/port and TLS SNI.
 
-    Workspace endpoints cannot reach metadata, loopback or other tenants' private services.
-    The only private network exception is the administrator's existing Ollama endpoint.
+    Owner-selected local endpoints may reach the server's LAN/Tailscale/Docker
+    network. Named cloud providers remain restricted to public destinations.
     """
-    if p.kind=='ollama':
+    if p.kind=='ollama' and not p.endpoint:
         return config.OLLAMA_URL.rstrip('/'),{},{}
-    base=p.endpoint if p.kind=='compatible' else ENDPOINTS[p.kind]
-    base=public_endpoint(base or config.COMPATIBLE_URL)
-    url=httpx.URL(base)
+    custom=p.kind in ('compatible','ollama')
+    base=p.endpoint if custom else ENDPOINTS[p.kind]
+    base=custom_endpoint(base or config.COMPATIBLE_URL)
+    url=httpx.URL(base);port=url.port or (443 if url.scheme=='https' else 80)
     try:
-        addresses=socket.getaddrinfo(url.host,443,type=socket.SOCK_STREAM)
+        addresses=socket.getaddrinfo(url.host,port,type=socket.SOCK_STREAM)
         ips=list(dict.fromkeys(item[4][0] for item in addresses))
-        if not ips or any(not ipaddress.ip_address(ip).is_global for ip in ips):raise ValueError()
+        if not ips or any(not (allowed_ip(ip) if custom else ipaddress.ip_address(ip).is_global) for ip in ips):raise ValueError()
     except (OSError,ValueError):
         raise ValueError('Endpoint unavailable') from None
-    return str(url.copy_with(host=ips[0])),{'Host':url.host},{'sni_hostname':url.host}
+    return str(url.copy_with(host=ips[0])),{'Host':url.netloc.decode()},{'sni_hostname':url.host} if url.scheme=='https' else {}
 
 def serialize(p):
     return {**{k:getattr(p,k) for k in ('id','kind','model','task','priority','name','endpoint','enabled','timeout_seconds','retries','max_tokens','temperature','reasoning_effort','supports_images')},'has_key':bool(p.encrypted_key)}
@@ -93,11 +98,12 @@ def apply(p,data,creating=False):
     from .ai_parameters import validate
     validate(data.kind,data.model,data.reasoning_effort)
     values=data.model_dump(exclude={'api_key','clear_key'})
-    if data.kind=='compatible':values['endpoint']=public_endpoint(data.endpoint or config.COMPATIBLE_URL)
-    elif data.endpoint:raise HTTPException(422,'ตั้ง Custom API URL ได้เฉพาะผู้ให้บริการ Custom API')
+    if data.kind=='compatible':values['endpoint']=custom_endpoint(data.endpoint or config.COMPATIBLE_URL)
+    elif data.kind=='ollama':values['endpoint']=custom_endpoint(data.endpoint) if data.endpoint else ''
+    elif data.endpoint:raise HTTPException(422,'ตั้ง URL ได้เฉพาะ Ollama และ Custom API')
     if data.api_key and any(ord(c)<32 or ord(c)>126 for c in data.api_key):raise HTTPException(422,'รูปแบบ API key ไม่ถูกต้อง')
     if data.clear_key and data.api_key:raise HTTPException(422,'เลือกล้างคีย์หรือใส่คีย์ใหม่อย่างใดอย่างหนึ่ง')
-    if not creating and (p.kind!=data.kind or (data.kind=='compatible' and (p.endpoint or config.COMPATIBLE_URL).rstrip('/')!=values['endpoint'])) and not data.api_key:p.encrypted_key=''
+    if not creating and (p.kind!=data.kind or (data.kind in ('compatible','ollama') and (p.endpoint or (config.OLLAMA_URL if p.kind=='ollama' else config.COMPATIBLE_URL)).rstrip('/')!=(values['endpoint'] or config.OLLAMA_URL))) and not data.api_key:p.encrypted_key=''
     if data.clear_key:p.encrypted_key=''
     if data.api_key:p.encrypted_key=config.cipher().encrypt(data.api_key.encode()).decode()
     if data.kind in ENDPOINTS and not p.encrypted_key:raise HTTPException(422,'ต้องระบุ API key')

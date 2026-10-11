@@ -49,7 +49,7 @@ def test_encrypted_edit_retains_key_and_web_settings_override_environment(config
         old=db.get(Provider,pid);old.endpoint='';old.encrypted_key=config.cipher().encrypt(b'legacy-key').decode()
     assert c.put(b+'/providers/'+pid,json=changed).json()['has_key'] is False
 
-@pytest.mark.parametrize('url',['http://api.example.com/v1','https://127.0.0.1/v1','https://169.254.169.254/v1','https://[::1]/v1','https://192.168.1.1/v1','https://user:password@example.com/v1','https://api.example.com/v1?key=secret','https://localhost/v1','https://api.example.com:8443/v1','https://api.example.com/v1#secret','https://foo.local/v1'])
+@pytest.mark.parametrize('url',['ftp://api.example.com/v1','http://169.254.169.254/v1','http://[fe80::1]/v1','http://0.0.0.0/v1','http://224.0.0.1/v1','https://user:password@example.com/v1','https://api.example.com/v1?key=secret','https://api.example.com/v1#secret','http://api.example.com:0/v1'])
 def test_unsafe_urls_and_secret_validation_not_echoed(configured,url):
     c,b,*_=configured
     response=c.post(b+'/providers',json={**payload(),'endpoint':url})
@@ -63,7 +63,7 @@ def test_dns_checked_and_pinned_with_sni(monkeypatch):
     monkeypatch.setattr(ai_settings.socket,'getaddrinfo',lambda *a,**k:[(2,1,6,'',('93.184.216.34',443))])
     url,headers,extensions=ai_settings.target(p)
     assert url=='https://93.184.216.34/v1' and headers=={'Host':'api.example.com'} and extensions=={'sni_hostname':'api.example.com'}
-    monkeypatch.setattr(ai_settings.socket,'getaddrinfo',lambda *a,**k:[(2,1,6,'',('10.0.0.1',443))])
+    monkeypatch.setattr(ai_settings.socket,'getaddrinfo',lambda *a,**k:[(2,1,6,'',('169.254.169.254',443))])
     with pytest.raises(ValueError):ai_settings.target(p)
 
 def test_owner_only_edit_probe_routes_and_tenant_isolation(configured):
@@ -142,3 +142,63 @@ def test_runtime_routes_retries_disabled_cloud_and_demo(configured,monkeypatch):
     while run_once():pass
     with SessionLocal() as db:assert db.get(Job,jobid).status=='failed'
     assert calls==[]
+
+@pytest.mark.parametrize('url',[
+    'http://api.example.com/v1','http://192.168.1.20:11434/v1',
+    'http://100.90.1.2:8000/v1','http://ollama:11434/v1',
+    'http://host.docker.internal:11434/v1','http://localhost:8081/v1',
+    'http://[::1]:11434/v1','https://ai.home.local:8443/v1',
+])
+def test_custom_http_lan_tailscale_and_ports_saved_from_web(configured,url):
+    c,b,*_=configured
+    for kind in ('compatible','ollama'):
+        response=c.post(b+'/providers',json={**payload(),'kind':kind,'endpoint':url})
+        assert response.status_code==200 and response.json()['endpoint']==url
+        assert 'hidden-test-key' not in response.text
+
+@pytest.mark.parametrize('address',['169.254.169.254','fe80::1','::ffff:169.254.169.254','0.0.0.0','224.0.0.1','100.100.100.200','fd00:ec2::254'])
+def test_dns_metadata_and_unusable_addresses_stay_blocked(monkeypatch,address):
+    monkeypatch.setattr(ai_settings.socket,'getaddrinfo',lambda *a,**k:[(2,1,6,'',(address,11434))])
+    with pytest.raises(ValueError):ai_settings.target(SimpleNamespace(kind='ollama',endpoint='http://ai.example.com:11434/v1'))
+
+def test_http_pins_ip_preserves_port_and_named_cloud_stays_public(monkeypatch):
+    calls=[]
+    def resolve(host,port,**kw):calls.append((host,port));return [(2,1,6,'',('100.90.1.2',port))]
+    monkeypatch.setattr(ai_settings.socket,'getaddrinfo',resolve)
+    url,headers,extensions=ai_settings.target(SimpleNamespace(kind='compatible',endpoint='http://ai.example.com:8081/v1'))
+    assert url=='http://100.90.1.2:8081/v1' and headers=={'Host':'ai.example.com:8081'} and extensions=={}
+    assert calls==[('ai.example.com',8081)]
+    with pytest.raises(ValueError):ai_settings.target(SimpleNamespace(kind='openai',endpoint=''))
+
+def test_each_ollama_machine_used_by_probe_discovery_and_runtime_fallback(configured,monkeypatch):
+    c,b,w,u=configured
+    rows=[c.post(b+'/providers',json=dict(kind='ollama',model=model,task='chat',endpoint=url,retries=0)).json() for model,url in [('machine-one','http://192.168.1.20:11434/v1'),('machine-two','http://100.90.1.2:11435/v1')]]
+    monkeypatch.setattr(ai_settings.socket,'getaddrinfo',lambda host,port,**kw:[(2,1,6,'',(host,port))])
+    real=httpx.Client;calls=[]
+    def handler(req):
+        calls.append((req.url.host,req.url.port,req.url.path))
+        if req.url.path.endswith('/models'):return httpx.Response(200,json={'data':[{'id':'machine-one'}]})
+        body=json.loads(req.content)
+        if body['messages'][0].get('role')=='user':return httpx.Response(200,json={'choices':[{'message':{'content':'OK'}}]})
+        if body['model']=='machine-two':return httpx.Response(503,json={'error':'unavailable'})
+        return httpx.Response(200,json={'choices':[{'message':{'content':'ตอบจากเครื่องแรกค่ะ'}}]})
+    monkeypatch.setattr(ai.httpx,'Client',lambda **kw:real(transport=httpx.MockTransport(handler),**kw))
+    assert c.post(b+'/providers/'+rows[0]['id']+'/models',json={}).json()=={'models':['machine-one']}
+    assert c.post(b+'/providers/'+rows[1]['id']+'/test',json={}).status_code==200
+    assert calls==[('192.168.1.20',11434,'/v1/models'),('100.90.1.2',11435,'/v1/chat/completions')]
+    assert c.put(b+'/ai/routes',json=dict(task='chat',provider_ids=[rows[1]['id'],rows[0]['id']])).status_code==200
+    cid=c.post(b+'/conversations',json={}).json()['id']
+    c.post(b+f'/conversations/{cid}/messages',json={'text':'สวัสดี เลขา'})
+    while run_once():pass
+    assert c.get(b+f'/conversations/{cid}/messages').json()[-1]['content']=='ตอบจากเครื่องแรกค่ะ'
+    assert calls[-2:]==[('100.90.1.2',11435,'/v1/chat/completions'),('192.168.1.20',11434,'/v1/chat/completions')]
+    assert c.get(b+'/transactions').json()==[]
+
+
+def test_ollama_default_and_key_does_not_follow_new_machine(configured,monkeypatch):
+    c,b,*_=configured
+    monkeypatch.setattr(config,'OLLAMA_URL','http://ollama:11434/v1')
+    row=c.post(b+'/providers',json=dict(kind='ollama',model='local',task='chat',api_key='test-local-key')).json()
+    with SessionLocal() as db:assert ai_settings.target(db.get(Provider,row['id']))==('http://ollama:11434/v1',{}, {})
+    edited=c.put(b+'/providers/'+row['id'],json=dict(kind='ollama',model='local',task='chat',endpoint='http://192.168.1.20:11434/v1')).json()
+    assert edited['has_key'] is False

@@ -192,14 +192,14 @@ docker compose --profile local-ai up -d ollama
 docker compose exec ollama ollama pull MODEL_NAME
 ```
 
-ค่าเริ่มต้น `OLLAMA_URL=http://ollama:11434/v1` จากนั้น Settings เพิ่ม provider `ollama`, ชื่อโมเดลที่ติดตั้งจริง และเลือกงาน `chat` หรือ `extract` การอ่านรูปต้องใช้โมเดลที่รองรับภาพ ขนาด/ความเร็วโมเดลขึ้นกับ RAM/CPU ที่จัดให้ VM หากมี Ollama เดิมบน host ตั้ง URL ให้เข้าถึงได้จาก Docker และจำกัดเครือข่ายไว้ภายใน
+ค่าเริ่มต้น `OLLAMA_URL=http://ollama:11434/v1` จากนั้น Settings เพิ่ม provider `ollama`, ชื่อโมเดลที่ติดตั้งจริง และเลือกงาน `chat` หรือ `extract` การอ่านรูปต้องใช้โมเดลที่รองรับภาพ ขนาด/ความเร็วโมเดลขึ้นกับ RAM/CPU ที่จัดให้ VM หากมี Ollama หลายเครื่อง ใส่ **Ollama Base URL** แยกแต่ละโมเดลจากเว็บ เช่น `http://192.168.1.20:11434/v1` หรือ IP Tailscale เว้นว่างใช้ค่าเริ่มต้นเดิม URL ต้องเข้าถึงได้จาก backend Docker
 
 ### Cloud / OpenAI-compatible
 
 1. เปิด **ตั้งค่า → เปิดศูนย์ตั้งค่า AI** หรือ `/ai-settings` (เฉพาะเจ้าของพื้นที่)
 2. เปิด **อนุญาต Cloud AI** สำหรับพื้นที่นี้ ไม่ต้องแก้ `.env` หรือ restart หลังบันทึก
 3. เพิ่ม Gemini, OpenRouter, Groq, OpenAI หรือ **Custom API** ใส่ชื่อโมเดล/คีย์ และเลือกงานแชทหรืออ่านข้อความ/สลิป
-4. Custom API รับ Base URL เช่น `https://api.example.com/v1` ผ่านเว็บ รองรับ OpenAI-compatible HTTPS สาธารณะพอร์ต 443 ไม่มี credentials/query/fragment และไม่ redirect; ตรวจ DNS ทุกครั้งและ pin IP พร้อมตรวจ TLS hostname เพื่อป้องกันปลายทางภายใน/metadata และ DNS rebinding
+4. Custom API รับ Base URL เช่น `https://api.example.com/v1` ผ่านเว็บ รองรับ OpenAI-compatible HTTP/HTTPS รวม LAN/Tailscale/Docker และพอร์ตอื่น เช่น `http://192.168.1.30:8081/v1` ไม่มี credentials/query/fragment และไม่ redirect; ตรวจ DNS และ pin IP พร้อม Host/port/TLS SNI โดยปิด metadata/link-local/multicast/unspecified/reserved ตาม policy ผู้ตั้ง URL ต้องเป็น owner และ URL ภายในเข้าถึงจากเครือข่าย backend; HTTP ไม่เข้ารหัสข้อมูลหรือคีย์
 5. กด **ทดสอบ** เพื่อส่งข้อความสังเคราะห์สั้น ไม่มีข้อมูลการเงินจริง อาจมีค่าบริการ กด **โหลดโมเดล** เพื่อดึง `/models` แล้วเลือกในฟอร์มแก้ไข หาก API ไม่รองรับให้กรอกชื่อโมเดลเอง ไม่ส่งคำตอบดิบของผู้ให้บริการกลับหน้าตั้งค่า
 6. เลื่อนขึ้น/ลงเพื่อจัดลำดับตามงาน เปิด–ปิดหรือแก้ไขโมเดลได้ คีย์ที่เว้นว่างเมื่อแก้ไขใช้คีย์เดิม มีช่องล้างคีย์สำหรับ API ที่ไม่ต้องยืนยันตัวตน
 7. ตั้ง timeout 5–60 วินาที ลองซ้ำ 0–2 ครั้ง tokens 64–8192 และ temperature 0–2 แยกต่อโมเดล ลองสูงสุด 1–5 โมเดลต่องาน มีกรอบรวมแบบ soft deadline 90 วินาที (request/stream ที่กำลังทำงานอาจเกินกรอบนี้ได้) เลือกปิด demo fallback เพื่อให้งานล้มเหลวเมื่อไม่มีโมเดลพร้อม

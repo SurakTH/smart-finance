@@ -1,6 +1,17 @@
 # ผลตรวจสอบ Smart Finance
 
 
+## Ollama หลายเครื่องและ Custom HTTP (11 ตุลาคม 2026)
+
+- Backend PostgreSQL ฐาน disposable ทั้งชุด **364 passed** (Starlette/httpx warningเดิม1รายการ); ชุด AI configuration/secretary/personalizationก่อนรอบรวม **66 passed**
+- บันทึก HTTP/HTTPS/LAN/Tailscale/Docker/localhost/IPv6/พอร์ตอื่นผ่านAPIได้ทั้ง Custom API และ Ollama โดยowner; ตรวจ URLและ DNS pin/Host/port/SNI, metadata/link-local/unspecified/multicastยังปิด, named cloud providersยังpublic-only ไม่มีredirect/envproxyและไม่มีkeyในresponse
+- จำลอง Ollamaสองเครื่อง: discoveryใช้เครื่องแรก, probeใช้เครื่องสอง, runtimeลองเครื่องสองก่อน503แล้วfallbackเครื่องแรกตามrouteที่ตั้ง แม้ปิดCloud; OllamaURLว่างใช้configเดิม และคีย์ไม่ตามไปเมื่อเปลี่ยนเครื่อง
+- TypeScript และ Docker/Next production buildผ่าน (backend `f8e8d95be39f`, web `af5e6b9c0c64`); ไม่ต้องmigration/.envใหม่ หน้าแรกHTTP200หลังเริ่มcontainerครบ
+- Chrome **6 passed** desktop3/mobile3: Custom APIแบบHTTPพร้อมพอร์ต, เพิ่ม/แก้/persist OllamaURLในdialog, การจัดลำดับ/คีย์/เปิดปิด, ยืนยันแชทและworkspace default
+- รอบรวมแรกหยุดเพราะพื้นที่Dockerเครื่องพัฒนาเต็มระหว่างbuild ไม่ใช่assertionพฤติกรรมฟีเจอร์ คืนพื้นที่เฉพาะcache builderที่ไม่ใช้งาน แล้วรันรวมใหม่ผ่าน ไม่ลบvolume/ข้อมูล สำรองหลังตรวจ `finance-20261011T141507Z.dump` และrestoreลงฐานdisposableผ่าน จำนวนแถว/snapshotsตรงและjournalsสมดุล; archive209ไฟล์ผ่านintegrity/runtime-secret scan
+- การเชื่อมต่อใช้ MockTransport ไม่ได้ติดต่อOllamaจริงของผู้ใช้หรือdeploy Ubuntu; ต้องให้URLเข้าถึงจากbackend และใช้ `/v1` ตามAPI OpenAI-compatible รายละเอียดHTTP/เครือข่าย/Cloud switchอยู่ใน AI_ASSISTANT.md
+
+
 ## AI ค้นข้อมูลตามงานและแบ่งหน้า (11 ตุลาคม 2026)
 
 - PostgreSQL disposable database: backend ทั้งชุด **348 passed** (เพิ่ม16เคสจาก332; warning Starlette/httpx เดิม1รายการ) ตรวจ tools→lookup→draft→plainยืนยัน, strict schema, literal wildcard, cursorภายในtenant/filter, ข้อมูลแยกuser/workspace, ยอดbalanceจากledger, เป้า/งบ/รายการประจำ, หน้าถัดไป/หมดอายุ/บริบทที่ไม่เกี่ยวข้อง, cacheและread budget

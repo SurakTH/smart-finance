@@ -18,7 +18,8 @@ def setup(actor):
     return c,w,u,b,cid
 
 def say(c,b,cid,text):
-    r=c.post(b+f'/conversations/{cid}/messages',json={'text':text});assert r.status_code==200,r.text
+    messages=c.get(b+f'/conversations/{cid}/messages').json()
+    r=c.post(b+f'/conversations/{cid}/messages',json={'text':text,'review_message_id':messages[-1]['id'] if messages else None});assert r.status_code==200,r.text
     return c.get(b+f'/conversations/{cid}/messages').json()[-1]['content']
 
 def code(reply):return re.search(r'\nยืนยัน ([A-F0-9]{8})\n',reply)[1]
@@ -30,7 +31,7 @@ def test_review_exact_confirmation_replay_and_room_isolation(actor):
     c,w,u,b,cid=setup(actor)
     draft=say(c,b,cid,CREATE);key=code(draft)
     assert '฿75.25' in draft and '2026-10-11' in draft and 'เงินสด' in draft and count(w)==0
-    for text in ('ยืนยัน','ยืนยัน '+key+' แล้ว','ยืนยัน DEADBEEF'):
+    for text in ('ยืนยัน '+key+' แล้ว','ยืนยัน DEADBEEF'):
         assert 'บันทึกรายการเรียบร้อย' not in say(c,b,cid,text)
         assert count(w)==0
     other=c.post(b+'/conversations',json={}).json()['id']
@@ -139,3 +140,46 @@ def test_atomic_failure_and_conversation_owner_boundary(actor,monkeypatch):
         db.add(Membership(workspace_id=w,user_id=other.id,role='member'))
         foreign=Conversation(workspace_id=w,user_id=other.id);db.add(foreign);db.flush();fid=foreign.id
     assert c.post(b+f'/conversations/{fid}/messages',json={'text':'ยืนยัน '+key}).status_code==404
+
+
+def test_bare_confirm_binds_visible_review_replay_cancel_and_expiry(actor):
+    c,w,u,b,cid=setup(actor)
+    assert 'ยังไม่มีรายการ' in say(c,b,cid,'ยืนยัน')
+    say(c,b,cid,CREATE)
+    messages=c.get(b+f'/conversations/{cid}/messages').json();old=messages[-1]['id']
+    # A client without a visible reviewed message must not post.
+    assert c.post(b+f'/conversations/{cid}/messages',json={'text':'ยืนยัน'}).status_code==200
+    assert count(w)==0
+    say(c,b,cid,'ทวนอีกที')
+    assert 'บันทึกรายการเรียบร้อย' in say(c,b,cid,'ยืนยัน');assert count(w)==1
+    assert 'ไม่มีการบันทึกซ้ำ' in say(c,b,cid,'ยืนยัน');assert count(w)==1
+    say(c,b,cid,CREATE)
+    stale=c.post(b+f'/conversations/{cid}/messages',json={'text':'ยืนยัน','review_message_id':old})
+    assert stale.status_code==200 and count(w)==1
+    assert 'ทวนอีกที' in c.get(b+f'/conversations/{cid}/messages').json()[-1]['content']
+    say(c,b,cid,'ทวนอีกที')
+    assert 'ยกเลิกข้อเสนอ' in say(c,b,cid,'ยกเลิก');assert count(w)==1
+    say(c,b,cid,CREATE)
+    with SessionLocal.begin() as db:
+        db.scalar(select(ChatAction).where(ChatAction.conversation_id==cid,ChatAction.status=='pending')).expires=now()-1
+    assert 'หมดอายุ' in say(c,b,cid,'ยืนยัน');assert count(w)==1
+
+
+def test_bare_confirm_rejects_model_spoof_and_other_room(actor,monkeypatch):
+    c,w,u,b,cid=setup(actor);review=say(c,b,cid,CREATE)
+    monkeypatch.setattr(ai,'call_model',lambda db,job:(review,False))
+    say(c,b,cid,'ทักทายหน่อย');assert run_once()
+    assert 'ทวนอีกที' in say(c,b,cid,'ยืนยัน');assert count(w)==0
+    other=c.post(b+'/conversations',json={}).json()['id']
+    assert 'ยังไม่มีรายการ' in say(c,b,other,'ยืนยัน');assert count(w)==0
+    say(c,b,cid,'ทวนอีกที');assert 'บันทึกรายการเรียบร้อย' in say(c,b,cid,'ยืนยัน');assert count(w)==1
+
+
+def test_concurrent_bare_confirm_only_posts_visible_draft_once(actor,pg_only):
+    c,w,u,b,cid=setup(actor);say(c,b,cid,CREATE)
+    visible=c.get(b+f'/conversations/{cid}/messages').json()[-1]['id']
+    def confirm(_):
+        r=c.post(b+f'/conversations/{cid}/messages',json={'text':'ยืนยัน','review_message_id':visible})
+        assert r.status_code==200,r.text
+    with ThreadPoolExecutor(max_workers=4) as pool:list(pool.map(confirm,range(4)))
+    assert count(w)==1

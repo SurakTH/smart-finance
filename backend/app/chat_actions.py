@@ -1,7 +1,7 @@
 """Trusted text-command boundary. Models/OCR never invoke confirm or ledger writes.
 
 Drafts use exact account names and explicit fields. Only a fresh authenticated
-user message consisting entirely of ยืนยัน CODE can execute a frozen draft.
+user confirmation of the reviewed draft can execute a frozen draft.
 All callers hold the workspace lock, including concurrent/replayed confirmations.
 """
 import re
@@ -12,24 +12,15 @@ from uuid import uuid4
 from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import select
-from .models import Account, ChatAction, now
+from .models import Account, ChatAction, Message, now
 from .schemas import TransactionInput, CorrectionInput
 from .ledger import post, get_scoped
 from .corrections import detail, revise
 from .reporting import today
 
 KINDS={'บันทึกรายจ่าย':'expense','บันทึกรายรับ':'income','โอนเงิน':'transfer','จ่ายบัตร':'card_payment'}
-HELP='''ยังไม่บันทึกค่ะ กรุณาระบุข้อมูลให้ครบ เช่น
-บันทึกรายจ่าย
-รายละเอียด: กาแฟ
-จำนวน: 75
-บัญชี: เงินสด
-หมวด: อาหารและเครื่องดื่ม
-วันที่: YYYY-MM-DD
+HELP='บอกฉันแบบคุยกันได้เลยค่ะ เช่น “ซื้อกาแฟ 75 จากเงินสด” หรือ “เงินเดือนเข้า 30,000” ถ้าขาดข้อมูล ฉันจะถามเพิ่ม แล้วทวนให้ตรวจอีกครั้งก่อนบันทึก'
 
-ใช้ชื่อบัญชีและหมวดตามที่ตั้งไว้ วันที่เว้นได้โดยใช้วันนี้ ระบบจะทวนก่อนให้พิมพ์ยืนยันพร้อมรหัส ภายใน 15 นาที
-แก้รายการ: เปิดรายละเอียดรายการ แล้วคัดลอกคำขอแก้ผ่านแชท
-รองรับรายรับ รายจ่าย โอนเงิน และจ่ายบัตร โดยโอน/จ่ายบัตรใช้ ปลายทาง: ชื่อบัญชี แทน หมวด:'''
 
 
 def amount(text):
@@ -115,7 +106,7 @@ def parse(db,wid,text):
     return dict(transaction=tx,target=target,reason=reason,before=old,after=after,revision_key=str(uuid4()))
 
 
-def handle(db,c,user_id,text):
+def handle(db,c,user_id,text,review_message_id=None,require_review_id=False,allow_model_dialogue=False):
     """Return None for ordinary chat, safe reply for intercepted commands.
 
     Called ONLY by authenticated text POST, never workers, OCR or providers.
@@ -124,8 +115,25 @@ def handle(db,c,user_id,text):
     text=text.strip()
     command=re.fullmatch(r'(ยืนยัน|ยกเลิก)\s+([0-9a-fA-F]{8})',text)
     scope=(ChatAction.workspace_id==c.workspace_id,ChatAction.conversation_id==c.id,ChatAction.user_id==user_id)
+    context=dict(c.capture_context or {})
+    if text in ('ทวนอีกที','ทวนหน่อย','ทวนรายการ','สรุปที่จะบันทึก'):
+        action=db.scalar(select(ChatAction).where(*scope,ChatAction.status=='pending').with_for_update())
+        if not action or action.expires<=now():return 'ไม่มีรายการที่รอยืนยันตอนนี้ค่ะ บอกฉันได้เลยว่าอยากจดอะไร'
+        context['review_action_id']=action.id;c.capture_context=context
+        return review_text(action)
+    if text in ('ยืนยัน','ยกเลิก'):
+        action=db.scalar(select(ChatAction).where(*scope,ChatAction.id==context.get('review_action_id')).with_for_update())
+        if not action:return 'ยังไม่มีรายการให้ยืนยันค่ะ บอกสิ่งที่อยากบันทึกก่อน แล้วฉันจะทวนให้ตรวจ'
+        if action.status=='confirmed':return 'ข้อเสนอนี้บันทึกแล้ว ไม่มีการบันทึกซ้ำค่ะ'
+        if action.status=='pending':
+            latest=db.scalar(select(Message).where(Message.workspace_id==c.workspace_id,Message.conversation_id==c.id,Message.role=='assistant').order_by(Message.created_at.desc(),Message.id.desc()).limit(1))
+            expected=context.get('review_message_id')
+            if not latest or latest.id!=expected or (require_review_id and str(review_message_id or '')!=expected):
+                return 'ข้อความทวนเปลี่ยนไปแล้วค่ะ ยังไม่บันทึก พิมพ์ “ทวนอีกที” เพื่อตรวจรายการล่าสุดก่อนนะคะ'
+        command=re.fullmatch(r'(ยืนยัน|ยกเลิก)\s+([0-9a-fA-F]{8})',text+' '+action.code)
     if text in ('ยกเลิกการกรอก','เริ่มใหม่'):
-        context=dict(c.capture_context or {});context.pop('pending',None);c.capture_context=context
+
+        context=dict(c.capture_context or {});context.pop('pending',None);context.pop('ai_followup',None);c.capture_context=context
         for old in db.scalars(select(ChatAction).where(*scope,ChatAction.status=='pending')):old.status='cancelled'
         return 'ยกเลิกข้อมูลที่กำลังกรอกและข้อเสนอในห้องนี้แล้ว ยังไม่ได้เปลี่ยนยอดเงิน'
     if command:
@@ -159,32 +167,73 @@ def handle(db,c,user_id,text):
             entry_id=result['replacement']['id']
         else: entry_id=post(db,c.workspace_id,user_id,TransactionInput(**p['transaction'])).id
         action.status='confirmed'; action.entry_id=entry_id
-        c.capture_context={'last_entry_id':entry_id}
+        c.capture_context={**(c.capture_context or {}),'last_entry_id':entry_id}
         db.flush()
         return ('แก้ไขและเก็บประวัติเดิมเรียบร้อยแล้ว' if p['target'] else 'บันทึกรายการเรียบร้อยแล้ว')+'\n'+p['after']
     if text.startswith(('ยืนยัน','ยกเลิก')):
-        return 'ยังไม่เปลี่ยนข้อมูล กรุณาพิมพ์เฉพาะ ยืนยัน ตามด้วยรหัส 8 ตัวจากข้อความทวนรายการ เช่น ยืนยัน A1B2C3D4 หรือ ยกเลิก A1B2C3D4'
+        return 'พิมพ์แค่ “ยืนยัน” หรือ “ยกเลิก” สำหรับรายการที่ฉันเพิ่งทวนได้เลยค่ะ'
+    # An explicit short correction changes only the pending draft, never the ledger.
+    change=re.fullmatch(r'(?:จริง\s*ๆ|แก้ยอด|เปลี่ยนยอด|เอาเป็น|เปลี่ยนเป็น|แก้เป็น|ยอดจริง)(?:\s*(?:เป็น|คือ))?\s*([\d,.]+)\s*(?:บาท)?\s*(?:นะ|ค่ะ|ครับ|จ้า)?',text)
+    if change:
+        action=db.scalar(select(ChatAction).where(*scope,ChatAction.status=='pending').with_for_update())
+        if not action or action.expires<=now():return 'ยังไม่มีรายการที่รอยืนยันค่ะ บอกฉันก่อนว่าอยากจดหรือแก้รายการไหน'
+        try:
+            payload={**action.payload,'transaction':{**action.payload['transaction'],'amount':amount(change[1]),'idempotency_key':str(uuid4())},'revision_key':str(uuid4())}
+            payload['transaction']=TransactionInput(**payload['transaction']).model_dump(mode='json')
+            payload['after']=summary(db,c.workspace_id,payload['transaction'])
+        except (ValueError,ValidationError):return 'ยอดยังไม่ชัดค่ะ ขอเป็นจำนวนบาทที่มีทศนิยมไม่เกิน 2 ตำแหน่งนะคะ'
+        except HTTPException:return 'ข้อมูลบัญชีเปลี่ยนไปแล้วค่ะ ขอเริ่มรายการใหม่อีกครั้ง'
+        return prepare_review(db,c,user_id,payload)
     structured=text.splitlines()[0] in KINDS or ('\n' in text and text.startswith(tuple(KINDS))) or (text.startswith(('บันทึกรายจ่าย','บันทึกรายรับ')) and bool(re.search(r'\sบัญชี\s.+\sหมวด\s',text))) or bool(re.match(r'แก้รายการ\s+[0-9a-fA-F-]{36}',text))
     try:
         if not structured:
             from .natural_capture import normalize,NeedInfo
             try:normalized=normalize(db,c,user_id,text)
-            except NeedInfo as exc:return 'ยังไม่บันทึกค่ะ '+str(exc)+' (ตอบต่อในห้องนี้ภายใน 15 นาที)'
+            except NeedInfo as exc:
+                # A configured model can understand spelled-out amounts and conversational replies.
+                # Without one, keep the deterministic assistant fully usable.
+                from .models import Provider
+                from .ai_settings import settings
+                cloud=c.privacy=='standard' and settings(db,c.workspace_id)['cloud_enabled']
+                providers=db.scalars(select(Provider).where(Provider.workspace_id==c.workspace_id,Provider.task=='chat',Provider.enabled.is_(True))).all()
+                if allow_model_dialogue and any(p.kind=='ollama' or cloud for p in providers):return None
+                return 'ยังไม่บันทึกค่ะ '+str(exc)
             if normalized is None:return None
             text=normalized
         payload=parse(db,c.workspace_id,text)
-    except ValidationError: return 'ยังไม่บันทึก กรุณาตรวจจำนวน วันที่ และความยาวรายละเอียด\n'+HELP
+    except ValidationError: return 'ยังไม่บันทึกค่ะ ขอเช็กจำนวนเงิน วันที่ หรือรายละเอียดอีกนิดนะคะ'
     except ValueError as exc:
         message=str(exc)
-        return 'ยังไม่บันทึก: '+message+('' if HELP in message else '\n'+HELP)
+        return 'ยังไม่บันทึกค่ะ '+message
     except HTTPException: return 'ไม่พบรายการที่แก้ไขได้ใน workspace นี้ ยังไม่เปลี่ยนข้อมูล'
+    return prepare_review(db,c,user_id,payload)
+
+
+def prepare_review(db,c,user_id,payload):
+    """Freeze validated data, never post it. Used by trusted parsers and validated AI drafts."""
+    scope=(ChatAction.workspace_id==c.workspace_id,ChatAction.conversation_id==c.id,ChatAction.user_id==user_id)
     # Only a successfully validated new draft supersedes the old pending draft.
-    for old in db.scalars(select(ChatAction).where(*scope,ChatAction.status=='pending')): old.status='superseded'
+    for old in db.scalars(select(ChatAction).where(*scope,ChatAction.status=='pending')):old.status='superseded'
     code=secrets.token_hex(4).upper()
     while db.scalar(select(ChatAction.id).where(ChatAction.conversation_id==c.id,ChatAction.code==code)):
         code=secrets.token_hex(4).upper()
     action=ChatAction(workspace_id=c.workspace_id,conversation_id=c.id,user_id=user_id,code=code,payload=payload,expires=now()+900)
     db.add(action);db.flush()
+    context=dict(c.capture_context or {});context.pop('ai_followup',None);context.pop('pending',None)
+    context['review_action_id']=action.id;context.pop('review_message_id',None);c.capture_context=context
+    return review_text(action)
+
+
+def review_text(action):
+    payload=action.payload
     review=('ก่อนแก้ไข:\n'+payload['before']+'\n\nหลังแก้ไข:\n' if payload['target'] else 'จะบันทึกรายการ:\n')+payload['after']
-    if payload['target']: review+='\nเหตุผล: '+payload['reason']
-    return 'กรุณาตรวจสอบ — ยังไม่บันทึก\n\n'+review+f'\n\nยืนยันเฉพาะข้อเสนอนี้ภายใน 15 นาที โดยพิมพ์:\nยืนยัน {code}\nหรือพิมพ์ ยกเลิก {code}\nหากต้องการเปลี่ยนข้อมูล ให้ส่งคำขอใหม่ รหัสเดิมจะใช้ไม่ได้'
+    if payload['target']:review+='\nเหตุผล: '+payload['reason']
+    # Retain the optional code for older clients and advanced use. Ordinary users only type ยืนยัน.
+    return 'กรุณาตรวจสอบ — ยังไม่บันทึก\n\n'+review+f'\n\nถ้าถูกต้อง พิมพ์ “ยืนยัน” ได้เลยค่ะ หรือ “ยกเลิก” ถ้าไม่เอารายการนี้\nอยากเปลี่ยนอะไรบอกได้เลย ข้อเสนอนี้รอได้ 15 นาที\n\nรหัสทางเลือก:\nยืนยัน {action.code}\n'
+
+
+def bind_review(db,c,user_id,message):
+    context=dict(c.capture_context or {})
+    action=db.scalar(select(ChatAction).where(ChatAction.id==context.get('review_action_id'),ChatAction.workspace_id==c.workspace_id,ChatAction.conversation_id==c.id,ChatAction.user_id==user_id,ChatAction.status=='pending'))
+    if action and message.content==review_text(action):
+        context['review_message_id']=message.id;c.capture_context=context

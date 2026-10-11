@@ -70,7 +70,10 @@ def text_capture(db,telegram_id,message_id,text):
     if reply is None:
         enqueue(db,c.workspace_id,link.user_id,'extract',{'text':text,'privacy':'private'})
         reply='รับข้อมูลแล้ว กรุณาตรวจสอบ AI Inbox บนเว็บก่อนยืนยัน ไม่มีการบันทึกยอดอัตโนมัติ'
-    db.add(Message(id=reply_id,workspace_id=c.workspace_id,conversation_id=c.id,role='assistant',content=reply,created_at=message_time(db,c.workspace_id,c.id)));db.flush()
+    message=Message(id=reply_id,workspace_id=c.workspace_id,conversation_id=c.id,role='assistant',content=reply,created_at=message_time(db,c.workspace_id,c.id))
+    db.add(message);db.flush()
+    from .chat_actions import bind_review
+    bind_review(db,c,link.user_id,message)
     return reply
 
 @dp.message(F.text | F.photo)

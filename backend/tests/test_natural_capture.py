@@ -92,3 +92,55 @@ def test_cancel_followup_and_report_question_never_become_drafts(actor):
  from app.models import ChatAction
  with SessionLocal() as db:assert not db.scalar(select(ChatAction).where(ChatAction.conversation_id==cid))
  assert count(w)==0
+
+
+def test_casual_followups_amount_and_pending_correction(actor):
+ c,w,u,b,cid=setup(actor)
+ c.post(b+'/accounts',json={'name':'ธนาคาร','kind':'asset'})
+ assert 'ยอดเท่าไหร่' in say(c,b,cid,'ช่วยจดค่ากาแฟให้หน่อย')
+ assert 'ใช้บัญชีไหน' in say(c,b,cid,'75 บาทค่ะ')
+ review=say(c,b,cid,'เงินสดจ้า');assert '฿75.00' in review
+ review=say(c,b,cid,'จริง ๆ 90 บาท');assert '฿90.00' in review and count(w)==0
+ assert 'บันทึกรายการเรียบร้อย' in say(c,b,cid,'ยืนยัน');assert count(w)==1
+ assert c.get(b+'/transactions').json()[0]['amount']==9000
+ assert 'จัดเข้าหมวดไหน' in say(c,b,cid,'ซื้อหนังสือ 300 จากเงินสด')
+ assert 'หมวด: อื่น ๆ' in say(c,b,cid,'อื่น ๆ ค่ะ')
+ assert 'ยกเลิกข้อเสนอ' in say(c,b,cid,'ยกเลิก');assert count(w)==1
+
+
+def test_telegram_bare_confirmation_and_cancel(actor):
+ c,w,u,b,cid=setup(actor);tid=int(uuid.uuid4().hex[:12],16)
+ with SessionLocal.begin() as db:db.add(TelegramLink(telegram_id=str(tid),workspace_id=w,user_id=u.id))
+ def send(mid,text):
+  with SessionLocal.begin() as db:return text_capture(db,tid,mid,text)
+ assert 'กรุณาตรวจสอบ' in send(1,'กาแฟ 75 จากเงินสดจ้า')
+ assert 'บันทึกรายการเรียบร้อย' in send(2,'ยืนยัน');assert count(w)==1
+ assert 'บันทึกรายการเรียบร้อย' in send(2,'ยืนยัน');assert count(w)==1
+ assert 'ไม่มีการบันทึกซ้ำ' in send(3,'ยืนยัน')
+ send(4,'กาแฟ 90 จากเงินสด')
+ assert 'ยกเลิกข้อเสนอ' in send(5,'ยกเลิก');assert count(w)==1
+
+
+@pytest.mark.parametrize('text',['ช่วยอธิบายค่าใช้จ่ายให้หน่อย','กาแฟ 75 แพงไหม','สมมติซื้อกาแฟ 75 บาท','ขอตัวอย่างการโอนเงิน 200 บาท'])
+def test_casual_questions_and_examples_are_not_capture_commands(actor,text):
+ from app.chat_actions import handle
+ from app.chat_dialogue import eligible
+ c,w,u,b,cid=setup(actor)
+ with SessionLocal.begin() as db:
+  room=db.get(Conversation,cid)
+  assert handle(db,room,u.id,text) is None
+  assert not eligible(room,text)
+ assert count(w)==0
+
+
+def test_telegram_missing_details_still_asks_when_chat_model_configured(actor):
+ from app.models import Provider
+ c,w,u,b,cid=setup(actor);tid=int(uuid.uuid4().hex[:12],16)
+ c.post(b+'/accounts',json={'name':'ธนาคาร','kind':'asset'})
+ with SessionLocal.begin() as db:
+  db.add(TelegramLink(telegram_id=str(tid),workspace_id=w,user_id=u.id))
+  db.add(Provider(workspace_id=w,kind='ollama',model='test',task='chat',priority=1,encrypted_key=''))
+ with SessionLocal.begin() as db:reply=text_capture(db,tid,1,'กาแฟ 75 บาท')
+ assert 'ใช้บัญชีไหน' in reply
+ with SessionLocal.begin() as db:review=text_capture(db,tid,2,'เงินสดจ้า')
+ assert 'กรุณาตรวจสอบ' in review and count(w)==0

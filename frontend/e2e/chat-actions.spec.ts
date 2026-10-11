@@ -10,16 +10,15 @@ test('chat reviews before typed confirmation, prevents replay and preserves corr
  async function send(text:string){const input=page.getByLabel('ข้อความถึง AI',{exact:true});await input.fill(text);await page.getByRole('button',{name:'ส่งข้อความ',exact:true}).click();await expect(input).toHaveValue('');}
  const report=async()=>await(await page.request.get(base+'/transaction-report')).json();
  await page.locator('.chat-action-help summary').click();await page.getByRole('button',{name:'ใส่ตัวอย่างคำขอบันทึก',exact:true}).click();
- await expect(page.getByLabel('ข้อความถึง AI',{exact:true})).toHaveValue(/บันทึกรายจ่าย/);
+ await expect(page.getByLabel('ข้อความถึง AI',{exact:true})).toHaveValue(/กาแฟ 75 จากเงินสด/);
  await page.locator('.chat-action-help summary').click();await page.getByRole('button',{name:'ส่งข้อความ',exact:true}).click();
  const reviews=page.locator('.message.assistant').filter({hasText:'กรุณาตรวจสอบ — ยังไม่บันทึก'});await expect(reviews).toHaveCount(1);expect((await report()).total).toBe(0);
- const key=(await reviews.last().innerText()).match(/\nยืนยัน ([A-F0-9]{8})\n/)![1];await send('ยืนยัน');await expect(page.locator('.message.assistant').last()).toContainText('รหัส 8 ตัว');expect((await report()).total).toBe(0);
- await send('ยืนยัน '+key);await expect(page.locator('.message.assistant').last()).toContainText('บันทึกรายการเรียบร้อยแล้ว');expect((await report()).expense).toBe(7500);
- await send('ยืนยัน '+key);await expect(page.locator('.message.assistant').last()).toContainText('ไม่มีการบันทึกซ้ำ');expect((await report()).total).toBe(1);
+ await send('ยืนยัน');await expect(page.locator('.message.assistant').last()).toContainText('บันทึกรายการเรียบร้อยแล้ว');expect((await report()).expense).toBe(7500);
+ await send('ยืนยัน');await expect(page.locator('.message.assistant').last()).toContainText('ไม่มีการบันทึกซ้ำ');expect((await report()).total).toBe(1);
  const id=(await report()).items[0].id;
  await page.context().grantPermissions(['clipboard-read','clipboard-write']);await page.goto('/transactions');await page.getByLabel(mobile?'เลือก workspace บนมือถือ':'เลือก workspace',{exact:true}).selectOption(ws.id);await page.getByRole('button',{name:'รายละเอียด กาแฟ',exact:true}).click();await page.getByRole('button',{name:'คัดลอกคำขอแก้ผ่านแชท',exact:true}).click();await expect(page.locator('dialog[open]')).toHaveCount(0);await expect(page.getByRole('status').filter({hasText:'คัดลอกแล้ว'})).toBeVisible();const copied=await page.evaluate(()=>navigator.clipboard.readText());expect(copied).toContain('แก้รายการ '+id);
  await page.goto('/assistant');await history();await page.getByLabel('เลือก workspace ในแชท',{exact:true}).selectOption(ws.id);await history();await page.locator('.rooms button').filter({hasText:'ทวนก่อนบันทึก'}).click();await send(copied.replace('จำนวน: 75.00','จำนวน: 95.00'));await expect(reviews).toHaveCount(2);await expect(reviews.last()).toContainText('ก่อนแก้ไข:');await expect(reviews.last()).toContainText('฿95.00');expect((await report()).expense).toBe(7500);
  await reviews.last().screenshot({path:`../artifacts/chat-action-review-${info.project.name}.png`});
- const edit=(await reviews.last().innerText()).match(/\nยืนยัน ([A-F0-9]{8})\n/)![1];await send('ยืนยัน '+edit);await expect(page.locator('.message.assistant').last()).toContainText('เก็บประวัติเดิม');expect((await report()).expense).toBe(9500);expect((await(await page.request.get(base+'/transaction-history')).json()).total).toBe(1);
+ await send('ยืนยัน');await expect(page.locator('.message.assistant').last()).toContainText('เก็บประวัติเดิม');expect((await report()).expense).toBe(9500);expect((await(await page.request.get(base+'/transaction-history')).json()).total).toBe(1);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
 });

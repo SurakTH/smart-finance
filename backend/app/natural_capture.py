@@ -15,12 +15,21 @@ QUESTIONS=r'^(?:เดือน|สัปดาห์|ปีนี้|สรุ�
 AMOUNT=r'(?<![\d.,-])\d[\d,]*(?:\.\d+)?(?![\d.,])'
 ALIASES={'อาหารและเครื่องดื่ม':('กาแฟ','อาหาร','ข้าว','ชาเย็น','ชานม','กิน','น้ำดื่ม'), 'เดินทาง':('แท็กซี่','แท๊กซี่','รถไฟ','รถเมล์','น้ำมัน','รถรับจ้าง'), 'เงินเดือน':('เงินเดือน',)}
 
+def is_question(text):
+    return bool(re.search(QUESTIONS,text) or re.search(r'เท่าไหร่|เท่าไร|มีอะไรบ้าง|สรุป|ยอดรวม|ใช้ไป|ใช่ไหม|ได้ไหม|สมมติ|ตัวอย่าง|ช่วยอธิบาย',text) or re.search(r'(?:ไหม|มั้ย|เหรอ|หรอ|หรือเปล่า)\s*(?:คะ|ค่ะ|ครับ|นะ)?[?？!]*$',text) or '?' in text)
+
 def normalize(db,c,user_id,text):
-    if re.search(QUESTIONS,text) or re.search(r'เท่าไหร่|เท่าไร|มีอะไรบ้าง|สรุป|ยอดรวม|ใช้ไป|ใช่ไหม|ได้ไหม',text) or '?' in text:return None
+    if is_question(text):return None
+    text=re.sub(r'^(?:ช่วย|รบกวน)(?:จด|บันทึก)?(?:ให้หน่อย)?\s*','',text.strip())
+    text=re.sub(r'(?:\s*(?:ให้หน่อย|ด้วยนะ|หน่อยนะ|หน่อย|นะคะ|นะครับ|ครับ|ค่ะ|จ้า|จ้ะ|ทีนะ|ที|นะ))+[!。]*$','',text).strip()
+    if is_question(text):return None
     context=dict(c.capture_context or {})
     pending=context.get('pending')
     rows=db.scalars(select(Account).where(Account.workspace_id==c.workspace_id)).all()
-    if pending and pending['expires']>now() and (text in [a.name for a in rows] or re.match(r'^(?:บัญชี|หมวด|จาก|วันที่|ปลายทาง)\s*[:：]?\s*',text)):
+    if pending and pending['expires']>now() and (text in [a.name for a in rows] or re.match(r'^(?:บัญชี|หมวด|จาก|วันที่|ปลายทาง)\s*[:：]?\s*',text) or (pending.get('field')=='amount' and re.fullmatch(AMOUNT+r'\s*(?:บาท)?',text))):
+        match=[a for a in rows if a.name==text]
+        if len(match)==1 and match[0].kind in ('income','expense'):text='หมวด '+text
+        elif len(match)==1 and pending.get('field')=='destination':text='ปลายทาง '+text
         text=pending['text']+' '+text
     elif pending:context.pop('pending',None);c.capture_context=context
     edit=re.fullmatch(r'(?:ช่วย)?แก้(?:รายการ|ยอด)(?:ล่าสุด|เมื่อกี้)\s*(?:เป็น|ให้เป็น)\s*([\d,.]+)\s*(?:บาท)?',text)
@@ -28,11 +37,15 @@ def normalize(db,c,user_id,text):
         target=context.get('last_entry_id')
         if not target:raise ValueError('ยังไม่มีรายการที่ยืนยันผ่านห้องนี้ กรุณาเลือกคำขอแก้ไขจากหน้ารายการ')
         return f'แก้รายการ {target} เป็น {edit[1]} บาท'
-    if not re.search(r'\d',text) or (not re.search(r'จ่าย|ซื้อ|กิน|กาแฟ|รายจ่าย|รายรับ|เงินเดือน|รับเงิน|ได้เงิน|โอน|บันทึก|บาท|ค่า|ยอด|เงินเข้า',text)):return None
+    action=re.search(r'จ่าย|ซื้อ|กิน|กาแฟ|รายจ่าย|รายรับ|เงินเดือน|รับเงิน|ได้เงิน|โอน|บันทึก|บาท|ค่า|ยอด|เงินเข้า',text)
+    if not action:return None
     original=text
-    def ask(message):
-        context['pending']={'text':original,'expires':now()+900};c.capture_context=context
+    def ask(message,field=None):
+        context['pending']={'text':original,'expires':now()+900,'field':field,'question':message};c.capture_context=context
         raise NeedInfo(message)
+    if not re.search(r'\d',text):
+        if not re.search(r'จ่าย|ซื้อ|กิน|กาแฟ|เงินเดือนเข้า|รับเงิน|ได้เงิน|โอน|บันทึก',text):return None
+        ask('ยอดเท่าไหร่คะ?', 'amount')
     if '\n' in text or len(text)>600:raise ValueError('กรุณาส่งครั้งละหนึ่งรายการ หรือใช้ช่องข้อมูลตามตัวอย่าง')
     occurred=today()
     if 'เมื่อวาน' in text:occurred-=timedelta(days=1)
@@ -57,13 +70,13 @@ def normalize(db,c,user_id,text):
     if kind in ('transfer','card_payment'):
         targets=[a for a in rows if a.kind==('asset' if kind=='transfer' else 'liability')]
         dests=[a for a in targets if re.search(r'(?:ไป(?:ที่)?|เข้า|ถึง|ปลายทาง)\s*(?:บัญชี\s*)?'+re.escape(a.name),text)]
-        if len(dests)!=1:ask('โอนไปบัญชีไหนคะ? พิมพ์ “ปลายทาง ชื่อบัญชี” ให้ตรงกับบัญชีที่ตั้งไว้')
+        if len(dests)!=1:ask('โอนไปบัญชีไหนคะ? '+', '.join(a.name for a in targets), 'destination')
         destination=dests[0]
         names=[a for a in names if a.id!=destination.id]
     explicit_source=re.search(r'(?:จาก|ด้วย|ผ่าน|บัญชี)\s*([^\d]+)',text)
     if len(names)==1:account=names[0]
     elif not names and len(wallets)==1 and not explicit_source:account=wallets[0]
-    else:ask('ใช้บัญชีไหนคะ? พิมพ์ชื่อบัญชีให้ตรง: '+', '.join(a.name for a in wallets))
+    else:ask('ใช้บัญชีไหนคะ? '+', '.join(a.name for a in wallets), 'account')
     category=None
     if kind in ('income','expense'):
         cats=[a for a in rows if a.kind==kind]
@@ -74,7 +87,7 @@ def normalize(db,c,user_id,text):
             hits=mentioned(cats)
             if not hits:hits=[a for a in cats if any(word in text for word in ALIASES.get(a.name,()))]
             if not hits and len(cats)==1:hits=cats
-        if len(hits)!=1:ask('จัดเข้าหมวดไหนคะ? พิมพ์ “หมวด ชื่อหมวด” เช่น '+', '.join(a.name for a in cats))
+        if len(hits)!=1:ask('จัดเข้าหมวดไหนคะ? '+', '.join(a.name for a in cats), 'category')
         category=hits[0]
     description=text[:matches[0].start()]+text[matches[0].end():]
     for a in [account,destination]:

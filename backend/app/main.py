@@ -388,15 +388,17 @@ def send_message(wid: str, cid: str, data: ChatInput, member: Membership = Depen
     c = owned_conversation(db,wid,cid,member.user_id)
     from .models import now
     c.updated_at=now()
-    db.add(Message(workspace_id=wid,conversation_id=cid,role='user',content=data.text,created_at=message_time(db,wid,cid)))
-    db.flush()
+    user_message=Message(workspace_id=wid,conversation_id=cid,role='user',content=data.text,created_at=message_time(db,wid,cid))
+    db.add(user_message);db.flush()
     from .chat_actions import handle
-    reply=handle(db,c,member.user_id,data.text)
+    reply=handle(db,c,member.user_id,data.text,data.review_message_id,require_review_id=True,allow_model_dialogue=True)
     if reply is not None:
-        db.add(Message(workspace_id=wid,conversation_id=cid,role='assistant',content=reply,created_at=message_time(db,wid,cid)))
-        db.flush()
+        message=Message(workspace_id=wid,conversation_id=cid,role='assistant',content=reply,created_at=message_time(db,wid,cid))
+        db.add(message);db.flush()
+        from .chat_actions import bind_review
+        bind_review(db,c,member.user_id,message)
         return {'job_id':None}
-    job = enqueue(db,wid,member.user_id,'chat',{'conversation_id':cid,'text':data.text,'privacy':c.privacy})
+    job = enqueue(db,wid,member.user_id,'chat',{'conversation_id':cid,'text':data.text,'privacy':c.privacy,'user_message_id':user_message.id})
     return {'job_id':job.id}
 
 @app.post('/workspaces/{wid}/conversations/{cid}/images')

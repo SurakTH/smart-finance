@@ -424,7 +424,7 @@ export default function Finance() {
         setChatFile(null);
         setNotice("ส่งรูปแล้ว รออ่านและตรวจสอบใน AI Inbox ก่อนยืนยันยอดเงิน");
       } else {
-        await api(base + "/conversations/" + room + "/messages", { text });
+        await api(base + "/conversations/" + room + "/messages", { text, review_message_id: messages.at(-1)?.id });
       }
       setCid(room);
       form.reset();
@@ -853,7 +853,7 @@ export default function Finance() {
                     {messages.length ? messages.map((m) => <div id={"chat-message-"+m.id} className={"message " + m.role+(focusMessage===m.id?" search-focus":"")} key={m.id}>
                       <span className="message-author">{m.role === "user" ? "คุณ" : <><Sparkles size={17} /> Finance AI</>}</span>
                       {m.attachment_id && <a href={"/api" + base + "/attachments/" + m.attachment_id} target="_blank" rel="noreferrer"><img className="chat-image" src={"/api" + base + "/attachments/" + m.attachment_id} alt="รูปที่แนบในบทสนทนา" loading="lazy" onLoad={() => { const el = chatScroll.current; if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 360) el.scrollTop = el.scrollHeight; }} /></a>}
-                      {m.content && <p>{m.content}</p>}
+                      {m.content && <p>{m.role==='assistant'?m.content.replace(/\n\nรหัสทางเลือก:\nยืนยัน [A-F0-9]{8}\n$/,''):m.content}</p>}
                       {m.role === "assistant" && m.content.includes("AI Inbox") && <Link className="inbox-result" href="/inbox">เปิด AI Inbox เพื่อตรวจสอบ <ArrowUpRight size={16} /></Link>}
                     </div>) : liveDraft ? null : <div className="chat-welcome">
                       <div className="ai-orb"><Sparkles size={32} /></div><p className="eyebrow">YOUR PERSONAL FINANCE COMPANION</p><h1>วันนี้ อยากคุย<br className="mobile-break" />เรื่องอะไร?</h1><p className="muted">มองภาพรวมเงินของคุณ หรือส่งสลิป<br />ให้ช่วยเตรียมรายการไว้ตรวจสอบ</p>
@@ -865,7 +865,7 @@ export default function Finance() {
                   </div>
                 </div>
                 <div className="chat-composer-dock">
-                <details className="chat-action-help"><summary>บันทึกหรือแก้รายการผ่านแชท</summary><p>ส่งรายละเอียด → ตรวจข้อความทวน → พิมพ์ “ยืนยัน” พร้อมรหัส ระบบจึงบันทึกจริง รหัสใช้ได้ 15 นาที เฉพาะห้องนี้</p><button type="button" onClick={()=>{if(chatInput.current){chatInput.current.value="บันทึกรายจ่าย\nรายละเอียด: กาแฟ\nจำนวน: 75\nบัญชี: เงินสด\nหมวด: อาหารและเครื่องดื่ม";chatInput.current.style.height="144px";chatInput.current.focus();}}}>ใส่ตัวอย่างคำขอบันทึก</button><p>เปลี่ยนเป็น “บันทึกรายรับ” ได้ ใช้ชื่อบัญชีและหมวดตามที่ตั้งไว้ เพิ่ม “วันที่: YYYY-MM-DD” หรือเว้นเพื่อใช้วันนี้ สำหรับโอนเงิน/จ่ายบัตร ใช้ “ปลายทาง: ชื่อบัญชี” แทนหมวด หากต้องการแก้ไข เปิดหน้ารายการ → รายละเอียด → คัดลอกคำขอแก้ผ่านแชท แล้ววางที่นี่ ปรับช่องที่ต้องการก่อนส่ง</p><small>พิมพ์ธรรมชาติได้ เช่น “เมื่อกี้จ่ายค่ากาแฟ 75 จากเงินสด” หากข้อมูลไม่ครบ ระบบจะถามต่อในห้องนี้ และยังรอพิมพ์ยืนยันพร้อมรหัสก่อนบันทึก รูปสลิปตรวจและยืนยันที่ AI Inbox</small></details>
+                <details className="chat-action-help"><summary>คุยเพื่อจดรายการได้เลย</summary><p>เช่น “กาแฟ 75 จากเงินสด” หรือ “รับเงินเดือน 30,000” ถ้าขาดอะไร ฉันจะถามเพิ่ม แล้วทวนให้ตรวจ พิมพ์แค่ “ยืนยัน” เพื่อบันทึก หรือ “ยกเลิก” ถ้าไม่เอาค่ะ</p><button type="button" onClick={()=>{if(chatInput.current){chatInput.current.value="กาแฟ 75 จากเงินสด";chatInput.current.style.height="auto";chatInput.current.focus();}}}>ใส่ตัวอย่างคำขอบันทึก</button><p>ยังไม่ยืนยันก็แก้ยอดได้ เช่น “จริง ๆ 90 บาท” ถ้าบันทึกไปแล้ว ใช้ “แก้รายการล่าสุดเป็น 90 บาท” หรือเลือกคำขอแก้จากหน้ารายการ</p><small>ข้อเสนอรอยืนยันได้ 15 นาทีในห้องนี้ ถ้าหาข้อความทวนไม่เจอ พิมพ์ “ทวนอีกที” รูปสลิปยังตรวจและยืนยันที่ AI Inbox</small></details>
                 {chatPreview && <div className="chat-attachment-preview">
                   <img src={chatPreview} alt="ตัวอย่างรูปก่อนส่ง" />
                   <div><strong>{chatFile?.name}</strong><p className="small muted">พร้อมอ่านสลิป · ยังไม่ส่งจนกว่าจะกดส่งข้อความ</p></div>
@@ -897,7 +897,7 @@ export default function Finance() {
                     }}
                     id="chat-text"
                     name="text"
-                    placeholder={chatFile ? "เพิ่มข้อความประกอบรูป (ไม่บังคับ)…" : "ถามเรื่องเงิน หรือแนบรูปสลิป…"}
+                    placeholder={chatFile ? "เพิ่มข้อความประกอบรูป (ไม่บังคับ)…" : "คุยเรื่องเงิน หรือบอกสิ่งที่อยากจด…"}
                     required={!chatFile}
                     maxLength={4000}
                   />

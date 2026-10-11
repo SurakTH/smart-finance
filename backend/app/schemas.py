@@ -24,6 +24,7 @@ class TransactionInput(BaseModel):
     idempotency_key: UUID
 
 class ChatInput(BaseModel):
+    review_message_id: UUID | None = None
     text: str = Field(min_length=1, max_length=4000)
 
 class CaptureInput(ChatInput):

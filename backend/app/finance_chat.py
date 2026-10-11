@@ -87,21 +87,30 @@ def answer_report(db,job,history):
     report=period_summary(db,job.workspace_id,start,end,aid,category)
     kind='income' if 'รายรับ' in text and not any(w in text for w in ('จ่าย','ใช้')) else None if 'รายการทั้งหมด' in text else 'expense'
     details=transaction_report(db,job.workspace_id,start,end,kind,aid,category,page_size=20)
-    lines=[f'รายงานจากระบบโดยตรง · {start.isoformat()} ถึง {end.isoformat()}', 'ขอบเขต: '+(' / '.join(a.name for a in wallets+categories) or 'ทุกบัญชีใน workspace'),f'รายจ่าย {money(report["expense"])} · รายรับ {money(report["income"])}', 'การโอนเงินและจ่ายบัตรเครดิตไม่นับเป็นรายจ่ายซ้ำ']
-    if report['spending_accounts']:
+    period='เดือนนี้' if (start,end)==month_bounds(today().strftime('%Y-%m')) else f'ช่วง {start.isoformat()} ถึง {end.isoformat()}'
+    focus='รายรับ' if kind=='income' else 'รายจ่าย'
+    value=report['income'] if kind=='income' else report['expense']
+    scope_name=' / '.join(a.name for a in wallets+categories)
+    lines=[f'{period}{" · "+scope_name if scope_name else ""} {"มีรายรับ" if kind=="income" else "ใช้ไป"} {money(value)} ค่ะ',f'รายจ่าย {money(report["expense"])} · รายรับ {money(report["income"])}']
+    show_items=any(w in text for w in ('มีอะไร','รายการ','ย้อนหลัง','รายละเอียด'))
+    if report['spending_accounts'] and (show_items or 'บัญชีไหน' in text):
         lines.append('\nใช้จ่ายจากบัญชี:')
         lines.extend(f'• {a["name"]}: {money(a["expense"])} ({a["count"]} รายการ)' for a in report['spending_accounts'][:20])
-    if report['categories']:
+    if report['categories'] and (show_items or 'หมวด' in text):
         lines.append('\nหมวดใช้จ่าย:')
         lines.extend(f'• {a["name"]}: {money(a["amount"])}' for a in report['categories'][:20])
-    lines.append(f'\nรายการ{"รายรับ" if kind=="income" else "ทั้งหมด" if kind is None else "รายจ่าย"}: {details["total"]} รายการ')
-    for item in details['items']:
-        names=' → '.join(a['name'] for a in item['accounts'])
-        lines.append(f'• {item["occurred_on"]} · {item["description"]} · {money(item["amount"])} · {names}')
-    if details['total']>20: lines.append('แสดง 20 รายการแรก ยอดรวมด้านบนคำนวณจากทุกรายการในช่วงที่เลือก ดูรายการที่เหลือในหน้ารายการ')
+    if show_items:
+        lines.append(f'\nรายการ{"รายรับ" if kind=="income" else "ทั้งหมด" if kind is None else "รายจ่าย"}: {details["total"]} รายการ')
+        for item in details['items']:
+            names=' → '.join(a['name'] for a in item['accounts'])
+            lines.append(f'• {item["occurred_on"]} · {item["description"]} · {money(item["amount"])} · {names}')
+        if details['total']>20: lines.append('แสดง 20 รายการแรก ยอดรวมรวมทุกรายการแล้วค่ะ ดูที่เหลือได้ในหน้ารายการ')
+    else:
+        lines.append(f'{focus}ทั้งหมด {details["total"]} รายการ อยากดูว่าจ่ายอะไรหรือจากบัญชีไหน ถามต่อได้เลยค่ะ')
+    lines.append(f'\nรายงานจากระบบโดยตรง · {start.isoformat()} ถึง {end.isoformat()}')
     if any(w in text for w in ('ยอด','มีเงิน')):
         balances=account_balances(db,job.workspace_id)
         lines.append('\nยอดบัญชีล่าสุด (สะสมถึงปัจจุบัน ไม่ใช่ยอดสิ้นช่วงที่เลือก):')
         lines.extend(f'• {a["name"]}: {money(a["balance"])}' for a in balances if a['kind'] in ('asset','liability') and (not aid or a['id']==aid))
-    lines.append('\nตัวเลขคำนวณจากบัญชีจริงบนเซิร์ฟเวอร์ ไม่ใช้โมเดลคำนวณหรือบันทึกเงิน')
+    lines.append('การโอนเงินและจ่ายบัตรเครดิตไม่นับเป็นรายจ่ายซ้ำ')
     return '\n'.join(lines)

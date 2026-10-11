@@ -10,9 +10,9 @@ from sqlalchemy.orm import Session as DBSession
 from PIL import Image, UnidentifiedImageError
 from . import config
 from .db import get_db
-from .models import User, Workspace, Membership, Session, Account, Entry, Line, Proposal, Attachment, Conversation, Message, Provider, Job, LinkCode, TelegramLink, now, message_time
+from .models import User, Workspace, Membership, Session, Account, Entry, Line, Proposal, Attachment, Conversation, Message, Job, LinkCode, TelegramLink, now, message_time
 from .security import current_user, workspace_member, owner, digest, verify, dummy_hash, login_limit, redis, hasher
-from .schemas import Login, Named, AccountInput, TransactionInput, ChatInput, CaptureInput, ConversationInput, ProposalInput, ProviderInput, BudgetInput, RevisionInput, CorrectionInput, GoalCreate, GoalEdit, GoalArchive, GoalAllocation, RecurringCreate, RecurringEdit, RecurringPause, InviteEmail, InviteToken, InvitePreview, InviteRegister, MemberRole
+from .schemas import Login, Named, AccountInput, TransactionInput, ChatInput, CaptureInput, ConversationInput, ProposalInput, BudgetInput, RevisionInput, CorrectionInput, GoalCreate, GoalEdit, GoalArchive, GoalAllocation, RecurringCreate, RecurringEdit, RecurringPause, InviteEmail, InviteToken, InvitePreview, InviteRegister, MemberRole
 from .ledger import initialize_workspace, post, get_scoped, account_balances
 
 from .reporting import transaction_report, monthly_report, active_entry
@@ -25,6 +25,8 @@ from fastapi.responses import JSONResponse
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(request,exc):
+    if '/providers' in request.url.path:
+        return JSONResponse(status_code=422,content={'detail':'กรุณาตรวจข้อมูลผู้ให้บริการ URL ชื่อโมเดล และค่าการตอบกลับ'})
     if request.url.path in ('/auth/password','/auth/forgot-password','/auth/reset-password','/auth/verify-email','/auth/register','/auth/register-invite','/invitations/preview','/invitations/accept'):
         return JSONResponse(status_code=422,content={'detail':'กรุณาตรวจรหัสผ่านใหม่ 12–200 ตัวอักษรและการยืนยัน' if request.url.path=='/auth/password' else 'กรุณาตรวจข้อมูลที่กรอกและรหัสผ่าน 12–200 ตัวอักษร'})
     return await request_validation_exception_handler(request,exc)
@@ -417,22 +419,8 @@ def capture(wid: str, data: CaptureInput, member: Membership = Depends(workspace
     job = enqueue(db,wid,member.user_id,'extract',{'text':data.text,'privacy':data.privacy})
     return {'job_id':job.id}
 
-@app.get('/workspaces/{wid}/providers', dependencies=[Depends(owner)])
-def providers(wid: str, db: DBSession = Depends(get_db, scope='function')):
-    return [dict(id=p.id,kind=p.kind,model=p.model,task=p.task,priority=p.priority,has_key=bool(p.encrypted_key)) for p in db.scalars(select(Provider).where(Provider.workspace_id==wid).order_by(Provider.priority))]
-
-@app.post('/workspaces/{wid}/providers', dependencies=[Depends(owner)])
-def provider(wid: str, data: ProviderInput, db: DBSession = Depends(get_db, scope='function')):
-    if data.kind!='ollama' and not config.EXTERNAL_AI_ENABLED: raise HTTPException(403,'Cloud AI ถูกปิดที่เซิร์ฟเวอร์')
-    if data.kind=='compatible' and not config.COMPATIBLE_URL: raise HTTPException(422,'ยังไม่ได้ตั้ง COMPATIBLE_URL')
-    if data.kind!='ollama' and not data.api_key: raise HTTPException(422,'ต้องระบุ API key')
-    p = Provider(workspace_id=wid,**data.model_dump(exclude={'api_key'}),encrypted_key=config.cipher().encrypt(data.api_key.encode()).decode() if data.api_key else '')
-    db.add(p); db.flush()
-    return {'id':p.id}
-
-@app.delete('/workspaces/{wid}/providers/{pid}', dependencies=[Depends(owner)])
-def delete_provider(wid: str, pid: str, db: DBSession = Depends(get_db, scope='function')):
-    db.delete(get_scoped(db,Provider,wid,pid)); return {'ok':True}
+from .ai_settings import router as ai_settings_router
+app.include_router(ai_settings_router)
 
 @app.post('/workspaces/{wid}/telegram/link-code')
 def link_code(wid: str, member: Membership = Depends(workspace_member), db: DBSession = Depends(get_db, scope='function')):

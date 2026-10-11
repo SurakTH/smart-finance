@@ -137,8 +137,12 @@ def test_provider_encryption_and_not_returned(actor,monkeypatch):
         assert config.cipher().decrypt(value.encode()).decode()=='secret-test-key'
 
 def test_external_ai_disabled_by_default(actor,monkeypatch):
+    from cryptography.fernet import Fernet
+    monkeypatch.setenv('ENCRYPTION_KEY',Fernet.generate_key().decode())
     c,w,_=actor;monkeypatch.setattr(config,'EXTERNAL_AI_ENABLED',False)
-    assert c.post(f'/workspaces/{w}/providers',json={'kind':'openai','model':'fake','task':'chat','api_key':'key'}).status_code==403
+    assert c.get(f'/workspaces/{w}/ai/settings').json()['cloud_enabled'] is False
+    # Configuration can be saved while cloud is off; runtime still enforces opt-in.
+    assert c.post(f'/workspaces/{w}/providers',json={'kind':'openai','model':'fake','task':'chat','api_key':'key'}).status_code==200
 
 def test_csrf_logout_and_session_flags(actor):
     c,w,_=actor

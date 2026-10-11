@@ -48,6 +48,24 @@ class ProviderInput(BaseModel):
     task: Literal['chat','extract']
     priority: int = Field(default=10, ge=0, le=100)
     api_key: str = Field(default='', max_length=500)
+    clear_key: bool = False
+    name: str = Field(default='', max_length=100)
+    endpoint: str = Field(default='', max_length=500)
+    enabled: bool = True
+    timeout_seconds: int = Field(default=20, ge=5, le=60)
+    retries: int = Field(default=1, ge=0, le=2)
+    max_tokens: int = Field(default=1200, ge=64, le=8192)
+    temperature: int = Field(default=10, ge=0, le=200)
+
+class AISettingsInput(BaseModel):
+    cloud_enabled: bool = False
+    demo_fallback: bool = True
+    max_attempted_providers: int = Field(default=3, ge=1, le=5)
+
+class AIRoutesInput(BaseModel):
+    task: Literal['chat','extract']
+    provider_ids: list[str] = Field(max_length=30)
+
 
 class BudgetInput(BaseModel):
     amount: int = Field(strict=True, gt=0, le=100_000_000_000)

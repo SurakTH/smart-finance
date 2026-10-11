@@ -133,6 +133,13 @@ class Message(Base):
     attachment_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     __table_args__ = (ForeignKeyConstraint(['conversation_id','workspace_id'], ['conversations.id','conversations.workspace_id']), ForeignKeyConstraint(['attachment_id','workspace_id'], ['attachments.id','attachments.workspace_id'], name='fk_message_attachment_workspace'))
 
+class AISettings(Base):
+    __tablename__ = 'ai_settings'
+    workspace_id: Mapped[str] = mapped_column(ForeignKey('workspaces.id'), primary_key=True)
+    cloud_enabled: Mapped[bool] = mapped_column(default=False)
+    demo_fallback: Mapped[bool] = mapped_column(default=True)
+    max_attempted_providers: Mapped[int] = mapped_column(Integer, default=3)
+
 class Provider(Base):
     __tablename__ = 'providers'
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
@@ -142,6 +149,14 @@ class Provider(Base):
     task: Mapped[str] = mapped_column(String(15))
     priority: Mapped[int] = mapped_column(Integer, default=10)
     encrypted_key: Mapped[str] = mapped_column(Text, default='')
+    name: Mapped[str] = mapped_column(String(100), default='', server_default='')
+    endpoint: Mapped[str] = mapped_column(String(500), default='', server_default='')
+    enabled: Mapped[bool] = mapped_column(default=True, server_default='true')
+    timeout_seconds: Mapped[int] = mapped_column(Integer, default=20, server_default='20')
+    retries: Mapped[int] = mapped_column(Integer, default=1, server_default='1')
+    max_tokens: Mapped[int] = mapped_column(Integer, default=1200, server_default='1200')
+    temperature: Mapped[int] = mapped_column(Integer, default=10, server_default='10')
+
 
 class Job(Base):
     __tablename__ = 'jobs'

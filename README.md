@@ -158,7 +158,7 @@ Hyper-V ใช้ network switch ที่เครื่องผู้ใช�
 | โหมด | เส้นทางข้อมูล |
 |---|---|
 | Private (ค่าเริ่มต้น) | Ollama ที่ผู้ดูแลกำหนด หรือ mock ภายใน backend; ไม่ fallback ไป Cloud |
-| Standard | อนุญาต Cloud provider เมื่อเซิร์ฟเวอร์เปิด EXTERNAL_AI_ENABLED=true; เลือกโดยชัดเจนต่อห้อง/งาน Inbox |
+| Standard | อนุญาต Cloud provider เมื่อเจ้าของพื้นที่เปิด Cloud AI ในหน้าตั้งค่า AI; เลือกโดยชัดเจนต่อห้อง/งาน Inbox |
 
 ทุกโหมดใช้ PostgreSQL ระหว่างประมวลผล รองรับแชทชั่วคราว/ตั้งอายุประวัติแล้ว แต่ยังไม่มี Incognito แบบไม่เขียนดิสก์ ผู้ดูแลต้องตั้ง OLLAMA_URL ไปยังเซิร์ฟเวอร์ภายในจริงจึงจะเป็น local-only ตามความหมายทาง deployment; ค่า URL มาจากผู้ดูแลเท่านั้น ผู้ใช้เว็บแก้ปลายทางไม่ได้
 
@@ -173,10 +173,16 @@ docker compose exec ollama ollama pull MODEL_NAME
 
 ### Cloud / OpenAI-compatible
 
-1. ตั้ง `EXTERNAL_AI_ENABLED=true` ใน `.env` และ `docker compose up -d`
-2. เพิ่ม Gemini, OpenRouter, Groq, OpenAI หรือ compatible ที่ Settings ใส่ key และชื่อโมเดลที่บัญชีของคุณใช้ได้
-3. compatible ใช้ `COMPATIBLE_URL=https://.../v1` ที่กำหนดฝั่งเซิร์ฟเวอร์เท่านั้น ไม่รับ URL จากผู้ใช้เว็บ
-4. เลือก Standard สำหรับห้องใหม่หรือ Inbox หน้าจอแจ้งก่อนส่งข้อความ/ภาพและยอดบัญชีไป Cloud
+1. เปิด **ตั้งค่า → เปิดศูนย์ตั้งค่า AI** หรือ `/ai-settings` (เฉพาะเจ้าของพื้นที่)
+2. เปิด **อนุญาต Cloud AI** สำหรับพื้นที่นี้ ไม่ต้องแก้ `.env` หรือ restart หลังบันทึก
+3. เพิ่ม Gemini, OpenRouter, Groq, OpenAI หรือ **Custom API** ใส่ชื่อโมเดล/คีย์ และเลือกงานแชทหรืออ่านข้อความ/สลิป
+4. Custom API รับ Base URL เช่น `https://api.example.com/v1` ผ่านเว็บ รองรับ OpenAI-compatible HTTPS สาธารณะพอร์ต 443 ไม่มี credentials/query/fragment และไม่ redirect; ตรวจ DNS ทุกครั้งและ pin IP พร้อมตรวจ TLS hostname เพื่อป้องกันปลายทางภายใน/metadata และ DNS rebinding
+5. กด **ทดสอบ** เพื่อส่งข้อความสังเคราะห์สั้น ไม่มีข้อมูลการเงินจริง อาจมีค่าบริการ กด **โหลดโมเดล** เพื่อดึง `/models` แล้วเลือกในฟอร์มแก้ไข หาก API ไม่รองรับให้กรอกชื่อโมเดลเอง ไม่ส่งคำตอบดิบของผู้ให้บริการกลับหน้าตั้งค่า
+6. เลื่อนขึ้น/ลงเพื่อจัดลำดับตามงาน เปิด–ปิดหรือแก้ไขโมเดลได้ คีย์ที่เว้นว่างเมื่อแก้ไขใช้คีย์เดิม มีช่องล้างคีย์สำหรับ API ที่ไม่ต้องยืนยันตัวตน
+7. ตั้ง timeout 5–60 วินาที ลองซ้ำ 0–2 ครั้ง tokens 64–8192 และ temperature 0–2 แยกต่อโมเดล ลองสูงสุด 1–5 โมเดลต่องาน มีกรอบรวมแบบ soft deadline 90 วินาที (request/stream ที่กำลังทำงานอาจเกินกรอบนี้ได้) เลือกปิด demo fallback เพื่อให้งานล้มเหลวเมื่อไม่มีโมเดลพร้อม
+8. เลือก **Standard** สำหรับห้องใหม่หรือ Inbox ก่อนส่งข้อความ/ภาพไป Cloud ห้อง Private ไม่เรียก Cloud เสมอ รวมถึงกรณี fallback
+
+`EXTERNAL_AI_ENABLED` เดิมใช้เป็นค่าเริ่มต้นเฉพาะพื้นที่ที่ยังไม่เคยบันทึกการตั้งค่า เมื่อบันทึกจากเว็บแล้วใช้ค่าของ workspace แทน `COMPATIBLE_URL` เดิมรองรับ providers เก่าที่ไม่มี endpoint ในฐานข้อมูล; providers ใหม่ใส่ URL ผ่านเว็บได้ Local Ollama ยังใช้บริการภายในที่ผู้ดูแลเตรียมไว้ ไม่ติดตั้ง/ดาวน์โหลดโมเดลจากหน้าเว็บ และไม่อนุญาต Custom URL ไปบริการ private network ของ tenants อื่น
 
 Key เข้ารหัส Fernet ที่ backend ด้วย ENCRYPTION_KEY ไม่คืน key/ciphertext ผ่าน API และไม่มี key ใน frontend bundle ระบบใช้ OpenAI-compatible chat completions รวมถึง [Gemini compatibility](https://ai.google.dev/gemini-api/docs/openai) และ [Ollama compatibility](https://docs.ollama.com/api/openai-compatibility) ความสามารถภาพ/พารามิเตอร์ขึ้นกับโมเดลที่เลือก
 
@@ -450,6 +456,6 @@ Web Chat ใช้ SSE เชื่อมต่อระหว่าง browser 
 
 เมื่อ Redis หรือ SSE ใช้ไม่ได้ เว็บกลับไปตรวจประวัติที่บันทึกแล้วตามปกติ ปิดหน้า/เปลี่ยนห้องจะปิดการรับ stream ฝั่ง browser แต่ไม่ยกเลิกงาน worker คำตอบแบบรายงานที่ backend คำนวณโดยตรง/โหมดสาธิต/ผู้ให้บริการที่ไม่ส่ง stream อาจแสดงทั้งคำตอบทันที ไม่มีการจำลองหน่วงพิมพ์ทีละตัว
 
-SSE ตรวจ session, membership, เจ้าของห้องและอายุประวัติซ้ำระหว่างเชื่อมต่อ รวมก่อนส่งข้อมูล ไม่ถือ transaction หรือ workspace lock ตลอดการเชื่อมต่อ จึงอ่าน preview ระหว่าง worker ถือ lock ได้ หนึ่งการเชื่อมต่อมีอายุไม่เกิน 120 วินาที browser เชื่อมต่อใหม่ได้อัตโนมัติ HTTP model มี timeout อ่าน 20 วินาที/connect 5 และ stream budget ประมาณ 45 วินาทีต่อ attempt (การอ่านที่ค้างอาจเพิ่มได้อีกหนึ่ง read timeout) จำกัดข้อความ 16,000 ตัวอักษร และ SSE provider response 256 KB
+SSE ตรวจ session, membership, เจ้าของห้องและอายุประวัติซ้ำระหว่างเชื่อมต่อ รวมก่อนส่งข้อมูล ไม่ถือ transaction หรือ workspace lock ตลอดการเชื่อมต่อ จึงอ่าน preview ระหว่าง worker ถือ lock ได้ หนึ่งการเชื่อมต่อมีอายุไม่เกิน 120 วินาที browser เชื่อมต่อใหม่ได้อัตโนมัติ HTTP model มี timeout อ่านตั้งได้ 5–60 วินาที (ค่าเริ่มต้น 20)/connect 5 และ stream budget ประมาณ 45 วินาทีต่อ attempt (การอ่านที่ค้างอาจเพิ่มได้อีกหนึ่ง read timeout) จำกัดข้อความ 16,000 ตัวอักษร และ SSE provider response 256 KB
 
 เลื่อนโหลดประวัติเก่าต่อเนื่องและ PWA offline แบบ snapshot/ร่างทำแล้ว ยังไม่มีปุ่มหยุดสร้างคำตอบหรือการ replay ทุก event ยังไม่ได้ทดสอบโมเดลภายนอกจริงหรือการรับ stream พร้อมกันจำนวนมาก และ Incognito แบบไม่เขียนดิสก์ยังไม่เสร็จ

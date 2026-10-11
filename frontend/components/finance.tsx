@@ -3,6 +3,7 @@ import {useChatStream} from "./use-chat-stream";
 import {WorkspaceManager} from "./workspaces";
 import {PwaSettings} from "./pwa";
 import {clearVault} from "../public/offline-store.js";
+import {AISettingsPage} from "./ai-settings";
 import {AccountSettings} from "./account-settings";
 import {
   useState,
@@ -77,14 +78,6 @@ type Proposal = {
 type Conversation = { id: string; title: string; privacy: string; temporary?:boolean };
 type Message = { id: string; role: string; content: string; attachment_id?: string | null };
 type Job = { id: string; status: string; error: string | null };
-type Provider = {
-  id: string;
-  kind: string;
-  model: string;
-  task: string;
-  priority: number;
-  has_key: boolean;
-};
 type Summary = DashboardSummary;
 type Workspace = { id: string; name: string; role: string };
 const money = (n: number) =>
@@ -212,8 +205,7 @@ export default function Finance() {
   const [conversations, setConversations] = useState<Conversation[]>([]),
     [cid, setCid] = useState(""),
     [messages, setMessages] = useState<Message[]>([]),
-    [jobs, setJobs] = useState<Job[]>([]),
-    [providers, setProviders] = useState<Provider[]>([]);
+    [jobs, setJobs] = useState<Job[]>([]);
   const [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
@@ -307,7 +299,6 @@ export default function Finance() {
   useEffect(() => {
     setCid("");
     setMessages([]);
-    setProviders([]);
     setLinkCode("");
     setAccounts([]);
     setEntries([]);
@@ -320,16 +311,6 @@ export default function Finance() {
   useEffect(() => {
     refresh().catch((e) => {setError(e.message);loadWorkspaces().catch(()=>{});});
   }, [refresh,loadWorkspaces]);
-  useEffect(() => {
-    if (
-      wid &&
-      path === "/settings" &&
-      workspaces.find((w) => w.id === wid)?.role === "owner"
-    )
-      api<Provider[]>(base + "/providers")
-        .then(setProviders)
-        .catch((e) => setError(e.message));
-  }, [wid, path, base, workspaces]);
   async function loadChat(room:string,replace=false){
     const context=wid+room+focusMessage;
     if(focusMessage){
@@ -576,7 +557,7 @@ export default function Finance() {
               key={n.path}
               href={n.path}
               aria-current={path===n.path?"page":undefined}
-              className={(path === n.path ? "nav-item active" : "nav-item")+(n.path==="/accounts"?" nav-management-start":"")}
+              className={((path === n.path || (n.path==="/settings"&&path==="/ai-settings")) ? "nav-item active" : "nav-item")+(n.path==="/accounts"?" nav-management-start":"")}
             >
               <n.icon size={19} />
               {n.label}
@@ -608,7 +589,7 @@ export default function Finance() {
           <span className="muted">
             พื้นที่ของคุณ <ChevronRight size={14} />{" "}
             <span className="text-slate-700">
-              {nav.find((n) => n.path === path)?.label || "ภาพรวม"}
+              {(path==="/ai-settings"?"ตั้งค่า AI":nav.find((n) => n.path === path)?.label) || "ภาพรวม"}
             </span>
           </span>
           <div className="topbar-actions">
@@ -646,7 +627,7 @@ export default function Finance() {
               <h1>
                 {path === "/"
                   ? "การเงินของคุณ"
-                  : nav.find((n) => n.path === path)?.label}
+                  : (path==="/ai-settings"?"ตั้งค่า AI":nav.find((n) => n.path === path)?.label)}
               </h1>
               <p className="muted">
                 {path === "/"
@@ -933,6 +914,7 @@ export default function Finance() {
               </section>
             </div>
           )}
+          {path === "/ai-settings" && wid && <AISettingsPage key={wid} wid={wid} owner={workspaces.find(w=>w.id===wid)?.role==="owner"}/> }
           {path === "/settings" && (
             <div className="settings-grid">
               <AccountSettings user={user} onUpdate={setUser}/>
@@ -946,7 +928,7 @@ export default function Finance() {
                 </h3>
                 <p className="muted">
                   Private ใช้เฉพาะ Ollama หรือ mock ภายในเครื่อง Cloud AI
-                  ต้องเปิด EXTERNAL_AI_ENABLED บนเซิร์ฟเวอร์และเลือก Standard
+                  เปิดได้จากหน้าตั้งค่า AI ของพื้นที่ และเลือก Standard
                   เมื่อสร้างห้อง
                 </p>
                 <p className="muted small">
@@ -992,120 +974,7 @@ export default function Finance() {
                 {linkCode && <code className="link-code">{linkCode}</code>}
               </section>
               {workspaces.find((w) => w.id === wid)?.role === "owner" && (
-                <section className="panel">
-                  <h3 id="ai-provider-settings">AI Providers & Task Routing</h3>
-                  <p className="muted small">
-                    เลือกโมเดลแยกตามงาน ลำดับน้อยทำงานก่อน
-                    หากล้มเหลวจะลองซ้ำแล้ว fallback · API key เข้ารหัสฝั่ง
-                    backend
-                  </p>
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const f = e.currentTarget;
-                      const values = Object.fromEntries(new FormData(f));
-                      run(async () => {
-                        await api(base + "/providers", {
-                          ...values,
-                          priority: Number(values.priority),
-                        });
-                        f.reset();
-                        setProviders(
-                          await api<Provider[]>(base + "/providers"),
-                        );
-                      });
-                    }}
-                  >
-                    <div className="form-grid">
-                      <label>
-                        Provider
-                        <select name="kind">
-                          {[
-                            "ollama",
-                            "gemini",
-                            "openrouter",
-                            "groq",
-                            "openai",
-                            "compatible",
-                          ].map((p) => (
-                            <option key={p}>{p}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        งาน
-                        <select name="task">
-                          <option value="chat">Web Chat</option>
-                          <option value="extract">อ่านข้อความ / สลิป</option>
-                        </select>
-                      </label>
-                      <label>
-                        ชื่อโมเดล
-                        <input
-                          name="model"
-                          placeholder="ชื่อโมเดลที่ติดตั้ง / เปิดใช้"
-                          required
-                          maxLength={100}
-                        />
-                      </label>
-                      <label>
-                        ลำดับ
-                        <input
-                          name="priority"
-                          type="number"
-                          min="0"
-                          max="100"
-                          defaultValue="10"
-                          required
-                        />
-                      </label>
-                    </div>
-                    <label>
-                      API key (Ollama เว้นว่างได้)
-                      <input
-                        name="api_key"
-                        type="password"
-                        autoComplete="off"
-                        maxLength={500}
-                      />
-                    </label>
-                    <Button disabled={busy}>บันทึก Provider</Button>
-                  </form>
-                  <div>
-                    {providers.map((p) => (
-                      <div className="provider-row" key={p.id}>
-                        <div>
-                          <strong>
-                            {p.kind} · {p.model}
-                          </strong>
-                          <small>
-                            {p.task} · ลำดับ {p.priority} ·{" "}
-                            {p.has_key ? "Key เข้ารหัสแล้ว" : "ไม่มี key"}
-                          </small>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          aria-label={"ลบ " + p.kind}
-                          onClick={() =>
-                            run(async () => {
-                              await api(
-                                base + "/providers/" + p.id,
-                                undefined,
-                                "DELETE",
-                              );
-                              setProviders(
-                                await api<Provider[]>(base + "/providers"),
-                              );
-                            })
-                          }
-                        >
-                          <X size={16} />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </section>
+                <section className="panel" id="ai-provider-settings"><h3><Sparkles size={20}/> ตั้งค่า AI</h3><p className="muted">เลือกผู้ให้บริการและ Custom API จัดลำดับโมเดลแชท/สลิป ทดสอบการเชื่อมต่อ และควบคุม Cloud AI จากเว็บ</p><Link className="workspace-open" href="/ai-settings">เปิดศูนย์ตั้งค่า AI <ArrowUpRight size={16}/></Link></section>
               )}
               </>}
             </div>
@@ -1119,7 +988,7 @@ export default function Finance() {
         </div>
       </main>
       {!isChat && <nav className="bottom-nav" aria-label="เมนูหลักบนมือถือ">
-        {[nav[0], nav[1], nav[2], nav[3], nav[4]].map((item) => <Link key={item.path} href={item.path} aria-current={(path === item.path || (item.path==="/services" && ["/accounts","/categories","/budgets","/goals","/recurring","/members","/workspaces","/settings"].includes(path))) ? "page" : undefined} className={(path === item.path || (item.path==="/services" && ["/accounts","/categories","/budgets","/goals","/recurring","/members","/workspaces","/settings"].includes(path))) ? "active" : ""}><item.icon size={22} /><span>{item.path === "/services" ? "ทั้งหมด" : item.path === "/transactions" ? "รายการ" : item.path === "/assistant" ? "แชท AI" : item.label}</span>{item.path === "/inbox" && pending.length > 0 && <i>{pending.length}</i>}</Link>)}
+        {[nav[0], nav[1], nav[2], nav[3], nav[4]].map((item) => <Link key={item.path} href={item.path} aria-current={(path === item.path || (item.path==="/services" && ["/accounts","/categories","/budgets","/goals","/recurring","/members","/workspaces","/settings","/ai-settings"].includes(path))) ? "page" : undefined} className={(path === item.path || (item.path==="/services" && ["/accounts","/categories","/budgets","/goals","/recurring","/members","/workspaces","/settings","/ai-settings"].includes(path))) ? "active" : ""}><item.icon size={22} /><span>{item.path === "/services" ? "ทั้งหมด" : item.path === "/transactions" ? "รายการ" : item.path === "/assistant" ? "แชท AI" : item.label}</span>{item.path === "/inbox" && pending.length > 0 && <i>{pending.length}</i>}</Link>)}
       </nav>}
       {editing && (
         <TransactionDialog

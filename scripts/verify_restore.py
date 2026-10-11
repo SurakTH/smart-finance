@@ -15,7 +15,7 @@ try:
     run(['createdb','-U','finance',name]);created=True
     with dumps[-1].open('rb') as data:
         run(['pg_restore','-U','finance','-d',name],stdin=data)
-    for table in ('users','workspaces','accounts','entries','lines','attachments','proposals','providers','budgets','entry_revisions','goals','goal_movements','recurring_rules','recurring_occurrences','memberships','invitations','membership_events','conversations','messages','jobs','chat_preferences','chat_actions','email_tokens'):
+    for table in ('users','workspaces','accounts','entries','lines','attachments','proposals','providers','ai_settings','budgets','entry_revisions','goals','goal_movements','recurring_rules','recurring_occurrences','memberships','invitations','membership_events','conversations','messages','jobs','chat_preferences','chat_actions','email_tokens'):
         sql=f'SELECT count(*) FROM {table}'
         live=run(['psql','-U','finance','-d','finance','-Atc',sql]).stdout
         restored=run(['psql','-U','finance','-d',name,'-Atc',sql]).stdout
@@ -34,8 +34,10 @@ try:
     actions='SELECT id,workspace_id,conversation_id,user_id,code,payload,status,expires,entry_id FROM chat_actions ORDER BY id'
     spaces='SELECT id,name,archived_at,version FROM workspaces ORDER BY id'
     email_links='SELECT token_hash,user_id,purpose,expires,used,delivery,encrypted_payload,attempts,next_attempt FROM email_tokens ORDER BY token_hash'
-    for snapshot in (email_links,schedules,occurrences,members,invites,privacy,chats,profiles,actions,spaces):
+    ai_options='SELECT workspace_id,cloud_enabled,demo_fallback,max_attempted_providers FROM ai_settings ORDER BY workspace_id'
+    ai_providers='SELECT id,workspace_id,kind,model,task,priority,encrypted_key,name,endpoint,enabled,timeout_seconds,retries,max_tokens,temperature FROM providers ORDER BY id'
+    for snapshot in (ai_options,ai_providers,email_links,schedules,occurrences,members,invites,privacy,chats,profiles,actions,spaces):
         if run(['psql','-U','finance','-d','finance','-Atc',snapshot]).stdout!=run(['psql','-U','finance','-d',name,'-Atc',snapshot]).stdout: raise RuntimeError('Restored schedule or membership snapshot mismatch')
-    print('Restore verified in disposable database: row counts, goal allocations and recurring and membership snapshots match; journals balance.')
+    print('Restore verified in disposable database: row counts, goal allocations and recurring, membership and AI configuration snapshots match; journals balance.')
 finally:
     if created: run(['dropdb','-U','finance',name])

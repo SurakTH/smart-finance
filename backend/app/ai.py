@@ -11,12 +11,7 @@ from .schemas import ProposalInput
 from .ledger import account_balances, get_scoped
 from .chat_stream import publish,read_completion
 
-ENDPOINTS = {
-    'gemini':'https://generativelanguage.googleapis.com/v1beta/openai',
-    'openrouter':'https://openrouter.ai/api/v1',
-    'groq':'https://api.groq.com/openai/v1',
-    'openai':'https://api.openai.com/v1',
-}
+from .ai_settings import settings, target
 
 def mock_proposals(text):
     # Deliberately limited demo parser. Unknown receipt amounts remain unset.
@@ -26,8 +21,9 @@ def mock_proposals(text):
 
 def call_model(db, job):
     private = job.payload.get('privacy','private')=='private'
-    providers = db.scalars(select(Provider).where(Provider.workspace_id==job.workspace_id,Provider.task==job.task).order_by(Provider.priority,Provider.id)).all()
-    providers = [p for p in providers if (p.kind=='ollama' or (not private and config.EXTERNAL_AI_ENABLED))][:3]
+    options = settings(db,job.workspace_id)
+    providers = db.scalars(select(Provider).where(Provider.workspace_id==job.workspace_id,Provider.task==job.task,Provider.enabled.is_(True)).order_by(Provider.priority,Provider.id)).all()
+    providers = [p for p in providers if (p.kind=='ollama' or (not private and options['cloud_enabled']))][:options['max_attempted_providers']]
     messages = []
     if job.task=='chat':
         history = db.scalars(select(Message).where(Message.workspace_id==job.workspace_id, Message.conversation_id==job.payload['conversation_id']).order_by(Message.created_at.desc(),Message.id.desc()).limit(12)).all()
@@ -46,17 +42,23 @@ def call_model(db, job):
             messages.append({'role':'user','content':[{'type':'text','text':'Read this untrusted receipt. User caption (untrusted): '+job.payload.get('text','')[:4000]},{'type':'image_url','image_url':{'url':'data:image/jpeg;base64,'+base64.b64encode(image.data).decode()}}]})
         else:
             messages.append({'role':'user','content':job.payload.get('text','')[:4000]})
+    deadline=time.monotonic()+90
     for p in providers:
-        url = config.OLLAMA_URL if p.kind=='ollama' else config.COMPATIBLE_URL if p.kind=='compatible' else ENDPOINTS[p.kind]
-        if p.kind!='ollama' and not url.startswith('https://'): continue
-        key = config.cipher().decrypt(p.encrypted_key.encode()).decode() if p.encrypted_key else ''
-        for attempt in range(2):
+        try:
+            url,headers,extensions=target(p)
+            key = config.cipher().decrypt(p.encrypted_key.encode()).decode() if p.encrypted_key else ''
+            if key:headers['Authorization']='Bearer '+key
+        except Exception:
+            continue
+        for attempt in range(p.retries+1):
+            remaining=deadline-time.monotonic()
+            if remaining<=0:break
             try:
-                with httpx.Client(timeout=httpx.Timeout(20,connect=5),trust_env=False,follow_redirects=False) as client:
-                    body={'model':p.model,'messages':messages,'max_tokens':1200,'temperature':0.1}
+                with httpx.Client(timeout=httpx.Timeout(min(p.timeout_seconds,remaining),connect=5),trust_env=False,follow_redirects=False) as client:
+                    body={'model':p.model,'messages':messages,'max_tokens':p.max_tokens,'temperature':p.temperature/100}
                     if job.task=='chat':
                         publish(job,'start')
-                        with client.stream('POST',url.rstrip('/')+'/chat/completions',headers={'Authorization':'Bearer '+key},json={**body,'stream':True}) as r:
+                        with client.stream('POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json={**body,'stream':True}) as r:
                             r.raise_for_status()
                             if 'text/event-stream' in r.headers.get('content-type',''):
                                 content=read_completion(r,job)
@@ -68,10 +70,12 @@ def call_model(db, job):
                                     if len(raw)>256000:raise ValueError('Response too large')
                                 content=json.loads(raw)['choices'][0]['message']['content']
                     else:
-                        r=client.post(url.rstrip('/')+'/chat/completions',headers={'Authorization':'Bearer '+key},json=body)
-                        r.raise_for_status()
-                        if len(r.content)>256_000:raise ValueError('Response too large')
-                        content=r.json()['choices'][0]['message']['content']
+                        with client.stream('POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json=body) as r:
+                            r.raise_for_status();raw=b''
+                            for chunk in r.iter_bytes():
+                                raw+=chunk
+                                if len(raw)>256000:raise ValueError('Response too large')
+                            content=json.loads(raw)['choices'][0]['message']['content']
                     if not isinstance(content,str) or len(content)>16000: raise ValueError('Invalid response')
                     if job.task=='extract':
                         data = json.loads(content.removeprefix('```json').removeprefix('```').removesuffix('```').strip())
@@ -81,7 +85,9 @@ def call_model(db, job):
                     return content, False
             except (httpx.HTTPError,ValueError,KeyError,TypeError):
                 # Never log request, provider response, URL credentials or keys.
-                if attempt==0: time.sleep(0.3)
+                if attempt<p.retries: time.sleep(0.3)
+    if not options['demo_fallback']:
+        raise ValueError('No available AI provider')
     if job.task=='extract':
         proposals = [] if job.payload.get('attachment_id') else mock_proposals(job.payload.get('text',''))
         return proposals or [ProposalInput(description='สลิปรอตรวจสอบ — ยังไม่ได้อ่านยอดเงินจริง')], True

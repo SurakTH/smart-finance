@@ -1,0 +1,170 @@
+"""Owner-only AI configuration. Keys never leave the backend; endpoints are not arbitrary URLs."""
+import ipaddress
+import socket
+from urllib.parse import urlsplit
+import httpx
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+from . import config
+from .db import get_db
+from .models import AISettings, Provider, Workspace
+from .schemas import AISettingsInput, AIRoutesInput, ProviderInput
+from .security import owner, login_limit
+from .ledger import get_scoped
+
+router=APIRouter(prefix='/workspaces/{wid}',dependencies=[Depends(owner)])
+ENDPOINTS={
+    'gemini':'https://generativelanguage.googleapis.com/v1beta/openai',
+    'openrouter':'https://openrouter.ai/api/v1',
+    'groq':'https://api.groq.com/openai/v1',
+    'openai':'https://api.openai.com/v1',
+}
+
+def settings(db,wid):
+    row=db.get(AISettings,wid)
+    # Legacy .env is an initial default only; a saved workspace choice takes precedence.
+    return dict(cloud_enabled=row.cloud_enabled if row else config.EXTERNAL_AI_ENABLED,
+        demo_fallback=row.demo_fallback if row else True,
+        max_attempted_providers=row.max_attempted_providers if row else 3)
+
+def public_endpoint(value):
+    try:
+        u=urlsplit(value)
+        if u.scheme!='https' or not u.hostname or u.username is not None or u.password is not None or u.query or u.fragment or (u.port not in (None,443)):
+            raise ValueError()
+        if any(c.isspace() or ord(c)<32 for c in value) or '\\' in value:raise ValueError()
+        host=u.hostname.encode('idna').decode()
+        if host=='localhost' or host.endswith(('.localhost','.local','.internal')):raise ValueError()
+        try:
+            if not ipaddress.ip_address(host).is_global:raise ValueError()
+        except ValueError:
+            # Distinguish a non-global IP literal from an ordinary hostname.
+            try:ipaddress.ip_address(host)
+            except ValueError:pass
+            else:raise
+        return value.rstrip('/')
+    except (ValueError,UnicodeError):
+        raise HTTPException(422,'Custom API ต้องเป็น HTTPS สาธารณะ พอร์ต 443 ไม่มีรหัสผ่าน query หรือ fragment ใน URL')
+
+def target(p):
+    """Resolve on every call and pin the checked IP; retain TLS hostname verification.
+
+    Workspace endpoints cannot reach metadata, loopback or other tenants' private services.
+    The only private network exception is the administrator's existing Ollama endpoint.
+    """
+    if p.kind=='ollama':
+        return config.OLLAMA_URL.rstrip('/'),{},{}
+    base=p.endpoint if p.kind=='compatible' else ENDPOINTS[p.kind]
+    base=public_endpoint(base or config.COMPATIBLE_URL)
+    url=httpx.URL(base)
+    try:
+        addresses=socket.getaddrinfo(url.host,443,type=socket.SOCK_STREAM)
+        ips=list(dict.fromkeys(item[4][0] for item in addresses))
+        if not ips or any(not ipaddress.ip_address(ip).is_global for ip in ips):raise ValueError()
+    except (OSError,ValueError):
+        raise ValueError('Endpoint unavailable') from None
+    return str(url.copy_with(host=ips[0])),{'Host':url.host},{'sni_hostname':url.host}
+
+def serialize(p):
+    return {**{k:getattr(p,k) for k in ('id','kind','model','task','priority','name','endpoint','enabled','timeout_seconds','retries','max_tokens','temperature')},'has_key':bool(p.encrypted_key)}
+
+def lock(db,wid):
+    db.scalar(select(Workspace).where(Workspace.id==wid).with_for_update())
+
+@router.get('/ai/settings')
+def read_settings(wid:str,db:Session=Depends(get_db,scope='function')):
+    return settings(db,wid)
+
+@router.put('/ai/settings')
+def save_settings(wid:str,data:AISettingsInput,db:Session=Depends(get_db,scope='function')):
+    lock(db,wid)
+    row=db.get(AISettings,wid)
+    if not row:
+        row=AISettings(workspace_id=wid);db.add(row)
+    for key,value in data.model_dump().items():setattr(row,key,value)
+    return data.model_dump()
+
+@router.get('/providers')
+def providers(wid:str,db:Session=Depends(get_db,scope='function')):
+    return [serialize(p) for p in db.scalars(select(Provider).where(Provider.workspace_id==wid).order_by(Provider.task,Provider.priority,Provider.id))]
+
+def apply(p,data,creating=False):
+    values=data.model_dump(exclude={'api_key','clear_key'})
+    if data.kind=='compatible':values['endpoint']=public_endpoint(data.endpoint or config.COMPATIBLE_URL)
+    elif data.endpoint:raise HTTPException(422,'ตั้ง Custom API URL ได้เฉพาะผู้ให้บริการ Custom API')
+    if data.api_key and any(ord(c)<32 or ord(c)>126 for c in data.api_key):raise HTTPException(422,'รูปแบบ API key ไม่ถูกต้อง')
+    if data.clear_key and data.api_key:raise HTTPException(422,'เลือกล้างคีย์หรือใส่คีย์ใหม่อย่างใดอย่างหนึ่ง')
+    if not creating and (p.kind!=data.kind or (data.kind=='compatible' and (p.endpoint or config.COMPATIBLE_URL).rstrip('/')!=values['endpoint'])) and not data.api_key:p.encrypted_key=''
+    if data.clear_key:p.encrypted_key=''
+    if data.api_key:p.encrypted_key=config.cipher().encrypt(data.api_key.encode()).decode()
+    if data.kind in ENDPOINTS and not p.encrypted_key:raise HTTPException(422,'ต้องระบุ API key')
+    for key,value in values.items():setattr(p,key,value)
+
+@router.post('/providers')
+def create_provider(wid:str,data:ProviderInput,db:Session=Depends(get_db,scope='function')):
+    lock(db,wid)
+    count=len(db.scalars(select(Provider.id).where(Provider.workspace_id==wid)).all())
+    if count>=30:raise HTTPException(422,'เพิ่มได้สูงสุด 30 โมเดลต่อพื้นที่')
+    p=Provider(workspace_id=wid,encrypted_key='');apply(p,data,True);db.add(p);db.flush()
+    return serialize(p)
+
+@router.put('/providers/{pid}')
+def edit_provider(wid:str,pid:str,data:ProviderInput,db:Session=Depends(get_db,scope='function')):
+    lock(db,wid);p=get_scoped(db,Provider,wid,pid);apply(p,data);db.flush();return serialize(p)
+
+@router.delete('/providers/{pid}')
+def delete_provider(wid:str,pid:str,db:Session=Depends(get_db,scope='function')):
+    lock(db,wid);db.delete(get_scoped(db,Provider,wid,pid));return {'ok':True}
+
+@router.put('/ai/routes')
+def reorder(wid:str,data:AIRoutesInput,db:Session=Depends(get_db,scope='function')):
+    lock(db,wid)
+    rows=db.scalars(select(Provider).where(Provider.workspace_id==wid,Provider.task==data.task)).all()
+    if len(data.provider_ids)!=len(set(data.provider_ids)) or set(data.provider_ids)!={p.id for p in rows}:
+        raise HTTPException(409,'รายการโมเดลเปลี่ยนแล้ว กรุณาโหลดใหม่')
+    positions={pid:i for i,pid in enumerate(data.provider_ids)}
+    for p in rows:p.priority=positions[p.id]
+    return {'ok':True}
+
+def probe(db,wid,pid,models=False):
+    # User-triggered, bounded requests; no financial information or provider errors returned.
+    login_limit('ai-probe:'+wid)
+    p=get_scoped(db,Provider,wid,pid)
+    if p.kind!='ollama' and not settings(db,wid)['cloud_enabled']:
+        raise HTTPException(403,'เปิดการใช้ Cloud AI ของพื้นที่ก่อนทดสอบ')
+    try:
+        url,headers,extensions=target(p)
+        key=config.cipher().decrypt(p.encrypted_key.encode()).decode() if p.encrypted_key else ''
+        if key:headers['Authorization']='Bearer '+key
+        with httpx.Client(timeout=httpx.Timeout(10,connect=5),trust_env=False,follow_redirects=False) as client:
+            # Models discovery never sends a prompt. Connection test uses a small synthetic prompt.
+            method='GET' if models else 'POST'
+            path='/models' if models else '/chat/completions'
+            kwargs={} if models else {'json':{'model':p.model,'messages':[{'role':'user','content':'Reply OK.'}],'max_tokens':16,'stream':False}}
+            with client.stream(method,url+path,headers=headers,extensions=extensions,**kwargs) as response:
+                response.raise_for_status();raw=b''
+                for chunk in response.iter_bytes():
+                    raw+=chunk
+                    if len(raw)>256000:raise ValueError()
+                import json
+                data=json.loads(raw)
+        if models:
+            import re
+            items=data.get('data',[])
+            if not isinstance(items,list):raise ValueError()
+            names=sorted({item['id'] for item in items if isinstance(item,dict) and isinstance(item.get('id'),str) and re.fullmatch(r'[a-zA-Z0-9_./:@-]{1,100}',item['id'])})[:300]
+            return {'models':names}
+        if not isinstance(data['choices'][0]['message']['content'],str):raise ValueError()
+        return {'ok':True,'message':'เชื่อมต่อและเรียกโมเดลได้แล้ว'}
+    except Exception:
+        # Never expose URL, key, headers, response body, or traceback.
+        raise HTTPException(422,'เชื่อมต่อไม่สำเร็จ ตรวจ URL คีย์ ชื่อโมเดล และสิทธิ์ของผู้ให้บริการ') from None
+
+@router.post('/providers/{pid}/test')
+def test_provider(wid:str,pid:str,db:Session=Depends(get_db,scope='function')):
+    return probe(db,wid,pid)
+
+@router.post('/providers/{pid}/models')
+def list_models(wid:str,pid:str,db:Session=Depends(get_db,scope='function')):
+    return probe(db,wid,pid,True)

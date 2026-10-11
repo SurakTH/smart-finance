@@ -1,6 +1,6 @@
 import Finance from "@/components/finance";
 export function generateStaticParams() {
-  return ["transactions", "accounts", "categories", "budgets", "goals", "recurring", "members", "workspaces", "services", "assistant", "inbox", "settings"].map(
+  return ["transactions", "accounts", "categories", "budgets", "goals", "recurring", "members", "workspaces", "services", "assistant", "inbox", "settings", "ai-settings"].map(
     (section) => ({ section }),
   );
 }

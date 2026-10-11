@@ -22,7 +22,7 @@ export function ServicesHub({accounts,pending,owner,onAdd}:{accounts:ManagedAcco
   {group:'จัดการพื้นที่ของคุณ',title:'สมาชิกและคำเชิญ',detail:'ดูสมาชิก ชวนคนที่ไว้ใจ และจัดการสิทธิ์ในพื้นที่',href:'/members',icon:Users,tone:'sage',meta:'เจ้าของพื้นที่ · สมาชิก'},
   {group:'จัดการพื้นที่ของคุณ',title:'จัดการพื้นที่ทำงาน',detail:'สร้างหรือเปลี่ยนชื่อ workspace เก็บเข้าคลัง กู้คืน และชวนเพื่อนสร้างบัญชีส่วนตัว',href:'/workspaces',icon:Settings,tone:'sage',meta:'ตั้งค่า'},
   {group:'จัดการพื้นที่ของคุณ',title:'เชื่อม Telegram',detail:'เชื่อมบอตสำหรับส่งข้อความและสลิปเข้าระบบ',href:'/settings#telegram-settings',icon:Send,tone:'sand',meta:'ต้องตั้งค่าบอตบนเซิร์ฟเวอร์'},
-  ...(owner?[{group:'จัดการพื้นที่ของคุณ',title:'ผู้ให้บริการ AI',detail:'จัดการโมเดล งานที่ใช้ และลำดับการสำรอง',href:'/settings#ai-provider-settings',icon:SlidersHorizontal,tone:'rose',meta:'สำหรับเจ้าของพื้นที่'}]:[]),
+  ...(owner?[{group:'จัดการพื้นที่ของคุณ',title:'ผู้ให้บริการ AI',detail:'จัดการโมเดล งานที่ใช้ และลำดับการสำรอง',href:'/ai-settings',icon:SlidersHorizontal,tone:'rose',meta:'สำหรับเจ้าของพื้นที่'}]:[]),
  ];
  const filtered=services.filter(s=>(s.title+' '+s.detail+' '+s.meta).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
  return <div className="services-hub"><section className="services-intro"><div><span className="eyebrow">MADE FOR YOUR EVERYDAY</span><h2>ทุกเรื่องเงิน<br/>อยู่ใกล้กว่าที่คิด</h2><p>เลือกสิ่งที่อยากทำ แล้วไปต่อได้เลย</p></div><div className="hub-quick"><span className="hub-quick-icon"><Plus size={25}/></span><strong>วันนี้มีรายการใหม่ไหม?</strong><p>บันทึกเงินเข้า เงินออก หรือโอนระหว่างบัญชี</p><Button onClick={onAdd}>เพิ่มรายการเงิน <ArrowUpRight size={17}/></Button></div></section>

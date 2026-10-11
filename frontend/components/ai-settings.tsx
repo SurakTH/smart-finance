@@ -1,0 +1,71 @@
+"use client";
+import {useEffect,useState,useRef,type ReactNode} from 'react';
+import Link from 'next/link';
+import {Sparkles,ShieldCheck,Plus,ArrowUp,ArrowDown,Pencil,Trash2,FlaskConical,RefreshCw,ArrowLeft,Cloud,Server} from 'lucide-react';
+import {Button} from './ui/button';
+import {memberRequest as request} from './members';
+type Provider={id:string;name:string;kind:string;model:string;task:string;priority:number;has_key:boolean;endpoint:string;enabled:boolean;timeout_seconds:number;retries:number;max_tokens:number;temperature:number};
+type Options={cloud_enabled:boolean;demo_fallback:boolean;max_attempted_providers:number};
+type Draft=Omit<Provider,'id'|'has_key'> & {api_key:string;clear_key:boolean};
+const names:Record<string,string>={gemini:'Google Gemini',openrouter:'OpenRouter',groq:'Groq',openai:'OpenAI',compatible:'Custom API',ollama:'Ollama (Local)'};
+const empty=(task='chat'):Draft=>({name:'',kind:'openai',model:'',task,priority:100,endpoint:'',enabled:true,timeout_seconds:20,retries:1,max_tokens:1200,temperature:10,api_key:'',clear_key:false});
+function AIDialog({id,onClose,children}:{id:string;onClose:()=>void;children:ReactNode}){
+ const ref=useRef<HTMLDialogElement>(null);
+ useEffect(()=>{ref.current?.showModal();return()=>ref.current?.close();},[]);
+ return <dialog ref={ref} className="entry-dialog ai-editor" aria-labelledby={id} onCancel={onClose}>{children}</dialog>;
+}
+export function AISettingsPage({wid,owner}:{wid:string;owner:boolean}){
+ const base=`/workspaces/${wid}`;
+ const [rows,setRows]=useState<Provider[]>([]),[options,setOptions]=useState<Options|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
+ const [draft,setDraft]=useState<Draft|null>(null),[editing,setEditing]=useState<string|null>(null),[models,setModels]=useState<Record<string,string[]>>({}),[removing,setRemoving]=useState<Provider|null>(null);
+ const [tested,setTested]=useState<Record<string,string>>({});
+ async function load(){const [p,s]=await Promise.all([request<Provider[]>(base+'/providers'),request<Options>(base+'/ai/settings')]);setRows(p);setOptions(s);}
+ useEffect(()=>{if(owner)load().catch(e=>setError(e.message));},[wid,owner]); // component is keyed by workspace
+ async function run(action:()=>Promise<void>){setBusy(true);setError('');setNotice('');try{await action();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+ async function saveOptions(next:Options){const previous=options;setOptions(next);await run(async()=>{try{setOptions(await request<Options>(base+'/ai/settings','PUT',next));setNotice('บันทึกการตั้งค่า AI แล้ว');}catch(e){setOptions(previous);throw e;}});}
+ function edit(p:Provider){const {id,has_key,...fields}=p;setDraft({...fields,api_key:'',clear_key:false});setEditing(id);setRemoving(null);setNotice('');setError('');}
+ function close(){setDraft(null);setEditing(null);}
+ async function save(){if(!draft)return;const id=editing;const payload={...draft,name:draft.name.trim(),model:draft.model.trim(),endpoint:draft.endpoint.trim()};await run(async()=>{await request(base+'/providers'+(id?'/'+id:''),id?'PUT':'POST',payload);await load();close();setModels({});setTested({});setNotice('บันทึกโมเดลแล้ว พร้อมจัดลำดับและทดสอบการเชื่อมต่อ');});}
+ async function move(task:string,index:number,direction:number){const list=rows.filter(p=>p.task===task);[list[index],list[index+direction]]=[list[index+direction],list[index]];await run(async()=>{await request(base+'/ai/routes','PUT',{task,provider_ids:list.map(p=>p.id)});await load();setNotice('บันทึกลำดับโมเดลแล้ว');});}
+ async function toggle(p:Provider){const previous=rows;setRows(rows.map(row=>row.id===p.id?{...row,enabled:!p.enabled}:row));await run(async()=>{try{const {id,has_key,...data}=p;await request(base+'/providers/'+id,'PUT',{...data,enabled:!p.enabled});await load();}catch(e){setRows(previous);throw e;}});}
+ const change=<K extends keyof Draft>(key:K,value:Draft[K])=>setDraft(d=>d?{...d,[key]:value}:d);
+ if(!owner)return <section className="panel"><ShieldCheck/><h2>การตั้งค่า AI สำหรับเจ้าของพื้นที่</h2><p>ให้เจ้าของพื้นที่จัดการผู้ให้บริการและการส่งข้อมูลไป Cloud AI</p></section>;
+ return <div className="ai-settings-page">
+  <Link className="ai-back" href="/settings"><ArrowLeft size={18}/> กลับไปตั้งค่า</Link>
+  <section className="ai-hero"><div className="ai-hero-icon"><Sparkles size={28}/></div><div><span className="eyebrow">YOUR AI, YOUR CHOICE</span><h2>เลือก AI ที่เข้ากับคุณ</h2><p>จัดการโมเดล การเชื่อมต่อ และตัวสำรองของพื้นที่นี้ได้ในที่เดียว</p></div><span className="ai-secure"><ShieldCheck size={16}/> คีย์เข้ารหัสบนเซิร์ฟเวอร์</span></section>
+  {error&&<div className="error" role="alert">{error}</div>}{notice&&<div className="notice" role="status">{notice}</div>}
+  {!options&&!error&&<p role="status">กำลังโหลดการตั้งค่า…</p>}
+  {options&&<section className="panel ai-controls"><div className="ai-section-heading"><div><h3><ShieldCheck size={20}/> ข้อมูลของคุณ ไปที่ไหนได้บ้าง</h3><p className="muted">ค่าเหล่านี้ใช้เฉพาะพื้นที่ปัจจุบัน ไม่ต้องแก้ไฟล์หรือลงระบบใหม่</p></div></div>
+   <div className="ai-control-grid"><label className="ai-choice"><Cloud size={23}/><span><strong>อนุญาต Cloud AI</strong><small>ใช้ได้เฉพาะห้อง Standard และการรับข้อมูลที่เลือก Standard · รูปและข้อความอาจส่งไปยังผู้ให้บริการ</small></span><input type="checkbox" aria-label="อนุญาต Cloud AI" checked={options.cloud_enabled} disabled={busy} onChange={e=>saveOptions({...options,cloud_enabled:e.target.checked})}/></label>
+   <label className="ai-choice"><FlaskConical size={23}/><span><strong>ใช้โหมดสาธิตเมื่อ AI ไม่พร้อม</strong><small>ถ้าปิด งานจะล้มเหลวเมื่อไม่มีโมเดลตอบได้ แทนการตอบแบบสาธิต</small></span><input type="checkbox" aria-label="ใช้โหมดสาธิตเมื่อ AI ไม่พร้อม" checked={options.demo_fallback} disabled={busy} onChange={e=>saveOptions({...options,demo_fallback:e.target.checked})}/></label></div>
+   <label className="ai-attempts">จำนวนโมเดลที่ลองสูงสุดต่องาน<select value={options.max_attempted_providers} disabled={busy} onChange={e=>saveOptions({...options,max_attempted_providers:Number(e.target.value)})}>{[1,2,3,4,5].map(n=><option key={n} value={n}>{n} โมเดล</option>)}</select></label>
+   <p className="ai-private-note"><Server size={17}/> ห้อง Private ใช้เฉพาะ Ollama หรือโหมดสาธิตเสมอ ไม่สำรองไป Cloud แม้เปิดสวิตช์ด้านบน</p>
+  </section>}
+  {['chat','extract'].map(task=>{const list=rows.filter(p=>p.task===task);return <section className="panel ai-route" key={task}>
+   <div className="ai-section-heading"><div><span className="eyebrow">{task==='chat'?'CONVERSATION':'RECEIPTS & TEXT'}</span><h3>{task==='chat'?'AI สำหรับแชท':'AI สำหรับอ่านข้อความและสลิป'}</h3><p className="muted">ลองจากบนลงล่าง ข้ามโมเดลที่ปิดหรือไม่ตรงโหมดความเป็นส่วนตัว{task==='extract'?' · อ่านรูปต้องใช้โมเดลที่รองรับภาพ':''}</p></div><Button variant="outline" disabled={busy} onClick={()=>{setDraft(empty(task));setEditing(null);setError('');}}><Plus size={17}/> เพิ่มโมเดล{task==='chat'?'แชท':'สลิป'}</Button></div>
+   {!list.length&&<div className="ai-empty"><Sparkles size={25}/><strong>เลือกโมเดลแรกของคุณ</strong><p>เริ่มจากผู้ให้บริการที่มีคีย์ หรือใช้โหมดสาธิตได้ทันที</p></div>}
+   <div className="ai-route-list">{list.map((p,i)=><article className={'ai-provider'+(!p.enabled?' ai-disabled':'')} key={p.id}>
+    <div className="ai-provider-top"><span className="ai-rank">{i+1}</span><div className="ai-provider-title"><strong>{p.name||names[p.kind]}</strong><span>{names[p.kind]} · {p.model}</span></div><span className={'ai-badge '+(p.kind==='ollama'?'local':'')}>{p.kind==='ollama'?'Local':'Cloud'}</span><label className="ai-enable"><input type="checkbox" aria-label={'เปิดใช้ '+(p.name||p.model)} checked={p.enabled} disabled={busy} onChange={()=>toggle(p)}/> เปิดใช้</label></div>
+    {p.endpoint&&<p className="ai-endpoint">{p.endpoint}</p>}
+    <div className="ai-provider-meta"><span>{p.has_key?'คีย์เข้ารหัสแล้ว':'ไม่ใช้คีย์'}</span><span>รอ {p.timeout_seconds} วินาที</span><span>ลองซ้ำ {p.retries} ครั้ง</span><span>คำตอบสูงสุด {p.max_tokens} tokens</span></div>
+    <div className="ai-provider-actions"><div><Button variant="ghost" size="sm" aria-label={'เลื่อนขึ้น '+p.model} disabled={busy||i===0} onClick={()=>move(task,i,-1)}><ArrowUp size={16}/></Button><Button variant="ghost" size="sm" aria-label={'เลื่อนลง '+p.model} disabled={busy||i===list.length-1} onClick={()=>move(task,i,1)}><ArrowDown size={16}/></Button></div><div>
+     <Button variant="outline" size="sm" disabled={busy} onClick={()=>run(async()=>{const result=await request<{message:string}>(base+'/providers/'+p.id+'/test','POST');setTested(t=>({...t,[p.id]:result.message}));setNotice(result.message);})}><FlaskConical size={15}/> ทดสอบ</Button>
+     <Button variant="ghost" size="sm" disabled={busy} onClick={()=>run(async()=>{const result=await request<{models:string[]}>(base+'/providers/'+p.id+'/models','POST');setModels(m=>({...m,[p.id]:result.models}));setNotice(result.models.length?'โหลดรายชื่อโมเดลแล้ว กดแก้ไขเพื่อเลือก':'API นี้ไม่ส่งรายชื่อโมเดล กรุณากรอกชื่อเอง');})}><RefreshCw size={15}/> โหลดโมเดล</Button>
+     <Button variant="ghost" size="sm" disabled={busy} onClick={()=>edit(p)}><Pencil size={15}/> แก้ไข</Button><Button variant="ghost" size="sm" aria-label={'ลบโมเดล '+p.model} disabled={busy} onClick={()=>setRemoving(p)}><Trash2 size={16}/></Button></div></div>
+    {tested[p.id]&&<p className="ai-test-result">✓ {tested[p.id]}</p>}{models[p.id]&&<p className="muted small">พบ {models[p.id].length} โมเดล · เปิด “แก้ไข” เพื่อเลือก</p>}
+   </article>)}</div>
+  </section>})}
+  <div className="ai-help"><ShieldCheck size={20}/><div><strong>ทดสอบอย่างไร และ AI ทำอะไรได้บ้าง</strong><p>ปุ่มทดสอบส่งข้อความสั้นที่ไม่มีข้อมูลการเงิน อาจมีค่าบริการตามผู้ให้บริการ การอ่านสลิปเตรียมข้อเสนอเท่านั้น ทุกการบันทึกหรือแก้รายการยังต้องทวนและยืนยันโดยคุณ</p><p>Ollama ใช้บริการ Local ที่เซิร์ฟเวอร์กำหนดไว้ ต้องมี Ollama และดาวน์โหลดโมเดลแล้ว หน้านี้ไม่ติดตั้งโมเดลหรือซอฟต์แวร์ให้</p><p>Custom API รองรับ OpenAI-compatible ผ่าน HTTPS สาธารณะ พอร์ต 443 ไม่เชื่อม URL ภายในเครือข่ายจากช่องนี้ เพื่อแยกข้อมูลระหว่างพื้นที่</p></div></div>
+  {removing&&<AIDialog id="ai-remove-title" onClose={()=>setRemoving(null)}><h2 id="ai-remove-title">ลบโมเดลนี้?</h2><p>{removing.name||removing.model} จะถูกนำออกจากลำดับสำรองและลบคีย์ที่เก็บไว้</p><div className="ai-editor-actions"><Button variant="outline" disabled={busy} onClick={()=>setRemoving(null)}>ยกเลิก</Button><Button disabled={busy} onClick={()=>run(async()=>{await request(base+'/providers/'+removing.id,'DELETE');await load();setRemoving(null);setNotice('ลบโมเดลแล้ว');})}>ยืนยันลบโมเดล</Button></div></AIDialog>}
+  {draft&&<AIDialog id="ai-editor-title" onClose={close}><form onSubmit={e=>{e.preventDefault();save();}}><div className="ai-section-heading"><h2 id="ai-editor-title">{editing?'แก้ไขโมเดล':'เพิ่มโมเดล AI'}</h2><Button type="button" variant="ghost" disabled={busy} onClick={close}>ปิด</Button></div>
+   <label>ชื่อเรียก<input value={draft.name} maxLength={100} placeholder="เช่น ผู้ช่วยหลัก / สำรอง / อ่านสลิป" onChange={e=>change('name',e.target.value)}/></label>
+   <div className="form-grid"><label>ผู้ให้บริการ<select value={draft.kind} onChange={e=>setDraft({...draft,kind:e.target.value,endpoint:'',api_key:'',clear_key:false})}>{Object.entries(names).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label><label>งานที่ใช้<select value={draft.task} onChange={e=>change('task',e.target.value)}><option value="chat">แชท AI</option><option value="extract">อ่านข้อความและสลิป</option></select></label></div>
+   {draft.kind==='compatible'&&<label>Custom API Base URL<input type="url" required placeholder="https://api.example.com/v1" value={draft.endpoint} maxLength={500} onChange={e=>change('endpoint',e.target.value)}/><small>ใส่ Base URL ไม่ต้องต่อ /chat/completions · HTTPS สาธารณะเท่านั้น</small></label>}
+   <label>ชื่อโมเดล<input required list="ai-model-options" value={draft.model} maxLength={100} placeholder="ชื่อโมเดลตามผู้ให้บริการ" onChange={e=>change('model',e.target.value)}/><datalist id="ai-model-options">{(editing?models[editing]||[]:[]).map(m=><option key={m} value={m}/>)}</datalist></label>
+   <p className="muted small">เมื่อเปลี่ยนผู้ให้บริการหรือ Custom URL กรุณาใส่คีย์ใหม่ คีย์เดิมจะไม่ถูกส่งไปปลายทางใหม่</p><label>API key<input type="password" autoComplete="new-password" value={draft.api_key} maxLength={500} placeholder={editing?'เว้นว่างเพื่อใช้คีย์เดิม':'ใส่คีย์ของผู้ให้บริการ · Ollama/Custom เว้นว่างได้'} onChange={e=>change('api_key',e.target.value)}/></label>
+   {editing&&<label className="ai-clear-key"><input type="checkbox" checked={draft.clear_key} onChange={e=>change('clear_key',e.target.checked)}/> ล้างคีย์ที่เก็บไว้ (ใช้กับ API ที่ไม่ต้องมีคีย์)</label>}
+   <details className="ai-advanced"><summary>การตอบกลับและการลองซ้ำ</summary><div className="form-grid"><label>Timeout (วินาที)<input type="number" min={5} max={60} required value={draft.timeout_seconds} onChange={e=>change('timeout_seconds',Number(e.target.value))}/></label><label>ลองซ้ำเมื่อไม่สำเร็จ<input type="number" min={0} max={2} required value={draft.retries} onChange={e=>change('retries',Number(e.target.value))}/></label><label>จำนวน tokens สูงสุด<input type="number" min={64} max={8192} required value={draft.max_tokens} onChange={e=>change('max_tokens',Number(e.target.value))}/></label><label>Temperature (0–2)<input type="number" min={0} max={2} step={0.01} required value={draft.temperature/100} onChange={e=>change('temperature',Math.round(Number(e.target.value)*100))}/></label></div><p className="muted small">มีกรอบเวลาลองโมเดลรวม ประมาณ 90 วินาที ก่อนสำรองหรือแจ้งงานไม่สำเร็จ</p></details>
+   {error&&<p role="alert" className="error">{error}</p>}<div className="ai-editor-actions"><Button type="button" variant="outline" disabled={busy} onClick={close}>ยกเลิก</Button><Button disabled={busy}>บันทึกโมเดล</Button></div>
+  </form></AIDialog>}
+ </div>;
+}

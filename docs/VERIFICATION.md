@@ -1,10 +1,23 @@
 # ผลตรวจสอบ Smart Finance
 
+## ศูนย์ตั้งค่า AI บนเว็บ (11 ตุลาคม 2026)
+
+- PostgreSQL ชุดรวม **203 passed**; หลังเพิ่มการล้างคีย์เมื่อเปลี่ยน URL และตรวจจำนวนโมเดลสูงสุด ทดสอบกลุ่ม AI/security/images/stream ซ้ำ **32 passed**
+- กลุ่ม AI configuration ล่าสุดทดสอบซ้ำ **16 passed** รวม migration จาก compatible URL เดิมที่ไม่ให้คีย์ตามไป URL ใหม่
+- สำรอง/restore ลงฐานชั่วคราวผ่าน รวม row counts และ snapshots ของ `ai_settings`/providers/คีย์เข้ารหัส โดยไม่แสดงค่าคีย์; journals สมดุล
+- TypeScript และ Docker/Next production build ผ่าน; migration `ai_configuration` อัปเกรดฐานเดิมโดยคง providers และ encrypted keys เดิม
+- Chrome เฉพาะฟีเจอร์ใหม่ **2 passed** (คอม/มือถือ): เปิด Cloud AI, เพิ่ม Custom API, ไม่อ่านคีย์กลับ, แก้ไขโดยใช้คีย์เดิม, เลื่อนลำดับ, เปิด–ปิด, persist หลัง reload, ลบแบบยืนยัน และสลับ workspace ที่ไม่มีโมเดล/ปิด Cloud โดยไม่มีค่าพื้นที่เก่าติดไป
+- Tests ของ backend ตรวจ owner-only/สมาชิกถูกปฏิเสธ/tenant ID ข้ามพื้นที่ 404, encryption/retain/rotate/clear key, ปิด cloud แม้ legacy env เปิด, validate URL ไม่สะท้อน key, DNS private ถูกปฏิเสธและ pin public IP พร้อม SNI, probe ส่ง synthetic prompt เท่านั้น/ไม่คืน model response, ลำดับ/retry/disabled/max attempts/privacy/demo fallback และไม่มีการลง ledger
+- Custom API รองรับ HTTPS public พอร์ต 443 เท่านั้น ไม่ redirect/ไม่เชื่อ environment proxy; Local Ollama ยังคงใช้บริการที่ผู้ดูแลกำหนด ไม่ให้ tenant ระบุ URL ภายในตามใจ และหน้านี้ไม่ติดตั้งโมเดล
+- ไม่ได้เรียก provider ภายนอกด้วย API key จริง การทดสอบ transport ใช้ MockTransport; ความพร้อม/สิทธิ์โมเดล/ค่าใช้จ่ายจริงต้องตรวจด้วยปุ่มทดสอบหลังผู้ใช้ตั้งค่า
+- Chrome ชุดเดิม 44 ข้อไม่ได้รันซ้ำในเครื่องรอบนี้ GitHub CI จะรันชุดรวมเมื่อ push; ไม่ได้ deploy ไป Ubuntu ของผู้ใช้
+
+
 ## ตัวเลือก Nginx (11 ตุลาคม 2026)
 
 Compose overlay ตรวจผ่าน; Nginx stable-alpine ตรวจ syntax ของ internal gateway และ snippet สำหรับ Nginx เดิมผ่าน ทดสอบ gateway ชั่วคราวกับแอปจริงผ่าน: หน้าเว็บ, API พร้อม query string, login/session cookie, workspace ที่ต้อง login, SSE ส่ง ready ทันที, ลบห้องทดสอบและ logout แอปที่พอร์ต 8080 ยังใช้ gateway เดิม ไม่แก้ Nginx ภายนอกของผู้ใช้ โดเมน/ใบรับรอง/HTTPS ของเครื่องปลายทางยังไม่ได้ตรวจ
 
-## ยืนยันอีเมลและกู้รหัสผ่าน — ล่าสุด (11 ตุลาคม 2026)
+## ยืนยันอีเมลและกู้รหัสผ่าน — รุ่นก่อนหน้า (11 ตุลาคม 2026)
 
 - PostgreSQL **187 passed** รวมทดสอบระบบเดิมและกรณีใหม่ 13 กรณี: คำตอบขอกู้บัญชีไม่แยกอีเมลที่มี/ไม่มี, ปิด SMTP, เข้ารหัส outbox/hash token, ตั้งรหัสผ่านและเพิกถอนทุก session, ใช้ซ้ำ/หมดอายุ/ขอใหม่/ผิดประเภท, เปลี่ยนรหัสผ่านยกเลิกลิงก์เดิม, validation ไม่สะท้อน token/password, rate limit, retry 3 ครั้งและล้าง payload, สมัครแล้วเข้าคิว verification, STARTTLS transport ที่จำลอง, รหัสยืนยันไม่ตรงไม่ใช้ token, สอง transaction ใช้ token พร้อมกันสำเร็จครั้งเดียว และล้าง outbox หมดอายุแม้ SMTP ปิด
 - SQLite ชุดรวมก่อนเพิ่ม cleanup **166 passed, 19 skipped**; หลังเพิ่ม concurrency/cleanup ทดสอบเฉพาะ email recovery **12 passed, 1 PostgreSQL-only skipped**. TypeScript และ Next.js production build ผ่าน

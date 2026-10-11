@@ -86,7 +86,7 @@ def test_vision_extraction_caption_and_inbox_manual_only(actor,monkeypatch):
         def __init__(self,**kwargs): pass
         def __enter__(self): return self
         def __exit__(self,*args): pass
-        def post(self,url,**kwargs):
+        def stream(self,method,url,**kwargs):
             calls.append(kwargs['json']['messages'])
             return FakeResponse(json.dumps({'proposals':[{'description':'ข้าว','amount':5000,'kind':'expense','auto_post':True}]}))
     monkeypatch.setattr(ai.httpx,'Client',Client)

@@ -349,7 +349,7 @@ export default function Finance() {
   },[wid,cid,focusMessage]);
   const liveContext=useRef('');liveContext.current=wid+cid+focusMessage;
   const {draft:liveDraft,streamNotice}=useChatStream(wid,cid,isChat&&!focusMessage,messages.filter(m=>m.role==='assistant').at(-1)?.id||'',async()=>{await loadChat(cid);});
-  useEffect(()=>{const el=chatScroll.current;if(el&&liveDraft&&el.scrollHeight-el.scrollTop-el.clientHeight<360)el.scrollTop=el.scrollHeight;},[liveDraft?.text]);
+  useLayoutEffect(()=>{const el=chatScroll.current;if(el&&liveDraft&&followBottom.current&&!focusMessage)el.scrollTop=el.scrollHeight;},[liveDraft?.text,focusMessage]);
   const hasPendingJobs = jobs.some((j) => j.status === "pending");
   useEffect(() => {
     // A fast worker can finish between the first history fetch and job refresh.
@@ -861,12 +861,12 @@ export default function Finance() {
                 </header>
                 {renaming&&<form className="chat-rename-form" onSubmit={e=>{e.preventDefault();run(async()=>{await api(base+'/conversations/'+cid+'/rename',{title:roomTitle.trim()});setRenaming(false);await refresh();});}}><label>ชื่อบทสนทนา<input aria-label="ชื่อบทสนทนา" value={roomTitle} onChange={e=>setRoomTitle(e.target.value)} maxLength={100} required autoFocus disabled={busy}/></label><Button type="submit" size="sm" disabled={busy||!roomTitle.trim()}>บันทึกชื่อ</Button><button className="icon-button" aria-label="ยกเลิกเปลี่ยนชื่อแชท" type="button" disabled={busy} onClick={()=>setRenaming(false)}><X size={18}/></button></form>}
                 {focusMessage&&<div className="chat-focus-banner"><span>ส่วนของบทสนทนาที่ตรงคำค้น</span><button onClick={()=>setFocusMessage('')}>ดูข้อความล่าสุด</button></div>}
-                {selectedRoom?.temporary&&<div className="temporary-banner" role="status"><span>แชทชั่วคราว · หมดอายุใน 24 ชม. แล้วระบบทยอยล้าง รูปที่เข้า Inbox จะยังอยู่</span><button disabled={busy} onClick={()=>run(async()=>{await api(base+'/conversations/'+cid,undefined,'DELETE');setCid('');setMessages([]);setTemporaryRoom(null);await refresh();})}>จบและล้างแชท</button></div>}<div className="messages" ref={chatScroll} onScroll={()=>{const el=chatScroll.current;if(el){followBottom.current=el.scrollHeight-el.scrollTop-el.clientHeight<160;if(el.scrollTop<64)loadOlder();}}} role="log" aria-label="ข้อความในบทสนทนา" aria-live="polite">
+                {selectedRoom?.temporary&&<div className="temporary-banner" role="status"><span>แชทชั่วคราว · หมดอายุใน 24 ชม. แล้วระบบทยอยล้าง รูปที่เข้า Inbox จะยังอยู่</span><button disabled={busy} onClick={()=>run(async()=>{await api(base+'/conversations/'+cid,undefined,'DELETE');setCid('');setMessages([]);setTemporaryRoom(null);await refresh();})}>จบและล้างแชท</button></div>}<div className="messages" ref={chatScroll} onWheel={e=>{if(e.deltaY<0)followBottom.current=false;}} onTouchMove={()=>{followBottom.current=false;}} onScroll={()=>{const el=chatScroll.current;if(el){followBottom.current=el.scrollHeight-el.scrollTop-el.clientHeight<=24;if(el.scrollTop<64)loadOlder();}}} role="log" aria-label="ข้อความในบทสนทนา" aria-live="polite">
                   <div className="message-stream">
                     {hasOlder&&!focusMessage&&<button className="load-older-chat" disabled={loadingOlder} onClick={loadOlder}>{loadingOlder?'กำลังโหลดข้อความเก่า…':'โหลดข้อความก่อนหน้า'}</button>}
                     {messages.length ? messages.map((m) => <div id={"chat-message-"+m.id} className={"message " + m.role+(focusMessage===m.id?" search-focus":"")} key={m.id}>
                       <span className="message-author">{m.role === "user" ? "คุณ" : <><Sparkles size={17} /> Finance AI</>}</span>
-                      {m.attachment_id && <a href={"/api" + base + "/attachments/" + m.attachment_id} target="_blank" rel="noreferrer"><img className="chat-image" src={"/api" + base + "/attachments/" + m.attachment_id} alt="รูปที่แนบในบทสนทนา" loading="lazy" onLoad={() => { const el = chatScroll.current; if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 360) el.scrollTop = el.scrollHeight; }} /></a>}
+                      {m.attachment_id && <a href={"/api" + base + "/attachments/" + m.attachment_id} target="_blank" rel="noreferrer"><img className="chat-image" src={"/api" + base + "/attachments/" + m.attachment_id} alt="รูปที่แนบในบทสนทนา" loading="lazy" onLoad={() => { const el = chatScroll.current; if (el && followBottom.current && !focusMessage) el.scrollTop = el.scrollHeight; }} /></a>}
                       {m.content && <p>{m.role==='assistant'?m.content.replace(/\n\nรหัสทางเลือก:\nยืนยัน [A-F0-9]{8}\n$/,''):m.content}</p>}
                       {m.role === "assistant" && m.content.includes("AI Inbox") && <Link className="inbox-result" href="/inbox">เปิด AI Inbox เพื่อตรวจสอบ <ArrowUpRight size={16} /></Link>}
                     </div>) : liveDraft ? null : <div className="chat-welcome">
@@ -875,7 +875,7 @@ export default function Finance() {
                     </div>}
                     {liveDraft?.text&&<div className="message assistant live-answer" aria-label="คำตอบที่กำลังทยอยแสดง"><span className="message-author"><Sparkles size={17}/> Finance AI <small>กำลังตอบ · ยังไม่สมบูรณ์</small></span><p>{liveDraft.text}</p></div>}
                     {streamNotice&&<p className="stream-notice" role="status">{streamNotice}</p>}
-                    {(busy || hasPendingJobs) && !liveDraft?.text && messages.length > 0 && <div className="thinking" role="status"><span /><span /><span /> กำลังเตรียมคำตอบ</div>}
+                    {(busy || hasPendingJobs || liveDraft) && !liveDraft?.text && messages.length > 0 && <div className="thinking" role="status"><span /><span /><span /> กำลังเตรียมคำตอบ</div>}
                   </div>
                 </div>
                 <div className="chat-composer-dock">

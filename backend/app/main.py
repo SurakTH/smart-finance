@@ -400,6 +400,8 @@ def send_message(wid: str, cid: str, data: ChatInput, member: Membership = Depen
         from .chat_actions import bind_review
         bind_review(db,c,member.user_id,message)
         return {'job_id':None}
+    from .chat_actions import begin_request
+    begin_request(db,c,member.user_id)
     job = enqueue(db,wid,member.user_id,'chat',{'conversation_id':cid,'text':data.text,'routing':'workspace','user_message_id':user_message.id})
     return {'job_id':job.id}
 
@@ -411,6 +413,8 @@ async def send_chat_image(wid: str, cid: str, file: UploadFile = File(...), text
     c.updated_at=now()
     message=Message(workspace_id=wid,conversation_id=cid,role='user',content=text.strip(),attachment_id=image.id,created_at=message_time(db,wid,cid))
     db.add(message);db.flush()
+    from .chat_actions import begin_request
+    begin_request(db,c,member.user_id)
     job = enqueue(db,wid,member.user_id,'chat',{'conversation_id':cid,'attachment_id':image.id,'text':text.strip(),'routing':'workspace','user_message_id':message.id})
     db.commit()
     return {'job_id':job.id,'attachment_id':image.id,'duplicate':duplicate}

@@ -12,7 +12,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import select
-from .models import Account, ChatAction, Message, Proposal, now
+from .models import Account, ChatAction, Message, Proposal, Job, now
 from .schemas import TransactionInput, CorrectionInput
 from .ledger import post, get_scoped
 from .corrections import detail, revise
@@ -115,6 +115,9 @@ def handle(db,c,user_id,text,review_message_id=None,allow_model_dialogue=False):
     text=text.strip()
     command=re.fullmatch(r'(ยืนยัน|ยกเลิก)\s+([0-9a-fA-F]{8})',text)
     scope=(ChatAction.workspace_id==c.workspace_id,ChatAction.conversation_id==c.id,ChatAction.user_id==user_id)
+    if text=='ยืนยัน' or (command and command[1]=='ยืนยัน'):
+        pending=db.scalar(select(Job.id).where(Job.workspace_id==c.workspace_id,Job.user_id==user_id,Job.task=='chat',Job.status=='pending',Job.payload['conversation_id'].as_string()==c.id).limit(1))
+        if pending:return 'กำลังเตรียมข้อเสนอใหม่ค่ะ ยังไม่บันทึก กรุณารอข้อความทวนให้เสร็จก่อน แล้วพิมพ์ ยืนยัน อีกครั้ง'
     context=dict(c.capture_context or {})
     if text in ('ทวนอีกที','ทวนหน่อย','ทวนรายการ','สรุปที่จะบันทึก'):
         action=db.scalar(select(ChatAction).where(*scope,ChatAction.status=='pending').with_for_update())
@@ -275,3 +278,12 @@ def bind_review(db,c,user_id,message):
     if action and message.content==review_text(action):
         if action.payload.get('attachment_id'):message.attachment_id=action.payload['attachment_id']
         context['review_message_id']=message.id;c.capture_context=context
+
+
+def begin_request(db,c,user_id):
+    """A queued new request must never inherit a previous confirmation binding."""
+    context=dict(c.capture_context or {})
+    action=db.scalar(select(ChatAction).where(ChatAction.id==context.get('review_action_id'),ChatAction.workspace_id==c.workspace_id,ChatAction.conversation_id==c.id,ChatAction.user_id==user_id))
+    context.pop('review_message_id',None)
+    if action and action.status!='pending':context.pop('review_action_id',None)
+    c.capture_context=context

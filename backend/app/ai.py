@@ -4,7 +4,7 @@ import json
 import re
 import time
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select,func
 from . import config
 from .models import message_time, Provider, Message, Attachment, Conversation, Proposal, Membership, Workspace
 from .schemas import ProposalInput
@@ -197,7 +197,9 @@ def process_job(db,job):
     dialogue=False
     if job.task=='chat' and job.payload.get('conversation_id'):
         from .chat_dialogue import eligible,available
-        latest=db.scalar(select(Message).where(Message.workspace_id==job.workspace_id,Message.conversation_id==c.id,Message.role=='user').order_by(Message.created_at.desc(),Message.id.desc()).limit(1))
+        # Premature confirmations are handled synchronously and must not supersede
+        # the request being prepared. Cancellation/new requests still supersede it.
+        latest=db.scalar(select(Message).where(Message.workspace_id==job.workspace_id,Message.conversation_id==c.id,Message.role=='user',~func.trim(Message.content).startswith('ยืนยัน')).order_by(Message.created_at.desc(),Message.id.desc()).limit(1))
         current=bool(latest and latest.id==job.payload.get('user_message_id'))
         assistant=current and available(db,c)
         dialogue=current and not assistant and eligible(c,job.payload.get('text',''))

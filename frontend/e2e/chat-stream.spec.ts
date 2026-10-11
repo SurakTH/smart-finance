@@ -5,15 +5,34 @@ test('live previews escape text, reconnect safely, clear on room change and load
  await page.addInitScript(()=>{class Source{static all:Source[]=[];url:string;onmessage:any;onerror:any;closed=false;constructor(url:string){this.url=url;Source.all.push(this);}close(){this.closed=true;}emit(value:object){this.onmessage?.({data:JSON.stringify(value)});}};(window as any).EventSource=Source;});
  await signIn(page);const headers={'X-SF-Request':'1'};const ws=await(await page.request.post('/api/workspaces',{headers,data:{name:'แชทสดทดสอบ '+Date.now()}})).json();const base=`/api/workspaces/${ws.id}`;
  const room=await(await page.request.post(base+'/conversations',{headers,data:{title:'ห้องทดสอบทยอยตอบ'}})).json();
+ for(let i=0;i<5;i++)await page.request.post(base+'/conversations/'+room.id+'/messages',{headers,data:{text:`กาแฟ ${75+i} จากเงินสด`}});
  await page.goto('/assistant');const mobile=(page.viewportSize()?.width||1440)<=900;
  async function history(){if(mobile&&await page.getByRole('button',{name:'เปิดประวัติการสนทนา',exact:true}).getAttribute('aria-expanded')!=='true')await page.getByRole('button',{name:'เปิดประวัติการสนทนา',exact:true}).click();}
  await history();await page.getByLabel('เลือก workspace ในแชท',{exact:true}).selectOption(ws.id);await history();await page.locator('.rooms button').filter({hasText:'ห้องทดสอบทยอยตอบ'}).click();
+ await expect(page.locator('.message.assistant')).toHaveCount(5);
  await expect.poll(()=>page.evaluate(()=>((window as any).EventSource.all as any[]).filter(s=>!s.closed).length)).toBe(1);
  async function emit(data:object){await page.evaluate(d=>{const sources=(window as any).EventSource.all; sources[sources.length-1].emit(d);},data);}
- await emit({kind:'delta',job_id:'one',snapshot:true,text:'ส่วนแรก <img src=x onerror=alert(1)>'});await expect(page.locator('.live-answer')).toContainText('ส่วนแรก');await expect(page.locator('.live-answer img')).toHaveCount(0);await emit({kind:'delta',job_id:'one',text:' และส่วนถัดไป'});await expect(page.locator('.live-answer')).toContainText('และส่วนถัดไป');await page.locator('.live-answer').screenshot({path:`../artifacts/chat-stream-${info.project.name}.png`});
+ const log=page.getByRole('log',{name:'ข้อความในบทสนทนา'});
+ await emit({kind:'start',job_id:'one'});await expect(page.locator('.thinking')).toContainText('กำลังเตรียมคำตอบ');
+ await expect.poll(()=>log.evaluate(el=>el.scrollHeight-el.clientHeight)).toBeGreaterThan(400);
+ await log.evaluate(el=>{el.scrollTop=el.scrollHeight-el.clientHeight-240;el.dispatchEvent(new Event('scroll'));});const thinkingTop=await log.evaluate(el=>el.scrollTop);
+ await emit({kind:'delta',job_id:'one',snapshot:true,text:'ส่วนแรก <img src=x onerror=alert(1)>'});await expect(page.locator('.live-answer')).toContainText('ส่วนแรก');await expect(page.locator('.live-answer img')).toHaveCount(0);await emit({kind:'delta',job_id:'one',text:' และส่วนถัดไป'});await expect(page.locator('.live-answer')).toContainText('และส่วนถัดไป');
+ await expect.poll(()=>log.evaluate(el=>el.scrollTop)).toBeCloseTo(thinkingTop,0);
+ await page.locator('.live-answer').screenshot({path:`../artifacts/chat-stream-${info.project.name}.png`});
+ // Growing chunks must respect manual scrolling, even within the old 360px snap zone.
+ await log.evaluate(el=>{el.scrollTop=el.scrollHeight;el.dispatchEvent(new Event('scroll'));});
+ const long='บรรทัดคำตอบที่กำลังทยอยแสดง\n'.repeat(100);await emit({kind:'delta',job_id:'one',snapshot:true,text:long});
+ await log.evaluate(el=>{el.scrollTop=el.scrollHeight-el.clientHeight-240;el.dispatchEvent(new Event('scroll'));});const readingTop=await log.evaluate(el=>el.scrollTop);
+ for(let i=0;i<8;i++)await emit({kind:'delta',job_id:'one',text:' เพิ่มเติม'});
+ await expect.poll(()=>log.evaluate(el=>el.scrollTop)).toBeCloseTo(readingTop,0);
+ const layout=await page.evaluate(()=>{const items=[...document.querySelectorAll('.message-stream > .message')];return items.every((el,i)=>!i||items[i-1].getBoundingClientRect().bottom<=el.getBoundingClientRect().top);});expect(layout).toBe(true);
  // Retry replaces, rather than merges, the failed provider's partial output.
  await emit({kind:'start',job_id:'one'});await emit({kind:'delta',job_id:'one',text:'คำตอบใหม่'});await expect(page.locator('.live-answer')).not.toContainText('ส่วนแรก');
- await page.route('**/conversations/'+room.id+'/messages/page*',route=>route.fulfill({json:{items:[{id:'persisted-answer',role:'assistant',content:'คำตอบใหม่ที่บันทึกแล้ว',attachment_id:null}],has_older:false,has_newer:false}}));await emit({kind:'done',job_id:'one'});await expect(page.locator('.message.assistant').filter({hasText:'คำตอบใหม่ที่บันทึกแล้ว'})).toBeVisible();await expect(page.locator('.live-answer')).toHaveCount(0);
+ let persisted='persisted-answer';await page.route('**/conversations/'+room.id+'/messages/page*',route=>route.fulfill({json:{items:[{id:persisted,role:'assistant',content:'คำตอบใหม่ที่บันทึกแล้ว',attachment_id:null}],has_older:false,has_newer:false}}));await emit({kind:'done',job_id:'one'});await expect(page.locator('.message.assistant').filter({hasText:'คำตอบใหม่ที่บันทึกแล้ว'})).toBeVisible();await expect(page.locator('.live-answer')).toHaveCount(0);
+ await emit({kind:'delta',job_id:'one',snapshot:true,text:'late duplicate'});await expect(page.locator('.live-answer')).toHaveCount(0);
+ await emit({kind:'start',job_id:'poll-before-done'});await emit({kind:'delta',job_id:'poll-before-done',snapshot:true,text:'คำตอบที่กำลังมาถึงประวัติ'});
+ persisted='persisted-answer-2';await expect(page.locator('#chat-message-persisted-answer-2')).toBeVisible();await expect(page.locator('.live-answer')).toHaveCount(0);
+ await emit({kind:'delta',job_id:'poll-before-done',snapshot:true,text:'snapshot มาช้า ห้ามซ้อนคำตอบ'});await expect(page.locator('.live-answer')).toHaveCount(0);await emit({kind:'done',job_id:'poll-before-done'});
  await emit({kind:'delta',job_id:'already-saved',snapshot:true,text:'ประวัติมาก่อน stream จบ'});await emit({kind:'done',job_id:'already-saved'});await expect(page.locator('.live-answer')).toHaveCount(0);
  await emit({kind:'start',job_id:'two'});await emit({kind:'delta',job_id:'two',text:'ยังตอบไม่จบ'});await page.evaluate(()=>{const s=(window as any).EventSource.all.at(-1);s.onerror();});await expect(page.locator('.live-answer')).toHaveCount(0);await expect(page.locator('.stream-notice')).toContainText('การเชื่อมต่อสะดุด');await emit({kind:'ready'});await expect(page.locator('.stream-notice')).toHaveCount(0);
  await emit({kind:'start',job_id:'three'});await emit({kind:'delta',job_id:'three',text:'ห้องเดิมเท่านั้น'});const oldSource=await page.evaluate(()=>((window as any).EventSource.all as any[]).length-1);await history();await page.getByRole('button',{name:'บทสนทนาใหม่',exact:true}).click();await expect(page.locator('.live-answer')).toHaveCount(0);await expect.poll(()=>page.evaluate(index=>((window as any).EventSource.all as any[])[index].closed,oldSource)).toBe(true);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);

@@ -1,5 +1,14 @@
 # ผลตรวจสอบ Smart Finance
 
+## แก้ scroll ระหว่างคิด/ข้อความซ้อน และยืนยันข้อเสนอเก่า (11 ตุลาคม 2026)
+
+- PostgreSQL ชุดรวม disposable **314 passed**; ชุดเฉพาะ confirmation/actions/dialogue/batch/secretary **58 passed** ตรวจยืนยันขณะคำขอใหม่ยัง pending ไม่โพสต์ข้อเสนอเก่าและไม่อ้างว่าข้อเสนอใหม่บันทึกแล้ว รวม old confirmed/old pending/legacy code/plain confirm/replay และงานในห้องอื่นไม่บล็อก
+- ส่งข้อความ/รูปใหม่แล้ว invalidates review-message binding และถอด confirmed action เก่าออกจาก active context งานรอในห้องเดียวกันให้รอทวน ไม่ยืนยันล่วงหน้า Worker ไม่นับข้อความยืนยันก่อนเวลาเป็นคำขอใหม่ที่มา supersede คำขอเดิม โมเดลตอบ prose โดยไม่มี tool ไม่ได้ผูก action เก่ากลับมา
+- แก้ auto-follow ให้ใช้ followBottom แทนเงื่อนไขใกล้ท้าย360px หยุดเมื่อเลื่อนขึ้นด้วย wheel/touch/scroll และกลับมาติดตามเมื่อถึงท้าย ไม่บีบความสูง message/thinking และปิด native scroll anchoring ที่ชนกับการเลื่อนของแอป
+- Streaming hook ซ่อน draft ทันทีตาม context/baseline เมื่อประวัติจริงมาถึง เก็บงานที่จบแล้วแบบ bounded100 IDs เพื่อไม่ให้ late snapshot/start ชุบข้อความเดิมมาแสดงซ้อน รองรับ polling มาก่อน SSE done
+- Chrome scenarios **10 ผ่านรวม** (desktop5/mobile5): confirmation/batch/defaults/natural **8 passed** ในชุดแรก และ streaming **2 passed** หลังแก้ fixture ให้รอ seed history โหลดครบและย้าย screenshot ไปหลังตรวจตำแหน่งเลื่อน เพราะ screenshot ของ Playwright เลื่อน element เข้าจอเอง ไม่แก้ assertion ให้ผ่านอาการ snap ทดสอบคงตำแหน่งอ่านในโซน240px ขณะมี chunks ต่อเนื่อง ความสูง message ไม่ทับกัน และ late snapshot หลัง done/poll ไม่ซ้อน
+- Next production build/TypeScript ผ่าน local Docker ทุก service healthy ไม่มี migration ใหม่ สำรอง/restore ผ่าน Source ZIP ตรวจ integrity/runtime-secret scan แล้ว ส่งเฉพาะ source ไม่ได้อัปเดต server VM ของผู้ใช้ Provider/stream ใช้ mock fixtures ในการทดสอบ ไม่ใช่การทดสอบ thinking กับ provider จริง
+
 ## ชุดรายการแชทและลดการใช้ AI (11 ตุลาคม 2026)
 
 - PostgreSQL ฐานทดสอบ disposable ชุดรวม **310 passed** (เพิ่ม13เคส; 1 Starlette/httpx deprecation warning เดิม) ชุดเฉพาะ batch/confirmation/dialogue **36 passed** ตรวจหนึ่ง tool call เตรียมหลายรายการ, ทุก item scoped/strict integer, invalid ทั้งชุดไม่สร้าง review, จำกัด10, แก้/นำรายการในร่างออกโดยไม่เรียกโมเดล, plain confirm/replay และ ledger balance

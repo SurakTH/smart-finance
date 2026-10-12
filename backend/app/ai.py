@@ -279,6 +279,10 @@ def _process_job(db,job):
     else:
         message=Message(workspace_id=job.workspace_id,conversation_id=job.payload['conversation_id'],created_at=message_time(db,job.workspace_id,job.payload['conversation_id']),role='assistant',content=output,references=getattr(job,'_finance_refs',None))
         db.add(message);db.flush()
+        from .models import TelegramDelivery
+        delivery=db.get(TelegramDelivery,job.id)
+        if delivery and delivery.workspace_id==job.workspace_id and delivery.conversation_id==c.id and delivery.user_id==job.user_id:
+            delivery.reply_message_id=message.id
         if trusted_review:
             from .chat_actions import bind_review
             bind_review(db,c,job.user_id,message)

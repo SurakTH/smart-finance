@@ -394,3 +394,20 @@ class AssistantChange(Base):
     summary: Mapped[str]=mapped_column(String(12000))
     payload: Mapped[dict]=mapped_column(JSON)
     created_at: Mapped[int]=mapped_column(BigInteger,default=now)
+
+
+class TelegramDelivery(Base):
+    __tablename__='telegram_deliveries'
+    job_id:Mapped[str]=mapped_column(ForeignKey('jobs.id',ondelete='CASCADE'),primary_key=True)
+    workspace_id:Mapped[str]=mapped_column(String(36))
+    conversation_id:Mapped[str]=mapped_column(String(36))
+    user_id:Mapped[str]=mapped_column(ForeignKey('users.id'))
+    telegram_id:Mapped[str]=mapped_column(String(30))
+    reply_message_id:Mapped[str|None]=mapped_column(String(36),nullable=True)
+    status:Mapped[str]=mapped_column(String(15),default='pending')
+    attempts:Mapped[int]=mapped_column(Integer,default=0)
+    part:Mapped[int]=mapped_column(Integer,default=0)
+    next_attempt:Mapped[int]=mapped_column(BigInteger,default=now)
+    __table_args__=(ForeignKeyConstraint(['conversation_id','workspace_id'],['conversations.id','conversations.workspace_id'],ondelete='CASCADE'),
+                   CheckConstraint("status IN ('pending','sent','cancelled','failed')"),
+                   Index('ix_telegram_delivery_pending','status','next_attempt'))

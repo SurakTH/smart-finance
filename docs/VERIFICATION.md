@@ -1,5 +1,15 @@
 # ผลตรวจสอบ Smart Finance
 
+## Telegram ใช้ AI Chat ร่วมกับเว็บ (12 ตุลาคม 2026)
+
+- เปลี่ยนข้อความและรูปพร้อม caption จาก deterministic capture/Inbox เป็น chat job ที่ใช้ workspace routing, history และ assistant tools เดียวกับเว็บ คำตอบและร่างที่ backend ตรวจแล้วส่งกลับ Telegram พร้อมให้พิมพ์ ยืนยัน; ไม่ auto-post
+- เพิ่ม migration `telegram_assistant` และ durable delivery ผูก job/result message โดยตรง ตรวจผู้ใช้/ห้อง/workspace/membership/Telegram link ก่อนส่งทุกส่วน; retry และแบ่งข้อความยาวครบ ยืนยันไม่ได้ก่อนส่งข้อความทวนล่าสุดครบ การรับ update ซ้ำไม่ enqueue/post ซ้ำ
+- PostgreSQL disposable ชุดรวม **466 passed**; ชุด Telegram/natural capture/security **37 passed** ก่อนแก้ cleanup ของ test fixture สำหรับชุดรวม; TypeScript ผ่าน มี Starlette/httpx deprecation warning เดิม 1 รายการ
+- Docker build API/worker/migrate และ Next.js production ผ่าน; ไม่เปิด stack ใหม่ทับฐานข้อมูลผู้ใช้ในเครื่องพัฒนา
+- ครอบคลุม caption และ image ถึง model transport, ร่าง 212 บาทและยืนยันแบบไม่ใส่รหัส, duplicate update, ประวัติคุยต่อ, revoke/unlink/relink/erase, network retry/restart, ข้อความยาวครบและ safe error รวม aiogram handler/lifecycle
+- ไม่เรียก Telegram หรือโมเดลจริงในการทดสอบ จึงไม่รับรอง OCR/ภาษา/provider ของผู้ใช้ การส่ง Telegram เป็น at-least-once อาจเห็นส่วนข้อความซ้ำเมื่อ crash หลังส่งก่อน acknowledge; ledger ยังคง idempotent ต้องใช้โมเดล Chat ที่รองรับภาพสำหรับสลิป Telegram ไม่มี stop button/Markdown; ขั้น 3 จาก 4 (ฟีเจอร์เชื่อมแล้ว ยังต้องตรวจปลายทางจริง)
+
+
 ## CD อัตโนมัติบน Ubuntu self-hosted runner (12 ตุลาคม 2026)
 
 - เพิ่ม deploy-home เฉพาะ trusted main หลัง verify/publish ผ่าน และเปิด AUTO_DEPLOY=true เท่านั้น; PR ยังทดสอบบน GitHub-hosted runner ใช้ image tags ตาม SHA เดียวกับ checkout

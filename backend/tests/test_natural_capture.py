@@ -133,14 +133,26 @@ def test_casual_questions_and_examples_are_not_capture_commands(actor,text):
  assert count(w)==0
 
 
-def test_telegram_missing_details_still_asks_when_chat_model_configured(actor):
+def test_telegram_missing_details_use_shared_chat_model_when_configured(actor,monkeypatch):
  from app.models import Provider
  c,w,u,b,cid=setup(actor);tid=int(uuid.uuid4().hex[:12],16)
  c.post(b+'/accounts',json={'name':'ธนาคาร','kind':'asset'})
  with SessionLocal.begin() as db:
   db.add(TelegramLink(telegram_id=str(tid),workspace_id=w,user_id=u.id))
   db.add(Provider(workspace_id=w,kind='ollama',model='test',task='chat',priority=1,encrypted_key=''))
+ from app.telegram_chat import ACK
+ from app import ai
+ from app.assistant_response import AssistantReply
+ import json
+ monkeypatch.setattr(ai,'call_model',lambda db,job:(AssistantReply('',draft=json.dumps({'intent':'clarify','kind':'expense','amount':7500,'description':'กาแฟ','reply':'ใช้บัญชีไหนคะ?'})),False))
  with SessionLocal.begin() as db:reply=text_capture(db,tid,1,'กาแฟ 75 บาท')
- assert 'ใช้บัญชีไหน' in reply
- with SessionLocal.begin() as db:review=text_capture(db,tid,2,'เงินสดจ้า')
- assert 'กรุณาตรวจสอบ' in review and count(w)==0
+ assert reply==ACK
+ with SessionLocal.begin() as db:
+  job=db.scalar(select(Job).where(Job.workspace_id==w,Job.status=='pending'))
+  assert job.task=='chat' and job.payload['routing']=='workspace'
+  room=job.payload['conversation_id'];jid=job.id;ai.process_job(db,job)
+ with SessionLocal() as db:
+  reply=db.scalars(select(Message).where(Message.conversation_id==room,Message.role=='assistant')).first()
+  assert 'บัญชี' in reply.content
+ assert count(w)==0
+ with SessionLocal.begin() as db:db.delete(db.get(Job,jid))

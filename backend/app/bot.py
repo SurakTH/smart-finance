@@ -7,9 +7,8 @@ from aiogram.filters import CommandStart, Command
 from aiogram.types import Message as TGMessage
 from sqlalchemy import select, delete
 from .db import SessionLocal
-from .models import LinkCode, TelegramLink, Membership, Workspace, Conversation, Message, now, message_time
+from .models import LinkCode, TelegramLink, Membership, Workspace, now
 from .security import digest
-from .main import enqueue, store_image
 
 dp = Dispatcher()
 
@@ -38,7 +37,7 @@ async def start(message: TGMessage):
             db.execute(delete(TelegramLink).where(TelegramLink.telegram_id==str(message.from_user.id)))
             db.add(TelegramLink(telegram_id=str(message.from_user.id),workspace_id=code.workspace_id,user_id=code.user_id))
             db.delete(code); success=True
-    await message.answer('เชื่อมต่อแล้ว ส่งข้อความหรือรูปได้ ส่งรายจ่าย เช่น กาแฟ 75 จากเงินสด แล้วตรวจและพิมพ์ยืนยันพร้อมรหัสในแชทนี้ได้ รูปสลิปตรวจและยืนยันบนเว็บ ข้อมูลที่ส่งผ่านบอตจะผ่าน Telegram' if success else 'รหัสไม่ถูกต้องหรือหมดอายุ')
+    await message.answer('เชื่อมต่อแล้วค่ะ คุยกับฉันได้เลย เช่น ถามยอดเงิน หรือส่งรูปสลิปพร้อมคำบรรยาย ฉันจะใช้ AI ตามที่ตั้งไว้ในพื้นที่นี้ ถ้าต้องบันทึกหรือแก้ข้อมูล ฉันจะทวนให้ตรวจ แล้วรอคุณพิมพ์ ยืนยัน ก่อนค่ะ ข้อความและรูปช่องทางนี้ผ่าน Telegram' if success else 'รหัสไม่ถูกต้องหรือหมดอายุ')
 
 @dp.message(Command('unlink'))
 async def unlink(message: TGMessage):
@@ -48,59 +47,43 @@ async def unlink(message: TGMessage):
     await message.answer('ยกเลิกการเชื่อมต่อแล้ว')
 
 def text_capture(db,telegram_id,message_id,text):
-    from uuid import uuid5,NAMESPACE_URL
-    from .chat_actions import handle
-    from .chat_privacy import expired,erase
-    link=linked(db,telegram_id)
-    if not link:return 'กรุณาเชื่อมต่อจากเว็บก่อน'
-    if len(text)>4000:return 'ข้อความยาวเกิน 4,000 ตัวอักษร กรุณาส่งครั้งละหนึ่งรายการ'
-    prefix=f'telegram:{telegram_id}:{link.user_id}:{link.workspace_id}:'
-    cid=str(uuid5(NAMESPACE_URL,prefix+'room'))
-    input_id=str(uuid5(NAMESPACE_URL,prefix+str(message_id)+':input'))
-    reply_id=str(uuid5(NAMESPACE_URL,prefix+str(message_id)+':reply'))
-    previous=db.get(Message,reply_id)
-    if previous:return previous.content
-    c=db.get(Conversation,cid)
-    if c and expired(db,c):erase(db,c);c=None
-    if not c:
-        c=Conversation(id=cid,workspace_id=link.workspace_id,user_id=link.user_id,title='Telegram · บันทึก',privacy='private');db.add(c);db.flush()
-    c.updated_at=now()
-    db.add(Message(id=input_id,workspace_id=c.workspace_id,conversation_id=c.id,role='user',content=text,created_at=message_time(db,c.workspace_id,c.id)));db.flush()
-    reply=handle(db,c,link.user_id,text)
-    if reply is None:
-        enqueue(db,c.workspace_id,link.user_id,'extract',{'text':text,'privacy':'private'})
-        reply='รับข้อมูลแล้ว กรุณาตรวจสอบ AI Inbox บนเว็บก่อนยืนยัน ไม่มีการบันทึกยอดอัตโนมัติ'
-    message=Message(id=reply_id,workspace_id=c.workspace_id,conversation_id=c.id,role='assistant',content=reply,created_at=message_time(db,c.workspace_id,c.id))
-    db.add(message);db.flush()
-    from .chat_actions import bind_review
-    bind_review(db,c,link.user_id,message)
-    return reply
+    from .telegram_chat import submit
+    return submit(db,telegram_id,message_id,text)
 
 @dp.message(F.text | F.photo)
 async def capture(message: TGMessage, bot: Bot):
     if message.chat.type!='private': return
     with SessionLocal() as db: link=linked(db,message.from_user.id)
     if not link:
-        await message.answer('กรุณาเชื่อมต่อจากเว็บก่อน'); return
-    if message.text and not message.photo:
-        with SessionLocal.begin() as db:
-            reply=text_capture(db,message.from_user.id,message.message_id,message.text)
-        # Telegram limits replies to 4096 characters. Keep the review and code together.
-        await message.answer(reply[:4000]); return
-    data = None
+        await message.answer('กรุณาเชื่อมต่อจากเว็บก่อนค่ะ'); return
+    data=None
     if message.photo:
         if (message.photo[-1].file_size or 0)>8*1024*1024:
             await message.answer('รูปต้องไม่เกิน 8 MB'); return
-        buf=io.BytesIO(); await bot.download(message.photo[-1],destination=buf); data=buf.getvalue()
+        buf=io.BytesIO()
+        await bot.download(message.photo[-1],destination=buf)
+        data=buf.getvalue()
+    from .telegram_chat import submit
+    text=(message.caption or '') if message.photo else (message.text or '')
     with SessionLocal.begin() as db:
-        link=linked(db,message.from_user.id)
-        if not link: return
-        if data:
-            image,duplicate=store_image(db,link.workspace_id,data)
-            if not duplicate: enqueue(db,link.workspace_id,link.user_id,'extract',{'attachment_id':image.id,'privacy':'private'})
-        else:
-            enqueue(db,link.workspace_id,link.user_id,'extract',{'text':(message.text or '')[:4000],'privacy':'private'})
-    await message.answer('รับข้อมูลแล้ว กรุณาตรวจสอบ AI Inbox บนเว็บก่อนยืนยัน ไม่มีการบันทึกยอดอัตโนมัติ')
+        reply=submit(db,message.from_user.id,message.message_id,text,data)
+    # Keep long reviews complete, including the confirmation instructions.
+    for offset in range(0,len(reply),3500):
+        await message.answer(reply[offset:offset+3500],parse_mode=None)
+
+async def start_delivery(bot: Bot):
+    from .telegram_chat import delivery_loop
+    dp['delivery_task']=asyncio.create_task(delivery_loop(bot))
+
+async def stop_delivery():
+    task=dp.get('delivery_task')
+    if task:
+        task.cancel()
+        try: await task
+        except asyncio.CancelledError: pass
+
+dp.startup.register(start_delivery)
+dp.shutdown.register(stop_delivery)
 
 if __name__=='__main__':
     # aiogram request URLs contain bot tokens; keep library logs off.

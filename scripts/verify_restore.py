@@ -15,7 +15,7 @@ try:
     run(['createdb','-U','finance',name]);created=True
     with dumps[-1].open('rb') as data:
         run(['pg_restore','-U','finance','-d',name],stdin=data)
-    for table in ('users','workspaces','accounts','entries','lines','attachments','proposals','providers','ai_settings','budgets','entry_revisions','goals','goal_movements','recurring_rules','recurring_occurrences','memberships','invitations','membership_events','conversations','messages','jobs','chat_generations','chat_preferences','chat_actions','assistant_changes','email_tokens','assistant_preferences','ai_usage_policies','ai_usage'):
+    for table in ('users','workspaces','accounts','entries','lines','attachments','proposals','providers','ai_settings','budgets','entry_revisions','goals','goal_movements','recurring_rules','recurring_occurrences','memberships','invitations','membership_events','conversations','messages','jobs','chat_generations','telegram_deliveries','chat_preferences','chat_actions','assistant_changes','email_tokens','assistant_preferences','ai_usage_policies','ai_usage'):
         sql=f'SELECT count(*) FROM {table}'
         live=run(['psql','-U','finance','-d','finance','-Atc',sql]).stdout
         restored=run(['psql','-U','finance','-d',name,'-Atc',sql]).stdout

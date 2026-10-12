@@ -976,7 +976,7 @@ export default function Finance() {
                 <h3 id="telegram-settings">เชื่อม Telegram</h3>
                 <p className="muted small">
                   ข้อความและรูปผ่านเซิร์ฟเวอร์ Telegram
-                  ยืนยันรายการบนเว็บเท่านั้น รหัสใช้ครั้งเดียว หมดอายุใน 10 นาที
+                  คุยกับ AI และส่งรูปพร้อมคำบรรยายได้ บอตจะทวนก่อนให้พิมพ์ ยืนยัน รหัสเชื่อมต่อใช้ครั้งเดียว หมดอายุใน 10 นาที
                 </p>
                 <div className="flex gap-2 flex-wrap">
                   <Button

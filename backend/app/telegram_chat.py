@@ -6,7 +6,8 @@ from sqlalchemy import select
 from .db import SessionLocal
 from .models import Conversation, Message, Job, TelegramDelivery, TelegramLink, Membership, Workspace, now, message_time
 
-ACK = 'ได้ค่ะ กำลังดูให้สักครู่นะคะ ถ้ามีรายการให้บันทึก ฉันจะทวนให้ตรวจและรอให้คุณพิมพ์ ยืนยัน ก่อนค่ะ'
+# Pending jobs stay silent; the durable outbox sends the actual AI reply.
+ACK = ''
 
 
 def submit(db, telegram_id, message_id, text, data=None):

@@ -1,5 +1,10 @@
 # ผลตรวจสอบ Smart Finance
 
+## Telegram ไม่ส่งข้อความรับเรื่องซ้ำ (12 ตุลาคม 2026)
+
+- งานเข้าคิวหรือ update ซ้ำที่ยังไม่มีผลตอบกลับ ไม่ส่งข้อความ ACK รับเรื่อง ให้ durable outbox ส่งคำตอบจริงตามเดิม ข้อความทวน/คำถามเพิ่ม/ผลยืนยัน/ข้อผิดพลาดยังส่งได้
+- focused Telegram และ natural capture **35 passed** รวม photo handler ไม่ส่ง ACK แต่ยังสร้าง chat job พร้อม caption/image และ outbox ส่งร่างก่อน plain confirmation ได้ ไม่มี schema/frontend changes ไม่เรียก Telegram/provider จริง
+
 ## เริ่มห้อง Telegram ใหม่และบริบทแชทยาว (12 ตุลาคม 2026)
 
 - เพิ่ม /new และ /reset รวม bot mention ใช้ active conversation pointer ใน TelegramLink พร้อม migration `telegram_rooms` ห้องเดิมยังอยู่บนเว็บ; ยกเลิก pending ChatAction, stop/cancel งานเดิมและ outbox เดิม ล้างข้อมูลถามต่อของห้องเก่า ไม่เปลี่ยน ledger/preferences

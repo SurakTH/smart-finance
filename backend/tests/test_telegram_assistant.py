@@ -141,7 +141,7 @@ def test_photo_handler_passes_caption_and_starts_delivery_background(channel):
     message=SimpleNamespace(chat=SimpleNamespace(type='private'),from_user=SimpleNamespace(id=tid),
         photo=[SimpleNamespace(file_size=100)],caption='ค่าหนังสือ',text=None,message_id=77,answer=answer)
     asyncio.run(receive(message,Bot()))
-    assert replies==[ACK]
+    assert replies==[]
     with SessionLocal() as db:
         job=db.scalar(select(Job).where(Job.workspace_id==w))
         assert job.payload['text']=='ค่าหนังสือ' and job.payload['attachment_id']

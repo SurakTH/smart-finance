@@ -14,8 +14,8 @@ test('public signup follows server setting and keeps accounts isolated',async({p
   await page.getByLabel('ยืนยันรหัสผ่าน',{exact:true}).fill(password);await page.getByRole('button',{name:'สร้างบัญชีส่วนตัว',exact:true}).click();await expect(page.getByRole('heading',{name:'การเงินของคุณ',exact:true})).toBeVisible();
   const spaces=await(await page.request.get('/api/workspaces')).json();expect(spaces).toHaveLength(1);const wid=spaces[0].id;expect((await(await page.request.get(`/api/workspaces/${wid}/transactions`)).json())).toEqual([]);
   const friend=await browser.newContext();try{
-   const response=await friend.request.post('http://localhost:8080/api/auth/register',{headers:{'X-SF-Request':'1'},data:{email:crypto.randomUUID()+'@example.test',password,confirm_password:password}});expect(response.status()).toBe(201);const own=await response.json();expect(own.workspace_id).not.toBe(wid);
-   expect((await friend.request.get(`http://localhost:8080/api/workspaces/${wid}/accounts`)).status()).toBe(404);expect((await page.request.get(`/api/workspaces/${own.workspace_id}/accounts`)).status()).toBe(404);
+   const response=await friend.request.post((process.env.SF_BASE_URL||'http://localhost:8080')+'/api/auth/register',{headers:{'X-SF-Request':'1'},data:{email:crypto.randomUUID()+'@example.test',password,confirm_password:password}});expect(response.status()).toBe(201);const own=await response.json();expect(own.workspace_id).not.toBe(wid);
+   expect((await friend.request.get(`${process.env.SF_BASE_URL||'http://localhost:8080'}/api/workspaces/${wid}/accounts`)).status()).toBe(404);expect((await page.request.get(`/api/workspaces/${own.workspace_id}/accounts`)).status()).toBe(404);
   }finally{await friend.close();}
   await page.request.post('/api/auth/logout',{headers:{'X-SF-Request':'1'}});await page.goto('/');await page.getByLabel('อีเมล',{exact:true}).fill(email);await page.getByLabel('รหัสผ่าน',{exact:true}).fill(password);await page.getByRole('button',{name:'เข้าสู่ระบบ',exact:true}).click();await expect(page.getByRole('heading',{name:'การเงินของคุณ',exact:true})).toBeVisible();
  }

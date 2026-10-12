@@ -1,5 +1,27 @@
 # GitHub CI/CD
 
+## วิธีที่แนะนำสำหรับเครื่องในบ้าน: CI อัตโนมัติ + อัปเดตด้วย pull
+
+ทุกครั้งที่ push `main` GitHub จะทดสอบให้เอง เมื่อ `verify` ผ่านจึงทำ `publish` เผยแพร่ images ส่วน `deploy` ขึ้น skipped เป็นปกติ เพราะไม่ได้เปิดให้อัปเดต server ทุก push สีเขียวของ Dependabot เป็นงานดูแล dependencies แยกจาก workflow Smart Finance
+
+สำหรับ server ที่เข้าได้ผ่าน LAN/Tailscale และมี Nginx Proxy Manager อยู่คนละ VM ใช้วิธี pull ต่อได้เลย ไม่ต้องเพิ่ม SSH secrets หรือเปิดพอร์ตเข้าบ้านให้ GitHub ตรวจ run ของ commit ที่จะอัปเดตว่า `verify` และ `publish` เป็นสีเขียวก่อน แล้วทำบน server:
+
+```sh
+cd ~/my_docker/smart-finance
+git pull --ff-only
+docker compose build
+docker compose stop api worker telegram
+sh scripts/backup.sh
+docker compose up -d
+docker compose ps
+```
+
+หยุดตัวเขียนข้อมูลหลัง build เสร็จ เพื่อลดเวลาที่เว็บใช้งานไม่ได้ หาก backup ไม่ผ่านให้หยุดตรวจสาเหตุก่อนสั่ง up ถ้าเปิด Telegram อยู่ ให้เปิดกลับด้วย `docker compose --profile telegram up -d` ใช้ `.env`, Compose project และ volumes เดิมตลอด ถ้าเลือก compose.nginx.yaml อยู่แล้ว ให้ใช้ไฟล์ชุดเดิมกับทุกคำสั่ง ไม่ต้องแก้ Nginx Proxy Manager เมื่ออัปเดตแอป
+
+ขั้นนี้เป็น CI อัตโนมัติพร้อมอัปเดต server ด้วยมือ หากต้องการกด deploy จาก GitHub ให้ทำหัวข้อ SSH ด้านล่าง ซึ่งต้องมีเส้นทางจาก runner ถึง server จริงก่อน
+
+ชุด browser tests เลือก workspace demo อย่างชัดเจน ไม่อาศัยลำดับ workspace ที่ข้ออื่นสร้าง และใช้เขตเวลา Asia/Bangkok; ทดสอบ provider settings ด้วย URL จำลองเฉพาะพื้นที่ของข้อนั้น ไม่เรียก AI ภายนอกเพื่อให้ CI ผ่าน
+
 วางเนื้อหาโฟลเดอร์ `smart-finance` ที่ root ของ repo (`backend/`, `frontend/`, `.github/` อยู่ที่ root) ไม่อัปโหลด `.env`, artifacts, backups, ฐานข้อมูล, node_modules หรือ .venv
 
 ## CI และ images

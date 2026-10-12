@@ -1,5 +1,12 @@
 # ผลตรวจสอบ Smart Finance
 
+## แก้ browser CI ที่ล้มต่อเนื่อง (12 ตุลาคม 2026)
+
+- ตรวจ log จริงของ GitHub Actions run `38159134253` (commit `078a1b9`): build/backend/types ผ่าน; browser 53 ผ่าน 7 ล้ม ทำให้ publish/deploy ถูกข้าม สาเหตุเริ่มจาก service count เก่า 14 แทน 15 และ test เลือก workspace ใหม่จากข้อก่อนหน้า ซึ่งมีข้อมูลว่างหรือ provider URL จำลอง ก่อนเกิด login failure ต่อเนื่อง
+- helper เลือก workspace demo ที่ seed ไว้ชัดเจนก่อนเริ่มแต่ละข้อ; session อยู่ใน memory ตามเดิม ไม่ลด production login throttling; browser timezone Asia/Bangkok และ separate-context tests ใช้ SF_BASE_URL ได้ครบ
+- รัน browser suite เต็มบน stack disposable `sf-ci-check` ที่พอร์ต 18080 พร้อม PostgreSQL/Redis/credentials ใหม่ โดยใช้ application images ของ commit เดิม: **60 passed (3.0m)**, desktop 30 และ mobile 30 รวมรายงาน บริการ ยืนยันแชท การตั้งค่า AI สมาชิก และ PWA; TypeScript ผ่านและ deployment helper tests **2 passed**
+- ไม่มีการเปลี่ยน application runtime/schema, ไม่เรียกโมเดลจริง, ไม่ deploy Ubuntu; เพิ่มคู่มือ CI อัตโนมัติ + pull บน server ที่ใช้ LAN/Tailscale/Nginx Proxy Manager ใน CICD.md ผลข้างต้นเป็น local replica ส่วนผล run บน GitHub ต้องดูแยกตาม commit
+
 
 ## Ollama หลายเครื่องและ Custom HTTP (11 ตุลาคม 2026)
 

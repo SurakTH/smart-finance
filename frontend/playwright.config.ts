@@ -8,6 +8,7 @@ export default defineConfig({
   reporter: "list",
   outputDir: "../artifacts/browser-tests",
   use: {
+    timezoneId: 'Asia/Bangkok',
     baseURL: process.env.SF_BASE_URL || "http://localhost:8080",
     trace: "off",
     video: "off",

@@ -1,5 +1,11 @@
 # ผลตรวจสอบ Smart Finance
 
+## CD อัตโนมัติบน Ubuntu self-hosted runner (12 ตุลาคม 2026)
+
+- เพิ่ม deploy-home เฉพาะ trusted main หลัง verify/publish ผ่าน และเปิด AUTO_DEPLOY=true เท่านั้น; PR ยังทดสอบบน GitHub-hosted runner ใช้ image tags ตาม SHA เดียวกับ checkout
+- deploy helper tests **5 passed**: รวมการปฏิเสธ ref/commit/path/config ที่ไม่ถูกต้อง, registry token ทาง stdin ไม่อยู่ใน argv/env ของ subprocess ลูก, login ชั่วคราวถูกลบทั้ง success/failure, server .env เดิมไม่ถูกแทน, Telegram กลับมาพร้อมบริการเดิม, backup ก่อน upgrade และ backup failure เปิดตัวเขียนเดิมกลับโดยไม่ migration
+- ตรวจ bash syntax และ actionlint (custom runner label smart-finance) ก่อน push; ไม่เปลี่ยน application runtime/schema ไม่ติดตั้ง runner หรือ deploy จริงจากเครื่องพัฒนา ต้องตั้ง runner และ repository variables บนเครื่องผู้ใช้ก่อน
+
 ## แก้ browser CI ที่ล้มต่อเนื่อง (12 ตุลาคม 2026)
 
 - ตรวจ log จริงของ GitHub Actions run `38159134253` (commit `078a1b9`): build/backend/types ผ่าน; browser 53 ผ่าน 7 ล้ม ทำให้ publish/deploy ถูกข้าม สาเหตุเริ่มจาก service count เก่า 14 แทน 15 และ test เลือก workspace ใหม่จากข้อก่อนหน้า ซึ่งมีข้อมูลว่างหรือ provider URL จำลอง ก่อนเกิด login failure ต่อเนื่อง

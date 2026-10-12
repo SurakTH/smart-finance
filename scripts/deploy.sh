@@ -3,7 +3,7 @@
 set -euo pipefail
 umask 077
 cd "$(dirname "$0")/.."
-root=/opt/smart-finance
+root=${SF_DEPLOY_ROOT:-/opt/smart-finance}
 sha=${1:?commit required}
 export BACKEND_IMAGE=${2:?backend image required}
 export WEB_IMAGE=${3:?web image required}
@@ -15,9 +15,16 @@ flock -n 9 || { echo 'Another deployment is running'; exit 2; }
 ln -sfn "$root/.env" .env
 mkdir -p "$root/backups"
 ln -sfn "$root/backups" backups
-export COMPOSE_FILE=compose.yaml:compose.nginx.yaml:compose.release.yaml
+export COMPOSE_PROJECT_NAME=smart-finance
+export COMPOSE_FILE=compose.yaml:compose.release.yaml
+if [[ "${SF_DEPLOY_GATEWAY:-nginx}" == nginx ]]; then
+    export COMPOSE_FILE=compose.yaml:compose.nginx.yaml:compose.release.yaml
+elif [[ "${SF_DEPLOY_GATEWAY}" != caddy ]]; then
+    echo 'Unsupported gateway'; exit 2
+fi
 # Require explicit production configuration without printing the merged config.
 docker compose config -q
+if [[ "${SF_DEPLOY_LOCAL:-0}" != 1 ]]; then
 python3 - <<'PY'
 from pathlib import Path
 values={}
@@ -27,6 +34,7 @@ for line in Path('.env').read_text().splitlines():
 if not values.get('APP_ORIGIN','').startswith('https://') or values.get('COOKIE_SECURE')!='true' or values.get('BIND_ADDRESS','127.0.0.1')!='127.0.0.1':
     raise SystemExit('Production requires HTTPS APP_ORIGIN, COOKIE_SECURE=true and loopback gateway')
 PY
+fi
 docker compose pull api worker migrate web proxy
 # Preserve the Telegram profile when it was already running.
 services=(api worker web proxy)

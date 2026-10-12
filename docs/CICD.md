@@ -1,6 +1,35 @@
 # GitHub CI/CD
 
-## วิธีที่แนะนำสำหรับเครื่องในบ้าน: CI อัตโนมัติ + อัปเดตด้วย pull
+## อัตโนมัติบน Ubuntu ในบ้าน — ตั้งครั้งเดียว
+
+หลังเปิดใช้: push main → ทดสอบบน GitHub → publish images → runner บน Ubuntu ดึง images ของ commit เดียวกัน → สำรองฐานข้อมูล → migrate/เปิดแอป → ตรวจ health ไม่ build บน server และไม่ต้อง pull เอง ไม่มีการเปิด SSH จากอินเทอร์เน็ต; runner เป็นตัวเชื่อมออกไป GitHub
+
+1. เปิด repo → Settings → Actions → Runners → New self-hosted runner → Linux / x64 แล้วคัดลอกคำสั่ง Download และ Configure จาก GitHub ไปรันบน Ubuntu ด้วย user `surak` ที่เรียก Docker ได้ ใช้โฟลเดอร์ runner แยก เช่น `~/actions-runner` ไม่ติดตั้งในโฟลเดอร์แอป เมื่อ Configure ถาม additional labels ให้ใส่ **`smart-finance`** ไม่ต้องส่ง registration token ให้ผู้อื่น
+2. ในโฟลเดอร์ runner ที่ Configure เสร็จแล้ว เปิดเป็น service:
+
+   ```sh
+   sudo ./svc.sh install surak
+   sudo ./svc.sh start
+   ```
+
+   ตรวจ GitHub หน้า Runners ให้ขึ้น **Idle** runner นี้มีสิทธิ์ Docker และอ่าน config ของแอปได้ จึงใช้กับ repo ส่วนตัวที่ไว้ใจและเฉพาะ deploy main; verify/PR ยังรันบน GitHub-hosted Ubuntu
+3. Repo → Settings → Secrets and variables → Actions → **Variables** → New repository variable เพิ่ม:
+
+   | Name | Value |
+   |---|---|
+   | `LOCAL_DEPLOY_PATH` | `/home/surak/my_docker/smart-finance` |
+   | `AUTO_DEPLOY` | `true` |
+
+   ใช้ path ของแอปเดิมที่มี `.env` และ compose.yaml; ไม่ใส่ `~` หากใช้ gateway ภายในแอปเป็น Nginx (compose.nginx.yaml) ให้เพิ่ม `LOCAL_DEPLOY_GATEWAY=nginx` ค่าเริ่มต้น `caddy` ตรงกับการติดตั้งเดิม ส่วน Nginx Proxy Manager อีก VM ใช้ค่าเดิมต่อได้ ทั้ง IP, LAN, Tailscale และ HTTPS ใช้ `.env` เดิม ไม่มีการบังคับเปลี่ยน domain/cookie/network
+4. ครั้งแรกเลือก Actions → Smart Finance → Run workflow → main → ติ๊ก **deploy** → Run หลังจากนั้น push main ที่ผ่านจะ deploy อัตโนมัติ หาก production environment มี required reviewer จะยังรออนุมัติตามการตั้งค่านั้น
+
+ไม่ต้องสร้าง PAT/SSH secrets: deploy ใช้ GITHUB_TOKEN อายุสั้นพร้อม `packages:read` และเก็บ Docker login ในโฟลเดอร์ชั่วคราว จากนั้นลบทิ้ง หาก private package แจ้ง permission denied ให้ตรวจ package → Settings → Manage Actions access ว่า repo นี้มี read access
+
+Source ของแต่ละ release อยู่ `<LOCAL_DEPLOY_PATH>/releases/<sha>`; `.env` และ backups ยังคงอยู่ที่โฟลเดอร์แอปเดิม ใช้ Compose project `smart-finance` และ volumes เดิม ไม่แก้ checkout เดิมบน server; `<LOCAL_DEPLOY_PATH>/current-commit` บอกเวอร์ชันที่ deploy ผ่าน health แล้ว หาก backup ล้มก่อน migration จะเปิดตัวเขียนข้อมูลเดิมกลับ หาก migrate/health ล้มจะหยุดรายงาน failure และเก็บ backup ไม่ restore/downgrade อัตโนมัติ อาจมี downtime ช่วงอัปเกรด
+
+ปิดอัปเดตอัตโนมัติได้โดยเปลี่ยน `AUTO_DEPLOY=false` การตั้ง runner/variables และ deploy จริงบน Ubuntu ต้องทำตามขั้นตอนนี้ก่อน ไม่ได้เปิดไว้โดยอัตโนมัติจากการ push source
+
+## ทางเลือก: CI อัตโนมัติ + อัปเดตด้วย pull
 
 ทุกครั้งที่ push `main` GitHub จะทดสอบให้เอง เมื่อ `verify` ผ่านจึงทำ `publish` เผยแพร่ images ส่วน `deploy` ขึ้น skipped เป็นปกติ เพราะไม่ได้เปิดให้อัปเดต server ทุก push สีเขียวของ Dependabot เป็นงานดูแล dependencies แยกจาก workflow Smart Finance
 

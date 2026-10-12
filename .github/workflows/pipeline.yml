@@ -100,7 +100,7 @@ jobs:
         if: always()
         run: docker logout ghcr.io
   deploy:
-    if: github.event_name == 'workflow_dispatch' && inputs.deploy && github.ref == 'refs/heads/main'
+    if: vars.AUTO_DEPLOY != 'true' && github.event_name == 'workflow_dispatch' && inputs.deploy && github.ref == 'refs/heads/main'
     needs: [verify, publish]
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -122,3 +122,25 @@ jobs:
           persist-credentials: false
       - name: Transfer exact source and deploy through verified SSH
         run: python3 scripts/ci_deploy.py
+  deploy-home:
+    if: vars.AUTO_DEPLOY == 'true' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy))
+    needs: [verify, publish]
+    runs-on: [self-hosted, linux, x64, smart-finance]
+    timeout-minutes: 20
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Deploy tested images on the home server
+        env:
+          LOCAL_DEPLOY_PATH: ${{ vars.LOCAL_DEPLOY_PATH }}
+          LOCAL_DEPLOY_GATEWAY: ${{ vars.LOCAL_DEPLOY_GATEWAY }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/deploy_local.py

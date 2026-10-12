@@ -1,5 +1,14 @@
 # ผลตรวจสอบ Smart Finance
 
+## เริ่มห้อง Telegram ใหม่และบริบทแชทยาว (12 ตุลาคม 2026)
+
+- เพิ่ม /new และ /reset รวม bot mention ใช้ active conversation pointer ใน TelegramLink พร้อม migration `telegram_rooms` ห้องเดิมยังอยู่บนเว็บ; ยกเลิก pending ChatAction, stop/cancel งานเดิมและ outbox เดิม ล้างข้อมูลถามต่อของห้องเก่า ไม่เปลี่ยน ledger/preferences
+- ป้องกัน reset update retry สร้างห้องซ้ำ/ย้อน pointer; ผู้รับ/owner/workspace ของ pointer ตรวจซ้ำก่อนใช้ ข้อความที่ถึง Telegram แล้วเรียกคืนไม่ได้ และการตัด socket provider เป็น best effort แต่ final context/stop fence ป้องกันร่างที่มาช้าหลัง reset
+- เพิ่ม context helper ร่วมทั้งเว็บ/Telegram: ประวัติสูงสุด20ข้อความ/24,000ตัวอักษร + local extractive notes จากข้อความผู้ใช้เก่าสูงสุด8ข้อ ข้อละ180ตัวอักษร JSONรวมไม่เกิน2,400 ไม่เรียกโมเดลเพิ่ม ไม่รวมคำสั่งยืนยัน/ยกเลิก/bot และไม่ใช้คำตอบเก่าโมเดลเป็นความจริง ส่ง notes ใน role=user ไม่ใช่ system instruction ไม่มี semantic summary ของประวัติทั้งหมดหรือ hard token cap ทั้ง request
+- PostgreSQL disposable ทั้งชุด **472 passed** (warning Starlette/httpx เดิม1รายการ); focused Telegram/context/natural capture **37 passed** Docker API/worker/migrate build ผ่าน Frontend runtime ไม่เปลี่ยน ไม่เรียก Telegram/provider จริง ไม่ deploy Ubuntu จากเครื่องนี้
+- ทดสอบ reset หลังร่างพร้อม/ระหว่าง inference/ขณะ queued, ยืนยันร่างเก่าไม่ได้, ประวัติอยู่ครบ, ledger เดิมอยู่ครบ, duplicate reset ไม่เปลี่ยนห้องซ้ำ, context budget/tenant-room scope และไม่แก้ข้อความต้นฉบับ ปรับการตรวจ prompt budget เดิมให้ตรวจ recent history และ notes แยกตามขอบเขตใหม่
+
+
 ## Telegram ใช้ AI Chat ร่วมกับเว็บ (12 ตุลาคม 2026)
 
 - เปลี่ยนข้อความและรูปพร้อม caption จาก deterministic capture/Inbox เป็น chat job ที่ใช้ workspace routing, history และ assistant tools เดียวกับเว็บ คำตอบและร่างที่ backend ตรวจแล้วส่งกลับ Telegram พร้อมให้พิมพ์ ยืนยัน; ไม่ auto-post

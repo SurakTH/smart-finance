@@ -15,7 +15,7 @@ try:
     run(['createdb','-U','finance',name]);created=True
     with dumps[-1].open('rb') as data:
         run(['pg_restore','-U','finance','-d',name],stdin=data)
-    for table in ('users','workspaces','accounts','entries','lines','attachments','proposals','providers','ai_settings','budgets','entry_revisions','goals','goal_movements','recurring_rules','recurring_occurrences','memberships','invitations','membership_events','conversations','messages','jobs','chat_generations','telegram_deliveries','chat_preferences','chat_actions','assistant_changes','email_tokens','assistant_preferences','ai_usage_policies','ai_usage'):
+    for table in ('users','workspaces','accounts','entries','lines','attachments','proposals','providers','ai_settings','budgets','entry_revisions','goals','goal_movements','recurring_rules','recurring_occurrences','memberships','invitations','membership_events','conversations','messages','jobs','chat_generations','telegram_deliveries','telegram_links','chat_preferences','chat_actions','assistant_changes','email_tokens','assistant_preferences','ai_usage_policies','ai_usage'):
         sql=f'SELECT count(*) FROM {table}'
         live=run(['psql','-U','finance','-d','finance','-Atc',sql]).stdout
         restored=run(['psql','-U','finance','-d',name,'-Atc',sql]).stdout
@@ -41,9 +41,10 @@ try:
     usage_policy='SELECT workspace_id,monthly_limit,prices FROM ai_usage_policies ORDER BY workspace_id'
     usage='SELECT id,workspace_id,provider_id,model,task,month,input_tokens,output_tokens,cost,estimated,status,created_at FROM ai_usage ORDER BY id'
     generations='SELECT job_id,conversation_id,stop_requested FROM chat_generations ORDER BY job_id'
+    telegram='SELECT telegram_id,workspace_id,user_id,conversation_id FROM telegram_links ORDER BY telegram_id'
     diagnostics='SELECT id,diagnostics,diagnostics_expires FROM jobs ORDER BY id'
     evidence='SELECT id,"references" FROM messages ORDER BY id'
-    for snapshot in (diagnostics,generations,memory,usage_policy,usage,evidence,assistant_changes,ai_options,ai_providers,email_links,schedules,occurrences,members,invites,privacy,chats,profiles,actions,spaces):
+    for snapshot in (telegram,diagnostics,generations,memory,usage_policy,usage,evidence,assistant_changes,ai_options,ai_providers,email_links,schedules,occurrences,members,invites,privacy,chats,profiles,actions,spaces):
         if run(['psql','-U','finance','-d','finance','-Atc',snapshot]).stdout!=run(['psql','-U','finance','-d',name,'-Atc',snapshot]).stdout: raise RuntimeError('Restored schedule or membership snapshot mismatch')
     print('Restore verified in disposable database: row counts, goal allocations and recurring, membership and AI configuration snapshots match; journals balance.')
 finally:

@@ -42,15 +42,8 @@ def call_model(db, job):
     messages = [];has_images=False
     assistant=bool(job.payload.get('_assistant'))
     if job.task=='chat':
-        history = db.scalars(select(Message).where(Message.workspace_id==job.workspace_id, Message.conversation_id==job.payload['conversation_id']).order_by(Message.created_at.desc(),Message.id.desc()).limit(20)).all()
-        # Keep the newest turns within a total text budget, rather than allowing
-        # twenty individually large messages to grow every provider request.
-        budget=24000;bounded=[]
-        for message in history:
-            size=min(len(message.content),4000)
-            if bounded and size>budget:break
-            bounded.append(message);budget-=size
-        history=bounded
+        from .chat_context import history_and_notes
+        history,older_notes=history_and_notes(db,job.workspace_id,job.payload['conversation_id'])
         from .finance_chat import answer_report
         direct = None if job.payload.get('_dialogue') or (assistant and providers) else answer_report(db,job,history)
         if direct is not None and (not assistant or not providers): return direct, False
@@ -80,6 +73,7 @@ def call_model(db, job):
             messages.append({'role':'system','content':'ยอดสะสมจริงในหน่วยสตางค์ (ไม่ใช่ยอดรายเดือน): '+json.dumps(snapshot,ensure_ascii=False)})
         from .assistant_images import selected_images
         image_ids=selected_images(history,job,db) if assistant else []
+        if older_notes:messages.append({'role':'user','content':older_notes})
         sent_images=set()
         for m in reversed(history):
             content=re.sub(r'\n\nรหัสทางเลือก:\nยืนยัน [A-F0-9]{8}\n$','',m.content)[:4000]

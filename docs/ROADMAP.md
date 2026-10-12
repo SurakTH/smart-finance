@@ -43,3 +43,5 @@
 12 ตุลาคม 2026: แก้ audit ทั้งหกด้าน: grounded answer/scope boundary, กันคำอ้างบันทึกจาก prose และ preview, cache fallback ตามโจทย์, AI Lab ใช้ runtime เดียวกับ synthetic adapter, worker ไม่ถือ workspace write lock ระหว่าง inference พร้อม durable usage reservation/advisory ownership/epoch validation ยังอยู่ขั้น 3 จาก 4 — การรับรอง provider จริงและการขยายภาษาที่รองรับยังต้องตรวจต่อ ไม่ใช้จำนวน unit tests เป็นคะแนนความแม่นยำโมเดล
 
 อัปเดต Telegram (12 ตุลาคม 2026): ข้อความ/รูปพร้อมคำบรรยายใช้ AI Chat runtime, workspace model routing, conversation history และ tools ชุดเดียวกับเว็บแล้ว ทวนและพิมพ์ ยืนยัน ใน Telegram ได้โดยรอส่งทวนครบก่อน มี durable delivery/retry ตรวจสิทธิ์ก่อนส่งและกัน update ซ้ำ Backend 466 tests ผ่าน; ขั้น3/4 ยังต้องตรวจคุณภาพ vision/ภาษาและ delivery กับบริการจริง
+
+อัปเดตบริบทแชท (12 ตุลาคม 2026): Telegram มี /new และ /reset เปิดห้องใหม่ เก็บประวัติเก่า ยกเลิกร่าง/งานค้างและป้องกันคำตอบเก่าสร้างร่างหลัง reset ทั้งเว็บและ Telegram เพิ่มบันทึกย่อแบบ extractive จากข้อความผู้ใช้เก่านอกขอบเขตล่าสุดโดยไม่เรียกโมเดลเพิ่ม ไม่ใช่ semantic summary หรือความจำประวัติทั้งห้อง ยังอยู่ขั้น3/4

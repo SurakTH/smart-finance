@@ -216,6 +216,7 @@ class TelegramLink(Base):
     telegram_id: Mapped[str] = mapped_column(String(30), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(ForeignKey('workspaces.id'))
     user_id: Mapped[str] = mapped_column(ForeignKey('users.id'))
+    conversation_id: Mapped[str | None] = mapped_column(String(36),nullable=True)
 
 class LinkCode(Base):
     __tablename__ = 'link_codes'

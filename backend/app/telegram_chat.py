@@ -1,7 +1,7 @@
 """Telegram uses the web assistant boundary; only reviewed user commands post money."""
 import asyncio
 import re
-from uuid import uuid5, NAMESPACE_URL
+from uuid import uuid4, uuid5, NAMESPACE_URL
 from sqlalchemy import select
 from .db import SessionLocal
 from .models import Conversation, Message, Job, TelegramDelivery, TelegramLink, Membership, Workspace, now, message_time
@@ -20,21 +20,27 @@ def submit(db, telegram_id, message_id, text, data=None):
     if len(text) > 4000:
         return 'ข้อความยาวเกิน 4,000 ตัวอักษร กรุณาแบ่งส่งนะคะ'
     prefix = f'telegram:{telegram_id}:{link.user_id}:{link.workspace_id}:'
-    cid = str(uuid5(NAMESPACE_URL, prefix + 'room'))
+    cid = link.conversation_id or str(uuid5(NAMESPACE_URL, prefix + 'room'))
     input_id = str(uuid5(NAMESPACE_URL, prefix + str(message_id) + ':input'))
     reply_id = str(uuid5(NAMESPACE_URL, prefix + str(message_id) + ':reply'))
     previous = db.get(Message, reply_id)
     if previous:
         return previous.content
     c = db.get(Conversation, cid)
+    if c and (c.workspace_id!=link.workspace_id or c.user_id!=link.user_id):
+        c=None
     if c and expired(db, c):
         erase(db, c)
         c = None
     if not c:
+        if link.conversation_id:cid=str(uuid4())
         c = Conversation(id=cid, workspace_id=link.workspace_id, user_id=link.user_id,
                          title='Telegram · ผู้ช่วย AI', privacy='private')
         db.add(c)
         db.flush()
+    link.conversation_id=c.id
+    if not data and re.fullmatch(r'/(?:new|reset)(?:@[A-Za-z0-9_]+)?',text.strip(),re.I):
+        return reset(db,link,c,message_id,input_id,reply_id,text)
     # Telegram updates can be retried; never enqueue or post twice for one input.
     if db.get(Message, input_id):
         return ACK
@@ -72,6 +78,31 @@ def submit(db, telegram_id, message_id, text, data=None):
     return ACK
 
 
+def reset(db,link,old,message_id,input_id,reply_id,text):
+    """Called under workspace lock: retire drafts/jobs, preserve history and ledger."""
+    from .models import ChatAction,ChatGeneration
+    old.capture_context={'telegram_reset':str(message_id)}
+    for action in db.scalars(select(ChatAction).where(ChatAction.workspace_id==old.workspace_id,
+            ChatAction.conversation_id==old.id,ChatAction.user_id==link.user_id,ChatAction.status=='pending')):
+        action.status='cancelled'
+    for job in db.scalars(select(Job).where(Job.workspace_id==old.workspace_id,Job.user_id==link.user_id,
+            Job.status=='pending',Job.payload['conversation_id'].as_string()==old.id)):
+        control=db.get(ChatGeneration,job.id)
+        if control:control.stop_requested=True
+        job.status='cancelled'
+    for delivery in db.scalars(select(TelegramDelivery).where(TelegramDelivery.workspace_id==old.workspace_id,
+            TelegramDelivery.conversation_id==old.id,TelegramDelivery.user_id==link.user_id,TelegramDelivery.status=='pending')):
+        delivery.status='cancelled'
+    db.add(Message(id=input_id,workspace_id=old.workspace_id,conversation_id=old.id,role='user',content=text,
+                   created_at=message_time(db,old.workspace_id,old.id)))
+    room=Conversation(workspace_id=old.workspace_id,user_id=link.user_id,title='Telegram · ผู้ช่วย AI',privacy='private')
+    db.add(room);db.flush();link.conversation_id=room.id
+    reply='เริ่มบทสนทนาใหม่แล้วค่ะ เก็บประวัติเดิมไว้บนเว็บ ยกเลิกร่างและคำตอบที่ค้างในห้องเก่าแล้ว รายการเงินที่บันทึกไว้ยังอยู่ครบ คุยเรื่องใหม่ได้เลยค่ะ'
+    db.add(Message(id=reply_id,workspace_id=room.workspace_id,conversation_id=room.id,role='assistant',content=reply,
+                   created_at=message_time(db,room.workspace_id,room.id)))
+    return reply
+
+
 def claim():
     """Lease only committed terminal results. Recheck recipient permissions each part."""
     from .ai_errors import message as error_message
@@ -90,6 +121,7 @@ def claim():
                     and room.user_id==row.user_id and not expired(db,room)
                     and job.workspace_id==row.workspace_id and job.user_id==row.user_id
                     and link and link.workspace_id==row.workspace_id and link.user_id==row.user_id
+                    and (not link.conversation_id or link.conversation_id==room.id)
                     and db.get(Membership,(row.user_id,row.workspace_id))):
                 row.status='cancelled'
                 continue

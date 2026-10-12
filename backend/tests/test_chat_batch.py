@@ -127,8 +127,12 @@ def test_prompt_text_budget_and_unique_images(actor,monkeypatch):
     run(c,w,b,cid,'สวัสดีค่ะ')
     messages=calls[0]['messages'];turns=[m for m in messages if m['role']!='system']
     images=[part for m in turns if isinstance(m['content'],list) for part in m['content'] if part['type']=='image_url']
-    assert len(images)==0 and len(turns)<=7
-    assert sum(len(m['content']) for m in turns if isinstance(m['content'],str))<=24000
+    notes=[m for m in turns if isinstance(m['content'],str) and m['content'].startswith('{"type": "older_user_excerpts"')]
+    assert len(notes)==1 and len(notes[0]['content'])<=2400
+    recent=[m for m in turns if m not in notes]
+    assert len(images)==0 and len(recent)<=7
+    assert sum(len(m['content']) for m in recent if isinstance(m['content'],str))<=24000
+    assert all(m['role']=='user' for m in notes)
 
 
 def test_explicit_batch_needs_no_model_even_when_provider_configured(actor,monkeypatch):

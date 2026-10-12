@@ -150,3 +150,70 @@ def test_photo_handler_passes_caption_and_starts_delivery_background(channel):
         await asyncio.sleep(0)
         await stop_delivery()
     asyncio.run(lifecycle())
+
+
+def test_reset_keeps_history_cancels_draft_and_starts_clean(channel):
+    from app.models import ChatAction
+    c,w,u,b,wallet,cat,state,tid,capture,process=channel
+    state['responses']=[tool('prepare_transaction',dict(intent='create',kind='expense',amount=8000,
+        description='กาแฟ',account_id=wallet,category_id=cat,occurred_on='2026-10-12'))]
+    capture(1,'จดกาแฟ 80');jid=process()
+    bot=Sender();asyncio.run(deliver_once(bot))
+    with SessionLocal() as db:
+        old=db.get(TelegramLink,str(tid)).conversation_id
+        action=db.scalar(select(ChatAction).where(ChatAction.conversation_id==old));code=action.code
+    assert 'เริ่มบทสนทนาใหม่' in capture(2,'/reset')
+    with SessionLocal() as db:
+        new=db.get(TelegramLink,str(tid)).conversation_id
+        assert new!=old and db.get(Conversation,old)
+        assert db.scalar(select(ChatAction).where(ChatAction.conversation_id==old)).status=='cancelled'
+    assert 'ไม่มีรายการ' in capture(3,'ยืนยัน')
+    capture(4,'ยืนยัน '+code)
+    assert c.get(b+'/transactions').json()==[]
+    # Retried reset update must not rotate again or rewind a newer room.
+    capture(2,'/reset')
+    with SessionLocal() as db:assert db.get(TelegramLink,str(tid)).conversation_id==new
+    state['responses']=[{'content':'เริ่มใหม่ได้เลยค่ะ'}]
+    capture(5,'สวัสดี');process()
+    assert 'จดกาแฟ 80' not in str(state['calls'][-1]['messages'])
+
+
+def test_new_cancels_queued_jobs_and_delivery(channel):
+    from app.models import ChatGeneration
+    c,w,u,b,wallet,cat,state,tid,capture,process=channel
+    capture(1,'คุยเรื่องเดิมหน่อย')
+    with SessionLocal() as db:
+        job=db.scalar(select(Job).where(Job.workspace_id==w));jid=job.id
+    assert 'เริ่มบทสนทนาใหม่' in capture(2,'/new@SFinanceBot')
+    with SessionLocal() as db:
+        assert db.get(Job,jid).status=='cancelled'
+        assert db.get(ChatGeneration,jid).stop_requested
+        assert db.get(TelegramDelivery,jid).status=='cancelled'
+    assert not asyncio.run(deliver_once(Sender()))
+
+
+def test_reset_during_model_call_blocks_late_draft(channel,pg_only):
+    from app.models import ChatAction
+    from app.chat_stop import Stopped
+    from app.ai_fence import Invalidated
+    c,w,u,b,wallet,cat,state,tid,capture,process=channel
+    def slow_answer(body):
+        assert 'เริ่มบทสนทนาใหม่' in capture(2,'/reset')
+        return tool('prepare_transaction',dict(intent='create',kind='expense',amount=8000,
+            description='กาแฟ',account_id=wallet,category_id=cat,occurred_on='2026-10-12'))
+    state['responses']=[slow_answer]
+    capture(1,'จดกาแฟ 80')
+    with pytest.raises((Stopped,Invalidated)):process()
+    with SessionLocal() as db:
+        assert not db.scalar(select(ChatAction.id).where(ChatAction.workspace_id==w))
+    assert not asyncio.run(deliver_once(Sender()))
+    assert c.get(b+'/transactions').json()==[]
+
+
+def test_reset_preserves_confirmed_finance(channel):
+    c,w,u,b,wallet,cat,state,tid,capture,process=channel
+    response=c.post(b+'/transactions',json=dict(kind='expense',description='รายการเดิม',amount=7500,
+        account_id=wallet,category_id=cat,occurred_on='2026-10-12',idempotency_key=str(uuid.uuid4())))
+    assert response.status_code==200
+    capture(1,'/new')
+    assert c.get(b+'/transaction-report').json()['expense']==7500

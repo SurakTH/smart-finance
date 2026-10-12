@@ -37,7 +37,7 @@ async def start(message: TGMessage):
             db.execute(delete(TelegramLink).where(TelegramLink.telegram_id==str(message.from_user.id)))
             db.add(TelegramLink(telegram_id=str(message.from_user.id),workspace_id=code.workspace_id,user_id=code.user_id))
             db.delete(code); success=True
-    await message.answer('เชื่อมต่อแล้วค่ะ คุยกับฉันได้เลย เช่น ถามยอดเงิน หรือส่งรูปสลิปพร้อมคำบรรยาย ฉันจะใช้ AI ตามที่ตั้งไว้ในพื้นที่นี้ ถ้าต้องบันทึกหรือแก้ข้อมูล ฉันจะทวนให้ตรวจ แล้วรอคุณพิมพ์ ยืนยัน ก่อนค่ะ ข้อความและรูปช่องทางนี้ผ่าน Telegram' if success else 'รหัสไม่ถูกต้องหรือหมดอายุ')
+    await message.answer('เชื่อมต่อแล้วค่ะ คุยกับฉันได้เลย เช่น ถามยอดเงิน หรือส่งรูปสลิปพร้อมคำบรรยาย ฉันจะใช้ AI ตามที่ตั้งไว้ในพื้นที่นี้ ถ้าต้องบันทึกหรือแก้ข้อมูล ฉันจะทวนให้ตรวจ แล้วรอคุณพิมพ์ ยืนยัน ก่อนค่ะ พิมพ์ /new หรือ /reset เพื่อเริ่มบทสนทนาใหม่ได้ ข้อความและรูปช่องทางนี้ผ่าน Telegram' if success else 'รหัสไม่ถูกต้องหรือหมดอายุ')
 
 @dp.message(Command('unlink'))
 async def unlink(message: TGMessage):
@@ -49,6 +49,10 @@ async def unlink(message: TGMessage):
 def text_capture(db,telegram_id,message_id,text):
     from .telegram_chat import submit
     return submit(db,telegram_id,message_id,text)
+
+@dp.message(Command('new','reset'))
+async def new_chat(message: TGMessage, bot: Bot):
+    await capture(message,bot)
 
 @dp.message(F.text | F.photo)
 async def capture(message: TGMessage, bot: Bot):

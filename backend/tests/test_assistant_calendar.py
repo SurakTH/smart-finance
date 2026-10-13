@@ -112,12 +112,14 @@ def test_exact_user_conversation_no_repeated_date_questions_or_wrong_month(assis
     with SessionLocal() as db:assert not db.scalar(select(ChatAction.id).where(ChatAction.workspace_id==w))
 
 
-def test_date_only_followup_inherits_owned_adjacent_filters_without_model_flag(assistant):
+@pytest.mark.parametrize('missing',[False,True])
+def test_date_only_followup_inherits_owned_adjacent_filters_without_model_flag(assistant,missing):
     c,w,u,b,cid,wallet,cat,state,post,send=assistant
     post(8000,'กาแฟ','2026-10-13');post(92000,'อาหาร','2026-10-13');post(20000,'กาแฟ','2026-10-10')
     state['responses']=[tool('fetch_finance',dict(resource='summary',period='last week',q='กาแฟ',account_id=wallet,metric='expense')),{'content':'กาแฟรอบก่อนใช้ไป 200 บาทค่ะ'}]
     send('ลองดูคาเฟ่ของกระเป๋าเงินสดรอบก่อนให้หน่อย')
-    state['responses']=[tool('fetch_finance',dict(resource='summary',period={'mode':'unsupported_enum'})),{'content':'ส่วนเมื่อวานกาแฟใช้ไป 80 บาทค่ะ'}]
+    arguments={'resource':'summary'} if missing else dict(resource='summary',period={'mode':'unsupported_enum'})
+    state['responses']=[tool('fetch_finance',arguments),{'content':'ส่วนเมื่อวานกาแฟใช้ไป 80 บาทค่ะ'}]
     answer=send('เมื่อวานละ');assert 'ใช้ไป 80 บาท' in answer['content'] and 'ค้นคำ กาแฟ' in answer['content']
     assert all(r['filters'].get('q')=='กาแฟ' for r in answer['references'])
     assert result(state['calls'][-1])['facts']['expense']=='80.00 บาท'
@@ -182,3 +184,14 @@ def test_calendar_recovery_still_rejects_another_users_account(assistant):
     answer=send('ช่วยดูเงินกระเป๋าที่ใช้เมื่อวานให้ทีจ้า')['content']
     assert '0.00 บาท' not in answer and len(state['calls'])==2
     feedback=json.dumps(result(state['calls'][1]));assert aid not in feedback and foreign not in feedback
+
+
+@pytest.mark.parametrize('period',[None,{'mode':'custom'},{'mode':'month'},{'mode':'last_days'},{'mode':'range','start':'2020-01-01','end':'2026-10-14'}])
+def test_missing_or_incomplete_model_period_uses_clear_user_date_not_default_month(period):
+    value=parse_fetch(json.dumps(dict(resource='summary',period=period)),'สัปดาห์ที่แล้วใช้ไปเท่าไหร่')
+    assert tuple(str(d) for d in bounds(value.period))==('2026-10-05','2026-10-11')
+
+
+def test_a_valid_explicit_model_range_can_still_fetch_additional_context():
+    value=parse_fetch(json.dumps(dict(resource='summary',period='last week')),'เมื่อวานฉันใช้เยอะไหม')
+    assert tuple(str(d) for d in bounds(value.period))==('2026-10-05','2026-10-11')

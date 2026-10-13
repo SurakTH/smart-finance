@@ -4,7 +4,7 @@
 
 `assistant_calendar.parameters` แทนเฉพาะperiod/compare_periodในadvertised Fetch/Plan schemasด้วยdate-word stringหรือflat start/end ลดnested enum refsที่โมเดลมักส่งผิด Internal Window/boundsยังเป็นcanonical strict structure Aliases/Thai Buddhist dates/relative mathอยู่backendทั้งหมด ไม่เพิ่ม user-command routing grammar
 
-`parse_fetch` จับเฉพาะperiod-only validation failure, ปฏิเสธextra/other-field errorsและnested object/arrayก่อนrecoverจากcalendar mentionเดียวในactualownedUserMessage source ห้ามchoose-firstเมื่อdate hintsขัดกัน ไม่มีfallbackเดือนนี้จากinvaliddate Explicitfilters/authority/boundsยังvalidateหลังซ่อม Date-only followup require adjacentsource ID+room scope+15min expiry ไม่ใช้assistantclaimsเป็นsource Metadata errorsยังsanitizedและมีcalendar repairexamplesภายใน
+`parse_fetch` จับเฉพาะperiod-only validation failure, ปฏิเสธextra/other-field errorsและnested object/arrayก่อนrecoverจากcalendar mentionเดียวในactualownedUserMessage source ห้ามchoose-firstเมื่อdate hintsขัดกัน ถ้าละperiodหรือboundsไม่ครบ ใช้source hintเดียวที่ชัดก่อนdefault แทนการinheritช่วงเก่าหรือfallbackเดือนนี้ การอ่านexplicit valid rangeเพื่อเพิ่มบริบทยังทำได้ Explicitfilters/authority/boundsยังvalidateหลังซ่อม Date-only followup require adjacentsource ID+room scope+15min expiry ไม่ใช้assistantclaimsเป็นsource Metadata errorsยังsanitizedและมีcalendar repairexamplesภายใน
 
 Sandboxใช้parserเดียวกันกับpromptสังเคราะห์ มีcoffee/cafe literal fixtureและdinnerdistractorเพื่อทดสอบscopeโดยไม่ต้องส่งexact qstringแบบลับ ยอด80/count1และวันที่MTDยังตรวจเหมือนเดิม แยกinvalidargumentsจากanswer mismatch ไม่มีledgerreadหรือrealprovider assuranceจากmock tests
 

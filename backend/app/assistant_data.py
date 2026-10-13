@@ -11,7 +11,7 @@ from pydantic import BaseModel,ConfigDict,Field,field_validator,ValidationError
 from sqlalchemy import select
 from .models import Conversation,Membership,Workspace,Account,Message,now
 from .ai_fence import Invalidated
-from .semantic_assistant import Window,plan,prepare,claims_execution
+from .semantic_assistant import Window,bounds,plan,prepare,claims_execution
 from .assistant_response import visible
 
 class Fetch(BaseModel):
@@ -76,7 +76,7 @@ def remember(job,evidence):
 
 
 def parse_fetch(raw,text=None):
-    try:return Fetch.model_validate_json(raw)
+    try:value=Fetch.model_validate_json(raw)
     except ValidationError as error:
         errors=error.errors(include_input=False,include_url=False)
         # Repair only calendar errors from the authenticated user message.
@@ -88,7 +88,19 @@ def parse_fetch(raw,text=None):
         period=hint(text)
         if not period:raise
         data['period']=period
-        return Fetch.model_validate(data)
+        value=Fetch.model_validate(data)
+    if text and value.resource!='balances':
+        from .assistant_calendar import hint
+        from .request_interpreter import NeedInfo
+        requested=hint(text)
+        if requested:
+            try:
+                if value.period is None:raise ValueError('missing requested calendar')
+                bounds(value.period)
+            except (ValueError,NeedInfo):
+                period=Window.model_validate(requested);bounds(period)
+                value=value.model_copy(update={'period':period})
+    return value
 
 
 def followup_scope(db,room,job,value,text):

@@ -33,6 +33,9 @@ def grounded(db,room,job,task,cache):
     if task.kind in ('period','budget','comparison'):
         from .assistant_render import financial_report
         return financial_report(db,room,job,task)
+    if task.kind=='analytics':
+        from .assistant_analytics import report
+        return report(db,room,job,task)
     if task.kind=='mutation':return NO_WRITE
     # Read-only lists are rendered, never free model totals from a partial page.
     results=list(cache.values())
@@ -56,7 +59,7 @@ def finish(db,room,job,task,answer,cache):
     if task.kind=='mutation':
         if success_claim(answer):return NO_WRITE
         return answer if re.fullmatch(r'[^0-9๐-๙]{0,250}(?:ไหน|อะไร|เท่าไร|เท่าไหร่)[^0-9๐-๙]{0,80}',answer) else NO_WRITE
-    if task.kind in ('balance','period','budget','comparison','query') or cache:return grounded(db,room,job,task,cache)
+    if task.kind in ('balance','period','budget','comparison','analytics','query') or cache:return grounded(db,room,job,task,cache)
     if success_claim(answer):return NO_WRITE
     if financial_claim(answer):
         # A question can request missing input but may not assert a financial fact.

@@ -1,5 +1,16 @@
 # ผลตรวจสอบ Smart Finance
 
+## Analytics ช่วงอิสระใน AI Chat (14 ตุลาคม 2026)
+
+- ขยาย `interpret_request` ด้วย strict analytics plan: summary/compare/trend/average/ranking, quoted period และ compare_period, bucket วัน/สัปดาห์/เดือน และอันดับ category/account/description สูงสุด10กลุ่ม ช่วงละ≤366วัน รองรับ ISO/dd/mm/yyyy รวม พ.ศ./เลขไทย ปฏิเสธ SQL/authority fields/พารามิเตอร์เกินขอบเขต
+- SQL รวม active journals ครบทุกหน้าตาม workspace/บัญชี/หมวด/ชนิด/คำค้น literal ค่าเริ่มต้นรายจ่าย เลือกรายรับได้ ไม่ปน opening/transfer/card payment คำนวณอัตราส่วนด้วย Decimal/เศษส่วนจำนวนเต็มก่อน round half up ที่ขอบแสดงผล ไม่ลบค่าเฉลี่ยที่ปัดแล้ว และไม่หารศูนย์
+- Compare ยอด/delta/เปอร์เซ็นต์/เฉลี่ยต่อวัน เตือนจำนวนวันไม่เท่ากันและวันที่ซ้อน Trend calendar buckets รวมวันศูนย์/ปีอธิกสุรทิน/ช่วงไม่เต็ม สรุปจุดสูงต่ำครบแม้ render12ช่วงท้าย Ranking ties deterministic/สัดส่วนใช้ยอดครบ ไม่ใช้ยอดจากเฉพาะ top page ลิงก์หลักฐานรักษาตัวกรองเดิม
+- โมเดลแปลงเจตนา/เลือกการวิเคราะห์; คำอธิบายเชิงตัวเลข render จากผล backend ไม่ปล่อย model prose เดายอด/สาเหตุ ไม่มี draft/posting และใช้ final stop/context/epoch fences กับ Telegram durable outbox เดิม
+- PostgreSQL disposable suite เวอร์ชันส่งมอบ **577 passed / 1 warning Starlette/httpx เดิม**, 92.49วินาที เพิ่ม46 regression จากฐาน531: มากกว่า search page, ค่าเฉลี่ยเต็มช่วง, ฐานศูนย์/ไม่มีข้อมูล, delta ลบ/ช่วงซ้อน, SQL trend/day/week/month/leap day, top-N/denominator/ties, literal % และคำคล้าย grammar ไม่ถูกตัด, บัญชี partial/ต่างworkspace, corrections/reversals, semantic mismatches/forbidden parameters, Thai numeric dates, Telegram และ workspace mutation during inference
+- Focused analytics รอบก่อนสุดท้าย **45 passed**; Docker API/worker/migrate buildผ่าน (`2a8deb65b907`) ไม่มี frontend runtime/env/schema migration changes จึงไม่รัน browser suite ซ้ำ ไม่ deploy local app ลงข้อมูลเดิม ไม่ติดต่อ provider/Telegram จริง และไม่เข้าถึง Ubuntu ของผู้ใช้จากเครื่องพัฒนา
+- ยังไม่อ้างผลเลือกแผน/ความแม่นยำทุกสำนวน/เวลาและต้นทุนบน Qwen/Gemma จริง AI Lab UI ยังไม่ได้เพิ่มโจทย์ analytics, ไม่มี forecast/สาเหตุอัตโนมัติ/หลายสกุลเงิน/หลาย metric ในคำสั่งเดียว และยังไม่มี large-data benchmark สถานะอยู่ขั้น3จาก4 รอตรวจ server/model จริงในขั้น4
+
+
 ## Model-assisted intent/date/filter interpretation (14 ตุลาคม 2026)
 
 - เพิ่ม strict `interpret_request` schema สำหรับ balances/period/budget/comparison/transactions/mutation/conversation/clarify ใน production catalog ลดการพึ่ง regex เป็นทางเดียว งานอ่านที่ครบข้อมูลคืน backend-verified answer ได้ใน1 model request โดยไม่บังคับ planner call แยก; backward-compatible tools เดิมคงอยู่

@@ -10,6 +10,7 @@ from sqlalchemy import select,func
 from .models import Message,Account,now
 from .reporting import today,month_bounds
 from .assistant_scope import Scope
+from .assistant_analytics import Analysis
 
 class Period(BaseModel):
     model_config=ConfigDict(extra='forbid')
@@ -27,8 +28,10 @@ class Reference(BaseModel):
 
 class Request(BaseModel):
     model_config=ConfigDict(extra='forbid')
-    intent:Literal['balances','period','budget','comparison','transactions','mutation','conversation','clarify']
+    intent:Literal['balances','period','budget','comparison','transactions','mutation','conversation','clarify','analytics']
     period:Period|None=None
+    analysis:Analysis|None=None
+    compare_period:Period|None=None
     account:Reference|None=None
     category:Reference|None=None
     q:str=Field(default='',max_length=100)
@@ -55,7 +58,7 @@ class NeedInfo(Exception):
 
 def tool():
     return {'type':'function','function':{'name':'interpret_request','description':
-        'Translate natural conversation into a validated intent, dates and filters. Prefer this for financial questions in varied language, unclear intent, short follow-ups, or casual chat that mentions months. Use transactions when the user wants dated line items, period for totals. Read intents directly return a backend-verified answer in ONE call; no extra lookup needed for obvious names. period phrase/account phrase/category phrase/q must be verbatim from the chosen user message; source_message_id can reference a recent user message in THIS room when answering a clarification. Use clarify with missing field if ambiguous. Dates are computed/checked by backend, never guess a date/ID. Relative modes omit start/end; last_days includes today. comparison supports this month vs previous month only. mutation only selects the next draft toolkit, never saves/confirms. For clear write requests existing prepare tools remain available. No tenant/user/SQL fields.',
+        'Translate natural conversation into a validated intent, dates and filters. Prefer this for financial questions in varied language, unclear intent, short follow-ups, or casual chat that mentions months. Use transactions when the user wants dated line items, period for totals. Read intents directly return a backend-verified answer in ONE call; no extra lookup needed for obvious names. period phrase/account phrase/category phrase/q must be verbatim from the chosen user message; source_message_id can reference a recent user message in THIS room when answering a clarification. Use clarify with missing field if ambiguous. Dates are computed/checked by backend, never guess a date/ID. Relative modes omit start/end; last_days includes today. Use analytics with analysis.operation summary/compare/trend/average/ranking for arbitrary date windows (up to 366 days each). compare requires compare_period quoted from the user; no implicit prior dates. bucket day/week/month, ranking group_by category/account/description and order highest/lowest. Choose income or expense only; omit transaction_kind for expense. Dates can be ISO or dd/mm/yyyy (Thai Buddhist years supported). Read replies include grounded explanations, averages and evidence links. Legacy comparison supports this month vs previous month only. mutation only selects the next draft toolkit, never saves/confirms. For clear write requests existing prepare tools remain available. No tenant/user/SQL fields.',
         'parameters':Request.model_json_schema()}}
 
 
@@ -105,11 +108,14 @@ def date_range(value):
         if expected!=value.month:raise NeedInfo('period')
         start,end=month_bounds(value.month)
     else:
-        dates=re.findall(r'(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)',phrase)
+        dates=re.findall(r'(?<!\d)(?:\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{4})(?!\d)',phrase)
         if len(dates) not in (1,2):raise NeedInfo('period')
-        start,end=date.fromisoformat(dates[0]),date.fromisoformat(dates[-1])
+        def parse_date(raw):
+            if '/' not in raw:return date.fromisoformat(raw)
+            day,month,year=map(int,raw.split('/'));return date(year-543 if year>2400 else year,month,day)
+        start,end=parse_date(dates[0]),parse_date(dates[-1])
         if value.start!=start or value.end!=end:raise NeedInfo('period')
-    if start>end or (end-start).days>365:raise NeedInfo('period')
+    if not 2<=start.year<=end.year<=9998 or start>end or (end-start).days>365:raise NeedInfo('period')
     if value.start is not None and value.start!=start:raise NeedInfo('period')
     if value.end is not None and value.end!=end:raise NeedInfo('period')
     if value.mode!='month' and value.month is not None:raise NeedInfo('period')
@@ -156,6 +162,7 @@ def interpret(db,room,job,raw):
     financial_question=budget_question or bool(re.search(r'รายจ่าย|รายรับ|บัญชี|ยอดเงิน|มีเงิน|ใช้ไปเท่า|spent|balance',current.content,re.I))
     if value.intent=='conversation' and financial_question:raise NeedInfo('intent')
     if value.intent=='mutation' and financial_question and not re.search(r'จด|บันทึก|แก้|เพิ่ม|สร้าง|ปรับ|ลบ|เปลี่ยน|ลง|เก็บ',current.content):raise NeedInfo('intent')
+    if value.intent!='analytics' and (value.analysis or value.compare_period):raise NeedInfo('intent')
     if value.intent in ('conversation','mutation'):
         if any((value.period,value.account,value.category,value.q,value.transaction_kind)):raise NeedInfo('intent')
         if value.intent=='conversation':
@@ -181,7 +188,7 @@ def interpret(db,room,job,raw):
     if value.intent in ('period','transactions','comparison') and not old.error and old.q and re.search(r'[ก-๙]',old.q) and not re.search(r'วัน|อาทิตย์|สัปดาห์|ผ่านมา',old.q):
         if (not value.period or old.q not in value.period.phrase) and value.q!=old.q:raise NeedInfo('description')
     if value.intent=='balances' and re.search(r'รายจ่าย|รายรับ|ใช้ไป|spent|income|expense',current.content,re.I):raise NeedInfo('intent')
-    if re.search(r'เปรียบเทียบ|เทียบ.*กับ',current.content) and value.intent!='comparison':raise NeedInfo('intent')
+    if re.search(r'เปรียบเทียบ|เทียบ.*กับ',current.content) and value.intent not in ('comparison','analytics'):raise NeedInfo('intent')
     if budget_question and value.intent not in ('budget','clarify'):raise NeedInfo('intent')
     kind={'balances':'balance','transactions':'period'}.get(value.intent,value.intent)
     result=Scope(kind,job.payload.get('text',''),account=account,category=category,q=value.q,
@@ -194,6 +201,9 @@ def interpret(db,room,job,raw):
         if row.id!=current.id and re.search(r'เดือน|วันนี้|เมื่อวาน|อาทิตย์|สัปดาห์|\d{4}-\d{2}|กันยา|ตุลา|มกรา|กุมภา|มีนา|เมษา|พฤษภา|มิถุนา|กรกฎา|สิงหา|พฤศจิกา|ธันวา',current.content) and value.period.phrase not in current.content:raise NeedInfo('period')
         try:result.start,result.end=date_range(value.period)
         except (ValueError,HTTPException):raise NeedInfo('period') from None
+        if kind=='analytics':
+            from .analytics_plan import validate
+            validate(value,result,text,current.content)
         if kind in ('budget','comparison'):
             if (result.start,result.end)!=month_bounds(result.start.strftime('%Y-%m')):raise NeedInfo('period')
             if kind=='budget' and (value.transaction_kind or value.q):raise NeedInfo('intent')

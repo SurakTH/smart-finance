@@ -10,7 +10,7 @@ from .finance_chat import resolve_period,normalize_months,MONTHS
 
 @dataclass
 class Scope:
-    kind:Literal['mutation','balance','period','budget','comparison','query','conversation']
+    kind:Literal['mutation','balance','period','budget','comparison','query','conversation','analytics']
     text:str
     start:date|None=None
     end:date|None=None
@@ -20,6 +20,7 @@ class Scope:
     q:str=''
     transaction_kind:str|None=None
     include_items:bool=False
+    analysis:dict|None=None
 
 
 def subject(text,names):

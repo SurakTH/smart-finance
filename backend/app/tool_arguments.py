@@ -1,5 +1,5 @@
 """Static validation metadata only; never include model input or unknown keys."""
-FIELDS={'period','mode','phrase','days','account','category','source_message_id','action','missing','queries','resource','q','kind','month','cursor','limit','operation','start','end','account_id','category_id','other_account_id','amount','intent','description','occurred_on','transactions','attachment_id','reply','toolkit','operations','changes','entry_id','reason','name','target','due_on','rationale'}
+FIELDS={'clear_filters','text','metric','reuse_previous_scope','compare_period','weekday','relation','bucket','group_by','order','question','period','mode','phrase','days','account','category','source_message_id','action','missing','queries','resource','q','kind','month','cursor','limit','operation','start','end','account_id','category_id','other_account_id','amount','intent','description','occurred_on','transactions','attachment_id','reply','toolkit','operations','changes','entry_id','reason','name','target','due_on','rationale'}
 CODES={'missing','extra_forbidden','string_type','string_too_long','literal_error','uuid_parsing','int_type','greater_than','less_than_equal','greater_than_equal','string_pattern_mismatch','date_from_datetime_parsing','json_invalid','model_type'}
 
 def issues(error):

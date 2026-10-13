@@ -11,7 +11,7 @@ from .security import owner,login_limit
 
 router=APIRouter(prefix='/workspaces/{wid}/ai',dependencies=[Depends(owner)])
 EVENTS={'request','tool','provider_error','fallback','synthesis','result','review_repair'}
-TOOLS={'interpret_request','answer_finance_summary','load_toolkit','lookup_workspace','query_finance','prepare_transaction','prepare_correction','prepare_management_plan'}
+TOOLS={'understand_request','respond_finance','interpret_request','answer_finance_summary','load_toolkit','lookup_workspace','query_finance','prepare_transaction','prepare_correction','prepare_management_plan'}
 RESOURCES={'accounts','categories','balances','budgets','goals','recurring','preferences','monthly_analysis','search_transactions'}
 STATUSES={'ok','failed','invalid','cached','limited','passed','skipped'}
 
@@ -65,7 +65,7 @@ def detail(wid:str,jid:str,db=Depends(get_db,scope='function')):
 
 class TestInput(BaseModel):
     model_config=ConfigDict(extra='forbid')
-    case:Literal['balance','monthly','transaction','followup','receipt']
+    case:Literal['balance','monthly','transaction','followup','receipt','natural']
     provider_id:UUID|None=None
 
 @router.post('/tests')

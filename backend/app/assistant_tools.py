@@ -17,11 +17,13 @@ def all_tools():
     from .assistant_finance import tools
     from .assistant_lookup import tool as lookup
     from .request_interpreter import tool as interpret_tool
-    return [tool(),management(),*tools(),lookup(),interpret_tool()]
+    from .semantic_assistant import tools as semantic_tools
+    return [tool(),management(),*tools(),lookup(),interpret_tool(),*semantic_tools()]
 
 
 def catalog(active):
-    names={'prepare_transaction','query_finance','lookup_workspace','interpret_request'}
+    names={'prepare_transaction','query_finance','lookup_workspace','understand_request'}
+    if 'conversation_answer' in active:names.add('respond_finance')
     if 'management' in active:names.add('prepare_management_plan')
     if 'corrections' in active:names.add('prepare_correction')
     result=[tool for tool in all_tools() if tool['function']['name'] in names]

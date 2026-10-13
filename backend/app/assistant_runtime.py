@@ -7,6 +7,7 @@ import json
 import re
 import time
 import httpx
+from fastapi import HTTPException
 from .models import Conversation
 from .ledger import get_scoped
 from .ai_parameters import parameters
@@ -85,6 +86,51 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             if repaired:return AssistantReply(UNPREPARED)
             repaired=True;record(job,'review_repair',status='invalid')
             turns.extend([{'role':'assistant','content':answer.content},{'role':'system','content':REPAIR}])
+            continue
+        if answer.tool_name and answer.tool_name not in ('respond_finance','understand_request'):
+            job.__dict__.pop('_semantic_evidence',None)
+        if answer.tool_name=='respond_finance':
+            from .semantic_assistant import respond
+            try:content=respond(job,answer.draft)
+            except (ValidationError,ValueError):
+                invalid(answer,dict(error='invalid_arguments',message='ใช้ {{fact_key}} ที่ได้รับสำหรับตัวเลขทั้งหมด ไม่ใส่ยอดอิสระ ไม่อ้างบันทึก/แก้แล้ว ตอบตาม scope ของ facts'))
+                if repairs>=2:return AssistantReply(getattr(job,'_semantic_evidence',{}).get('fallback') or evidence.UNVERIFIED)
+                continue
+            record(job,'tool',tool=answer.tool_name,status='ok')
+            return AssistantReply(content)
+        if answer.tool_name=='understand_request':
+            from .semantic_assistant import plan,prepare,clarification,general_reply
+            job.__dict__.pop('_semantic_evidence',None)
+            from .request_interpreter import NeedInfo,QUESTIONS
+            try:
+                interpreted,reply,kit=sandbox.semantic_plan(answer.draft) if sandbox else plan(db,room,job,answer.draft)
+                if interpreted is not None:task=interpreted
+                if reply is not None:
+                    if task.kind=='conversation' and interpreted is not None:return AssistantReply(general_reply(reply,job.payload.get("text","")))
+                    record(job,'tool',tool=answer.tool_name,status='ok')
+                    return AssistantReply(reply)
+                if task.kind=='mutation':
+                    if kit:active.add(kit);job._assistant_toolkits=sorted(active)
+                    feedback(answer,dict(intent='mutation',toolkit=kit,message='เตรียมร่างด้วย tools ที่มี รอยืนยันจากผู้ใช้เท่านั้น'))
+                    continue
+                if read_budget[0]>=3:return finish()
+                job._finance_refs=[]
+                result=sandbox.semantic_prepare(job,task) if sandbox else prepare(db,room,job,task)
+            except NeedInfo as missing:
+                result=dict(error='missing_or_ambiguous',issues=[dict(field=missing.field,code='unknown_reference')],
+                    message='ตรวจข้อความและบริบทแล้วแก้แผนก่อน ถ้าเป็นชื่อใช้ lookup_workspace ค้นชื่อจริง ถ้ากำกวมจริงใช้ clarify พร้อม question ธรรมชาติเฉพาะจุด ห้ามสั่งผู้ใช้กรอก format')
+                invalid(answer,result)
+                if repairs>=2:return AssistantReply(clarification(db,room,missing.field))
+                continue
+            except (ValidationError,ValueError,HTTPException) as error:
+                from .tool_arguments import issues
+                invalid(answer,dict(error='invalid_arguments',issues=issues(error) if isinstance(error,ValidationError) else [],message='แก้แผนของคุณตาม schema ใช้ period mode ให้ถูกต้อง เลือกชื่อจาก workspace เท่านั้น ไม่ต้องให้ผู้ใช้กรอกคำสั่งใหม่'))
+                if repairs>=2:return AssistantReply(clarification(db,room,'intent'))
+                continue
+            record(job,'tool',tool=answer.tool_name,status='ok')
+            read_budget[0]+=1
+            active.add('conversation_answer')
+            feedback(answer,result)
             continue
         if answer.tool_name=='interpret_request':
             if sandbox:raise ValueError('Unexpected sandbox interpreter')

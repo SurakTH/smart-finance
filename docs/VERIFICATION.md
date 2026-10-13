@@ -1,5 +1,17 @@
 # ผลตรวจสอบ Smart Finance
 
+## Model-led conversation และ natural answer จาก facts (14 ตุลาคม 2026)
+
+- เพิ่ม primary `understand_request` โดยไม่บังคับ user phrase/q/date ให้ตรง legacy regex ให้โมเดลตีความภาษา/ชื่อเรียก/วันที่/บริบท แล้ว backendตรวจschema/ชนิดบัญชี/workspace/source recency/ช่วง≤366วันเท่านั้น ถอด `interpret_request` จากinitialcatalog แต่รับprotocolเก่าภายในเหมือนเดิม
+- ให้โมเดลซ่อม schema/ข้อมูลที่ขาดก่อนถาม user ภายใน2repairs ถ้ากำกวมจริงถามภาษาไทยเฉพาะจุด ไม่ส่งschemaให้กรอกใหม่ `reuse_previous_scope`, clear_filters และ explicit q clearing เปลี่ยนขอบเขตสนทนาได้ ยอดบัญชีไม่รับcategory/q/kindรายจ่ายเก่ามาปน
+- Read→respond เส้นทางใหม่ส่ง bounded preformatted facts จากverified SQL ให้โมเดลเรียบเรียง `respond_finance` text+fact slots โหลดanswer schemaหลังอ่านสำเร็จ Reject unknown slots/literal numerals/จำนวนเงินภาษาไทยที่ไม่มีfacts/false execution claims และผลยาวเกิน16k; ถ้าrepairยังไม่ผ่านคืนรายงานจริง คุยแนวคิดการเงินได้โดยไม่ถูก blanket financial-word guardบล็อก คำว่า “จ่ายไปแล้ว”จากข้อมูลจริงไม่ถูกเหมารวมเป็นassistantบันทึกเอง
+- ยังคงtyped draft/manual plain confirmationสำหรับmutation, stop/context/epoch/owner/workspace finalfences และ provider privacy routingเดิม ตัวเลขอ้างจากfactsไม่ได้พิสูจน์ว่าความหมายของ narrative/ตัวกรองที่ LLM เลือกจะถูกทุกกรณี ไม่อ้างว่าไม่มี hallucination ทุกภาษา/ทุกประโยค
+- AI Lab เพิ่ม natural scenario ใช้production Plan/bounds/converse/respond กับadapterfakefacts ไม่อ่านsource/entity/ledgerจริง ตรวจ aliasกาแฟ+ช่วงMTDตามผลที่เทียบได้ ไม่บังคับdate modeเดียวถ้าขอบเขตเท่ากัน ไม่เฉลยalias/modeในprompt และต้องอ่าน+respondสำเร็จจึงผ่าน ทดสอบว่าชื่อบัญชีจริงไม่เข้าพร้อมต์/จำนวนEntry, ChatAction, Proposal, Conversation, Messageไม่เปลี่ยน
+- Final PostgreSQL disposable suite **643 passed / 1 warning Starlette/httpx เดิม**, 100.23วินาที เพิ่ม33กรณีจากฐาน610: สำนวนไม่อยู่ในregex, วันที่ไม่ใช่ISOในusertext, canonical nickname, missing/invalidplan internalrepair, contextreuse/clear, natural clarify, financialconcept conversation, numeric/falsewrite guards, fallbackreport, foreignauthority/SQL/confirm/overlimit, crossworkspaceentity, analytics4รูปแบบ+budget, mutation→review→plainconfirm, Telegram, epochchange during synthesis, deferredcatalog, Lab privacy และ expense→balancefollowup
+- Focused semantic/Lab/runtimeรอบก่อน **69 passed** และ semanticfinal **33 passed**; TypeScriptผ่าน Docker backend `7f492d289a2b`, web `d6b3dea08e7e` buildผ่าน ไม่มีenv/schema migration changes Browser suiteไม่ได้รันซ้ำในเครื่องรอบนี้ (frontendเปลี่ยนเพิ่มscenarioในselectorเท่านั้น); CIยังรันbrowserตามเดิม
+- ตรวจmetadata providerในเครื่องพัฒนาแบบread-onlyพบเฉพาะexample/test providers ไม่อ่านkeys/ledger ไม่เรียกQwen/Gemma/OllamaหรือTelegramจริง ไม่ deploy local app ลงข้อมูลเดิม/ไม่เข้าถึง Ubuntu จึงไม่อ้างผลlive model quality/latency/token savings ยังต้องลองAI Labใหม่บนserverหลังdeploy ไม่มีsemantic searchทุกคำพ้อง/เว็บsearch/semantic memoryยาวเพิ่มในรอบนี้
+
+
 ## แก้ภาษาพูด/ตัวกรองผิด/สัปดาห์และวันในแชท (14 ตุลาคม 2026)
 
 - Reproduce ข้อความผู้ใช้ทั้งชุด: เมื่อวานเสียตังกับไรบ้าง → สัปดาห์ที่แล้วใช้ตังไรบ้าง → เดือนนี้ละ ใช้ตังเท่าไหร่ → เมื่อวานมีไรบ้าง → วันอาทิตย์ละ ทดสอบด้วยรายการสังเคราะห์ต่างวัน/ต่างเดือน ยอดและรายละเอียดตรงช่วง ไม่มี q จากคำพูดทั่วไป ไม่มี intent clarification ที่ผิดจุด ไม่มี ChatAction/ledger posting

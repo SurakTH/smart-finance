@@ -157,8 +157,8 @@ def test_chat_intent_inside_tool_cannot_bypass_answer_gate(assistant):
     assert 'เรียบร้อยแล้ว' not in content and c.get(b+'/transaction-report').json()['total']==0
 
 
-def test_unsupported_comparison_does_not_silently_become_single_month(assistant):
+def test_comparison_uses_two_verified_months_not_single_month(assistant):
     c,w,u,b,cid,wallet,cat,state,post,send=assistant
     post(8000);state['responses']=[tool('answer_finance_summary',{'report':'monthly'})]
     result=send('เปรียบเทียบรายจ่ายเดือนนี้กับเดือนที่แล้ว')['content']
-    assert '80.00' not in result and 'ระบุ' in result
+    assert '80.00' in result and 'เดือนก่อน' in result and 'เปรียบเทียบ' in result

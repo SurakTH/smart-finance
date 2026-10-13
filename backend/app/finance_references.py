@@ -2,7 +2,7 @@
 def collect(job,result):
     if result.get('source')!='ledger_backend':return
     refs=list(getattr(job,'_finance_refs',[]))
-    filters={k:result[k] for k in ('start','end','month','account_id','category_id','kind') if result.get(k)}
+    filters={k:result[k] for k in ('start','end','month','account_id','category_id','kind','q') if result.get(k)}
     if 'income' in result:
         refs.append(dict(type='summary',label='ยอดจริงจากบัญชี',income=result['income'],expense=result['expense'],filters=filters))
     for row in result.get('categories',[])[:8]:

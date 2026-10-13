@@ -3,7 +3,7 @@ import uuid
 import pytest
 from sqlalchemy import select,delete
 from app.db import SessionLocal
-from app.models import Account,Conversation,Entry,Message,TelegramLink,Job
+from app.models import Account,Conversation,Entry,Message,TelegramLink,TelegramDelivery,Job
 from app.bot import text_capture
 from test_chat_actions import setup,say,code,count
 
@@ -55,7 +55,11 @@ def test_telegram_same_review_confirm_dedup_and_user_scope(actor):
  c,w,u,b,cid=setup(actor);tid=int(uuid.uuid4().hex[:12],16)
  with SessionLocal.begin() as db:db.add(TelegramLink(telegram_id=str(tid),workspace_id=w,user_id=u.id))
  def send(mid,text):
-  with SessionLocal.begin() as db:return text_capture(db,tid,mid,text)
+  with SessionLocal.begin() as db:reply=text_capture(db,tid,mid,text)
+  # These parser tests model successful delivery; transport failure has its own suite.
+  with SessionLocal.begin() as db:
+   for row in db.scalars(select(TelegramDelivery).where(TelegramDelivery.workspace_id==w,TelegramDelivery.status=='pending')):row.status='sent'
+  return reply
  review=send(1,'กาแฟ 75 จากเงินสด');key=code(review);assert count(w)==0
  assert send(1,'กาแฟ 75 จากเงินสด')==review
  assert 'บันทึกรายการเรียบร้อย' in send(2,'ยืนยัน '+key);assert count(w)==1
@@ -112,7 +116,11 @@ def test_telegram_bare_confirmation_and_cancel(actor):
  c,w,u,b,cid=setup(actor);tid=int(uuid.uuid4().hex[:12],16)
  with SessionLocal.begin() as db:db.add(TelegramLink(telegram_id=str(tid),workspace_id=w,user_id=u.id))
  def send(mid,text):
-  with SessionLocal.begin() as db:return text_capture(db,tid,mid,text)
+  with SessionLocal.begin() as db:reply=text_capture(db,tid,mid,text)
+  # These parser tests model successful delivery; transport failure has its own suite.
+  with SessionLocal.begin() as db:
+   for row in db.scalars(select(TelegramDelivery).where(TelegramDelivery.workspace_id==w,TelegramDelivery.status=='pending')):row.status='sent'
+  return reply
  assert 'กรุณาตรวจสอบ' in send(1,'กาแฟ 75 จากเงินสดจ้า')
  assert 'บันทึกรายการเรียบร้อย' in send(2,'ยืนยัน');assert count(w)==1
  assert 'บันทึกรายการเรียบร้อย' in send(2,'ยืนยัน');assert count(w)==1

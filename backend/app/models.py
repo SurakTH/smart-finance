@@ -399,7 +399,10 @@ class AssistantChange(Base):
 
 class TelegramDelivery(Base):
     __tablename__='telegram_deliveries'
-    job_id:Mapped[str]=mapped_column(ForeignKey('jobs.id',ondelete='CASCADE'),primary_key=True)
+    id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uid)
+    job_id:Mapped[str|None]=mapped_column(ForeignKey('jobs.id',ondelete='CASCADE'),nullable=True,unique=True)
+    body:Mapped[str|None]=mapped_column(Text,nullable=True)
+    created_at:Mapped[int]=mapped_column(BigInteger,default=lambda:time.time_ns()//1_000_000)
     workspace_id:Mapped[str]=mapped_column(String(36))
     conversation_id:Mapped[str]=mapped_column(String(36))
     user_id:Mapped[str]=mapped_column(ForeignKey('users.id'))

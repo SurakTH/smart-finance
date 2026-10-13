@@ -15,6 +15,8 @@ def channel(assistant):
     c,w,u,b,cid,wallet,cat,state,post,send=assistant
     tid=int(uuid.uuid4().hex[:12],16)
     with SessionLocal.begin() as db:
+        # Outbound queue is global; isolate fake sender from earlier test actors.
+        db.execute(delete(TelegramDelivery))
         db.add(TelegramLink(telegram_id=str(tid),workspace_id=w,user_id=u.id))
     def capture(mid,text,data=None):
         with SessionLocal.begin() as db:
@@ -28,6 +30,7 @@ def channel(assistant):
         return jid
     yield c,w,u,b,wallet,cat,state,tid,capture,process
     with SessionLocal.begin() as db:
+        db.execute(delete(TelegramDelivery).where(TelegramDelivery.workspace_id==w))
         db.execute(delete(Job).where(Job.workspace_id==w))
 
 
@@ -61,6 +64,9 @@ def test_picture_caption_model_review_and_plain_confirm(channel):
     bot=Sender()
     assert asyncio.run(deliver_once(bot))
     assert bot.sent[0][0]==tid and '212.00' in bot.sent[0][1] and 'ยืนยัน' in bot.sent[0][1]
+    # The early-confirm notice is delivered after the original review.
+    assert asyncio.run(deliver_once(bot))
+    assert 'ยังส่งข้อความทวนล่าสุดให้ไม่ครบ' in bot.sent[-1][1]
     assert not asyncio.run(deliver_once(bot))
     assert 'บันทึกรายการเรียบร้อย' in capture(2,'ยืนยัน')
     assert len(c.get(b+'/transactions').json())==1
@@ -189,7 +195,9 @@ def test_new_cancels_queued_jobs_and_delivery(channel):
         assert db.get(Job,jid).status=='cancelled'
         assert db.get(ChatGeneration,jid).stop_requested
         assert db.get(TelegramDelivery,jid).status=='cancelled'
-    assert not asyncio.run(deliver_once(Sender()))
+    bot=Sender();assert asyncio.run(deliver_once(bot))
+    assert 'เริ่มบทสนทนาใหม่' in bot.sent[0][1]
+    assert not asyncio.run(deliver_once(bot))
 
 
 def test_reset_during_model_call_blocks_late_draft(channel,pg_only):
@@ -206,7 +214,9 @@ def test_reset_during_model_call_blocks_late_draft(channel,pg_only):
     with pytest.raises((Stopped,Invalidated)):process()
     with SessionLocal() as db:
         assert not db.scalar(select(ChatAction.id).where(ChatAction.workspace_id==w))
-    assert not asyncio.run(deliver_once(Sender()))
+    bot=Sender();assert asyncio.run(deliver_once(bot))
+    assert 'เริ่มบทสนทนาใหม่' in bot.sent[0][1]
+    assert not asyncio.run(deliver_once(bot))
     assert c.get(b+'/transactions').json()==[]
 
 

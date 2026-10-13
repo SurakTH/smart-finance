@@ -1,5 +1,16 @@
 # ผลตรวจสอบ Smart Finance
 
+## แก้ AI Chat audit F1–F5 (14 ตุลาคม 2026)
+
+- แยก typed `assistant_scope` และ `assistant_render` ให้ q/บัญชี/หมวด/ช่วงวัน/ชนิดรายการอยู่ด้วยกันจน aggregate SQL และ render ยอดกรองรวมครบทุกหน้า ไม่ใช้ยอดจาก partial search page; ลิงก์หลักฐานเก็บ q ด้วย
+- รองรับชื่อเดือนเต็ม/ย่อและ พ.ศ. ตรวจ month ของ summary tool เทียบกับ scope จากคำถาม ถ้าขัดกันให้ model repair; วันที่/หลายเดือนที่ยังแยกไม่ได้ไม่ fallback เป็นเดือนนี้
+- งบใช้ planned/spent/remaining จริงและแยกรายจ่ายหมวดไม่ได้ตั้งงบ เปรียบเทียบเดือนนี้/เดือนก่อนใช้ตัวเลขจริงทั้งคู่พร้อม delta; ค้นรายการมีวันที่/บัญชี/หมายเลข และ period-detail lists ผูก finance_search context ตรงรายการที่แสดงเพื่อเลือกแก้ต่อ
+- Telegram synchronous replies เข้าคิวเดียวกับ AI results รวมผลยืนยัน ทวน /new /reset และ notices commit พร้อม ledger/message ใช้ delivery ID แยกจาก optional job ID ตรวจสิทธิ์และสถานะทวนครบก่อนยืนยันได้เหมือนกัน ไม่ส่ง ACK ซ้ำ
+- Migration `telegram_all_replies` คง legacy job deliveries รวม attempts/part/status เพิ่ม PK ใหม่และ nullable unique job ID; populated upgrade→downgrade→upgrade ผ่านทั้ง PostgreSQL และ SQLite พร้อมตรวจ status CHECK คงอยู่ เก็บ snapshot คิวใน restore verification
+- PostgreSQL disposable backend ทั้งชุด **495 passed / 1 warning เดิม Starlette/httpx**, 80.26 วินาที; เพิ่ม23กรณีจากฐาน472 ครอบคลุม6 audit reproductionsที่แปลงเป็น regression, ช่วงเดือน/คำกรอง/มากกว่า10รายการ/ถามต่อ/หมายเลขแก้ไข/sync confirmation gate/คำชื่อไม่ถูกตัด/โมเดลเลือกเดือนผิด/migration legacy rows; focused grammar/finance/natural capture ก่อนรอบรวม **67 passed**
+- Docker API/worker/migrate build ผ่าน (`a4b08b794137`); ไม่มี frontend runtime changes ไม่เรียก provider/Telegram จริง ไม่ deploy Ubuntu จากเครื่องพัฒนา ความแม่นยำทุกสำนวนและโมเดลจริงยังต้องตรวจปลายทาง การเปรียบเทียบที่รับรองรอบนี้คือเดือนนี้กับเดือนก่อน การส่ง Telegram เป็น at-least-once/retryจำกัด ไม่ใช่ exactly-once ภายนอก
+
+
 ## Telegram ไม่ส่งข้อความรับเรื่องซ้ำ (12 ตุลาคม 2026)
 
 - งานเข้าคิวหรือ update ซ้ำที่ยังไม่มีผลตอบกลับ ไม่ส่งข้อความ ACK รับเรื่อง ให้ durable outbox ส่งคำตอบจริงตามเดิม ข้อความทวน/คำถามเพิ่ม/ผลยืนยัน/ข้อผิดพลาดยังส่งได้

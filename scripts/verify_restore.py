@@ -42,9 +42,10 @@ try:
     usage='SELECT id,workspace_id,provider_id,model,task,month,input_tokens,output_tokens,cost,estimated,status,created_at FROM ai_usage ORDER BY id'
     generations='SELECT job_id,conversation_id,stop_requested FROM chat_generations ORDER BY job_id'
     telegram='SELECT telegram_id,workspace_id,user_id,conversation_id FROM telegram_links ORDER BY telegram_id'
+    telegram_outbox='SELECT id,job_id,workspace_id,conversation_id,user_id,telegram_id,reply_message_id,body,status,attempts,part,next_attempt,created_at FROM telegram_deliveries ORDER BY id'
     diagnostics='SELECT id,diagnostics,diagnostics_expires FROM jobs ORDER BY id'
     evidence='SELECT id,"references" FROM messages ORDER BY id'
-    for snapshot in (telegram,diagnostics,generations,memory,usage_policy,usage,evidence,assistant_changes,ai_options,ai_providers,email_links,schedules,occurrences,members,invites,privacy,chats,profiles,actions,spaces):
+    for snapshot in (telegram_outbox,telegram,diagnostics,generations,memory,usage_policy,usage,evidence,assistant_changes,ai_options,ai_providers,email_links,schedules,occurrences,members,invites,privacy,chats,profiles,actions,spaces):
         if run(['psql','-U','finance','-d','finance','-Atc',snapshot]).stdout!=run(['psql','-U','finance','-d',name,'-Atc',snapshot]).stdout: raise RuntimeError('Restored schedule or membership snapshot mismatch')
     print('Restore verified in disposable database: row counts, goal allocations and recurring, membership and AI configuration snapshots match; journals balance.')
 finally:

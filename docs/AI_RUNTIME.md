@@ -88,3 +88,10 @@ AI Lab ให้โอกาสแก้ prose ที่ไม่ได้เร
 - Provider connection probe ปล่อย HTTP authorization lock ก่อน network I/O งานเก่าที่มีคำขอใหม่กว่าไม่เรียกโมเดลและไม่ทับ review ใหม่
 
 ข้อจำกัดที่ยังต้องทราบ: การตีความภาษาธรรมชาติไม่ได้รองรับทุกประโยค ถ้าระบุขอบเขตไม่ได้ระบบขอเพิ่ม ไม่รับรองคุณภาพ Gemma จาก mocks และยังเก็บ read transaction/connection ระหว่าง inference (ไม่มี workspace write lock) Schema/catalog ยังคงหนึ่ง tool call ต่อ model reply ต้องทดสอบกับ provider จริงต่อ จำนวน request cap ยังต่อ processing attempt; ค่าใช้จ่าย reserve คงอยู่ข้าม crash แต่ไม่ได้อ้างว่า provider ยกเลิกคิดเงินเมื่อกดหยุด
+
+## Audit fixes — 2026-10-14
+
+- `assistant_scope.py` is the shared typed request scope. Preserve account/category/description q/date range through SQL aggregation and rendering. Month arguments from summary tools must match independently resolved user dates; unresolved date syntax does not silently default to the current month.
+- `assistant_render.py` renders period totals, current/previous month comparisons, budget remaining and numbered transaction rows from backend data. Filtered totals cover all matches, not the first search page. Names remain untrusted display data; human confirmation is still required for every mutation.
+- TelegramDelivery now has its own delivery ID, optional unique job ID, scoped reply message or notice body, and creation order. Linked synchronous replies commit with the outbox, including ledger confirmation receipts; AI jobs preserve their existing ID mapping. Delivery, access checks, retry, multipart acknowledgement, reset cancellation and confirmation gating use the same queue. Migration `telegram_all_replies` preserves old queued job results and status CHECK constraints; SQLite/PG upgrade/downgrade tests cover populated legacy rows.
+- AI Lab remains a small synthetic provider/tool check; production-scope golden tests additionally exercise the full request/render/confirmation path. It is not a certification of every real provider or language formulation.

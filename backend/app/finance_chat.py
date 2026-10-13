@@ -10,12 +10,21 @@ from .ledger import account_balances
 
 MONTHS=['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
 
+MONTH_SHORT=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
+
+def normalize_months(text):
+    for short,full in zip(MONTH_SHORT,MONTHS):text=text.replace(short,full)
+    return text
+
 def resolve_period(text,previous_texts=()):
     now=today()
+    text=normalize_months(text)
+    previous_texts=[normalize_months(t) for t in previous_texts]
     has_period=lambda t: bool(re.search(r'\d{4}-\d{2}|เดือนนี้|เดือนที่แล้ว|เดือนก่อน|วันนี้|เมื่อวาน|ปี|\d+\s*เดือน',t) or any(m in t for m in MONTHS))
     source=text
     if not has_period(text) and any(w in text for w in ('แล้ว','ล่ะ','ละ','บัญชีไหน','มีอะไรบ้าง')):
         source=next((t for t in previous_texts if has_period(t)),text)
+    if sum(name in source for name in MONTHS)>1:raise ValueError('ระบุเดือนเดียวหรือช่วงวันที่ให้ชัดเจน')
     dates=re.findall(r'(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)',source)
     if dates:
         if len(dates)>2: raise ValueError('กรุณาระบุช่วงวันเริ่มต้นและสิ้นสุดเพียงช่วงเดียว')
@@ -37,7 +46,7 @@ def resolve_period(text,previous_texts=()):
     if 'เดือนที่แล้ว' in source or 'เดือนก่อน' in source:
         end=now.replace(day=1)-timedelta(days=1)
         return end.replace(day=1),end
-    if re.search(r'ปี|\d+\s*เดือน|สัปดาห์',source):
+    if re.search(r'ปี|\d+\s*เดือน|สัปดาห์|(?<!\d)(?:20|25)\d{2}(?!\d)|เดือน\s*\d|\d{1,2}[/]\d{1,2}',source):
         raise ValueError('กรุณาระบุเดือน เช่น 2026-09 หรือช่วงวัน YYYY-MM-DD ถึง YYYY-MM-DD เพื่อให้รายงานตรงช่วงที่ต้องการ')
     return month_bounds(now.strftime('%Y-%m'))
 

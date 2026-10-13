@@ -71,9 +71,9 @@ async def capture(message: TGMessage, bot: Bot):
     text=(message.caption or '') if message.photo else (message.text or '')
     with SessionLocal.begin() as db:
         reply=submit(db,message.from_user.id,message.message_id,text,data)
-    # Keep long reviews complete, including the confirmation instructions.
-    for offset in range(0,len(reply),3500):
-        await message.answer(reply[offset:offset+3500],parse_mode=None)
+    # Every linked reply (including confirmations) is committed with its outbox.
+    # Unlinked validation is the only reply that has no authorized room to queue.
+    if reply=='กรุณาเชื่อมต่อจากเว็บก่อน':await message.answer(reply,parse_mode=None)
 
 async def start_delivery(bot: Bot):
     from .telegram_chat import delivery_loop

@@ -79,7 +79,11 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             from .assistant_summary import answer as summary_answer
             try:
                 from .assistant_summary import parse
-                parse(answer.draft)
+                summary=parse(answer.draft)
+                if not sandbox and not task.error:
+                    # Model arguments cannot replace an independently resolved user scope.
+                    if task.kind=='balance' and summary.report!='balances':raise ValueError('scope mismatch')
+                    if task.kind in ('period','budget','comparison') and (summary.report!='monthly' or (summary.month and summary.month!=task.start.strftime('%Y-%m'))):raise ValueError('scope mismatch')
                 content=sandbox.summary(answer.draft) if sandbox else evidence.grounded(db,room,job,task,getattr(job,'_read_cache',{}))
             except ValueError:
                 invalid(answer,dict(error='invalid_arguments',message='เลือก report balances โดยไม่ใส่ month หรือ monthly พร้อมเดือน YYYY-MM ที่ถูกต้อง เว้น month เพื่อใช้เดือนนี้'))

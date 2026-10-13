@@ -18,15 +18,18 @@ def submit(db, telegram_id, message_id, text, data=None):
     link = linked(db, telegram_id)
     if not link:
         return 'กรุณาเชื่อมต่อจากเว็บก่อน'
-    if len(text) > 4000:
-        return 'ข้อความยาวเกิน 4,000 ตัวอักษร กรุณาแบ่งส่งนะคะ'
     prefix = f'telegram:{telegram_id}:{link.user_id}:{link.workspace_id}:'
     cid = link.conversation_id or str(uuid5(NAMESPACE_URL, prefix + 'room'))
     input_id = str(uuid5(NAMESPACE_URL, prefix + str(message_id) + ':input'))
     reply_id = str(uuid5(NAMESPACE_URL, prefix + str(message_id) + ':reply'))
     previous = db.get(Message, reply_id)
     if previous:
-        return previous.content
+        room=db.get(Conversation,cid)
+        if room and room.workspace_id==link.workspace_id and room.user_id==link.user_id and previous.conversation_id==room.id and previous.workspace_id==room.workspace_id and previous.role=='assistant' and not expired(db,room):
+            # Recover a pre-migration synchronous reply without executing its command again.
+            queue_message(db,link,room,previous)
+            return previous.content
+        return ACK
     c = db.get(Conversation, cid)
     if c and (c.workspace_id!=link.workspace_id or c.user_id!=link.user_id):
         c=None
@@ -40,6 +43,8 @@ def submit(db, telegram_id, message_id, text, data=None):
         db.add(c)
         db.flush()
     link.conversation_id=c.id
+    if len(text)>4000:
+        return queue_body(db,link,c,reply_id,'ข้อความยาวเกิน 4,000 ตัวอักษร กรุณาแบ่งส่งนะคะ')
     if not data and re.fullmatch(r'/(?:new|reset)(?:@[A-Za-z0-9_]+)?',text.strip(),re.I):
         return reset(db,link,c,message_id,input_id,reply_id,text)
     # Telegram updates can be retried; never enqueue or post twice for one input.
@@ -55,12 +60,12 @@ def submit(db, telegram_id, message_id, text, data=None):
     # confirm a newer draft while its response is still queued or only partly sent.
     if not image and re.fullmatch(r'ยืนยัน(?:\s+[a-fA-F0-9]{8})?',text.strip()):
         review_id=(c.capture_context or {}).get('review_message_id')
-        waiting=db.scalar(select(TelegramDelivery.job_id).where(
+        waiting=db.scalar(select(TelegramDelivery.id).where(
             TelegramDelivery.conversation_id==c.id,TelegramDelivery.workspace_id==c.workspace_id,
             TelegramDelivery.user_id==link.user_id,TelegramDelivery.reply_message_id==review_id,
             TelegramDelivery.status!='sent').limit(1)) if review_id else None
         if waiting:
-            return 'ยังส่งข้อความทวนล่าสุดให้ไม่ครบค่ะ ยังไม่บันทึก รอข้อความทวนก่อน แล้วพิมพ์ ยืนยัน อีกครั้งนะคะ'
+            return queue_body(db,link,c,reply_id,'ยังส่งข้อความทวนล่าสุดให้ไม่ครบค่ะ ยังไม่บันทึก รอข้อความทวนก่อน แล้วพิมพ์ ยืนยัน อีกครั้งนะคะ')
     reply = None if image else handle(db, c, link.user_id, text, allow_model_dialogue=True)
     if reply is not None:
         message = Message(id=reply_id, workspace_id=c.workspace_id, conversation_id=c.id,
@@ -68,12 +73,13 @@ def submit(db, telegram_id, message_id, text, data=None):
         db.add(message)
         db.flush()
         bind_review(db, c, link.user_id, message)
+        queue_message(db,link,c,message)
         return reply
     begin_request(db, c, link.user_id)
     job = enqueue(db, c.workspace_id, link.user_id, 'chat', {
         'conversation_id':c.id, 'text':text, 'routing':'workspace', 'user_message_id':input_id,
         **({'attachment_id':image.id} if image else {})})
-    db.add(TelegramDelivery(job_id=job.id, workspace_id=c.workspace_id, conversation_id=c.id,
+    db.add(TelegramDelivery(id=job.id,job_id=job.id, workspace_id=c.workspace_id, conversation_id=c.id,
                             user_id=link.user_id, telegram_id=str(telegram_id)))
     db.flush()
     return ACK
@@ -99,9 +105,24 @@ def reset(db,link,old,message_id,input_id,reply_id,text):
     room=Conversation(workspace_id=old.workspace_id,user_id=link.user_id,title='Telegram · ผู้ช่วย AI',privacy='private')
     db.add(room);db.flush();link.conversation_id=room.id
     reply='เริ่มบทสนทนาใหม่แล้วค่ะ เก็บประวัติเดิมไว้บนเว็บ ยกเลิกร่างและคำตอบที่ค้างในห้องเก่าแล้ว รายการเงินที่บันทึกไว้ยังอยู่ครบ คุยเรื่องใหม่ได้เลยค่ะ'
-    db.add(Message(id=reply_id,workspace_id=room.workspace_id,conversation_id=room.id,role='assistant',content=reply,
-                   created_at=message_time(db,room.workspace_id,room.id)))
+    message=Message(id=reply_id,workspace_id=room.workspace_id,conversation_id=room.id,role='assistant',content=reply,
+                   created_at=message_time(db,room.workspace_id,room.id))
+    db.add(message);db.flush();queue_message(db,link,room,message)
     return reply
+
+
+def queue_message(db,link,room,message):
+    if not db.get(TelegramDelivery,message.id):
+        db.add(TelegramDelivery(id=message.id,workspace_id=room.workspace_id,conversation_id=room.id,
+            user_id=link.user_id,telegram_id=link.telegram_id,reply_message_id=message.id))
+
+
+def queue_body(db,link,room,identifier,text):
+    # Notices must not displace the latest assistant review in confirmation state.
+    if not db.get(TelegramDelivery,identifier):
+        db.add(TelegramDelivery(id=identifier,workspace_id=room.workspace_id,conversation_id=room.id,
+            user_id=link.user_id,telegram_id=link.telegram_id,body=text))
+    return text
 
 
 def claim():
@@ -109,24 +130,26 @@ def claim():
     from .ai_errors import message as error_message
     from .chat_privacy import expired
     with SessionLocal.begin() as db:
-        rows = db.scalars(select(TelegramDelivery).join(Job, Job.id==TelegramDelivery.job_id).where(
+        rows = db.scalars(select(TelegramDelivery).outerjoin(Job, Job.id==TelegramDelivery.job_id).where(
             TelegramDelivery.status=='pending', TelegramDelivery.next_attempt<=now(),
-            Job.status.in_(['done','failed','cancelled'])).order_by(Job.created_at,Job.id)
+            ((TelegramDelivery.job_id.is_(None)) | Job.status.in_(['done','failed','cancelled']))).order_by(TelegramDelivery.created_at,TelegramDelivery.id)
             .with_for_update(skip_locked=True, of=TelegramDelivery).limit(20)).all()
         for row in rows:
-            job = db.get(Job,row.job_id)
+            job = db.get(Job,row.job_id) if row.job_id else None
             room = db.get(Conversation,row.conversation_id)
             link = db.get(TelegramLink,row.telegram_id)
             ws = db.get(Workspace,row.workspace_id)
             if not (ws and ws.archived_at is None and room and room.workspace_id==row.workspace_id
                     and room.user_id==row.user_id and not expired(db,room)
-                    and job.workspace_id==row.workspace_id and job.user_id==row.user_id
+                    and (not row.job_id or (job and job.workspace_id==row.workspace_id and job.user_id==row.user_id))
                     and link and link.workspace_id==row.workspace_id and link.user_id==row.user_id
                     and (not link.conversation_id or link.conversation_id==room.id)
                     and db.get(Membership,(row.user_id,row.workspace_id))):
                 row.status='cancelled'
                 continue
-            if job.status=='done':
+            if not job and row.body is not None:
+                body=row.body
+            elif not job or job.status=='done':
                 reply = db.get(Message,row.reply_message_id) if row.reply_message_id else None
                 if not (reply and reply.role=='assistant' and reply.workspace_id==row.workspace_id
                         and reply.conversation_id==row.conversation_id):
@@ -143,13 +166,13 @@ def claim():
                 continue
             row.attempts+=1
             row.next_attempt=now()+120
-            return row.job_id, int(row.telegram_id), row.part, parts[row.part], len(parts)
+            return row.id, int(row.telegram_id), row.part, parts[row.part], len(parts)
     return None
 
 
 def completed(jid, part, total, failure=False, permanent=False, delay=10):
     with SessionLocal.begin() as db:
-        row=db.scalar(select(TelegramDelivery).where(TelegramDelivery.job_id==jid).with_for_update())
+        row=db.scalar(select(TelegramDelivery).where(TelegramDelivery.id==jid).with_for_update())
         if not row or row.status!='pending' or row.part!=part:
             return
         if failure:

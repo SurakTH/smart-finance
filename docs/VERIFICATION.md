@@ -1,5 +1,12 @@
 # ผลตรวจสอบ Smart Finance
 
+## แก้ GitHub Actions browser regression (14 ตุลาคม 2026)
+
+- ตรวจ log ของ run #39 (`38465732013`, commit c367512): backend PostgreSQL **680 passed** แต่ browser suite **6 failed / 54 passed** AI Lab ทั้งdesktop/mobileยังคาด5options ทั้งที่เพิ่มnatural scenarioเป็น6แล้ว; อีก4mobile failuresอยู่ที่signInรอdashboard ไม่ใช่ข้อผิดพลาดledgerหรือAI backend
+- แก้ `frontend/e2e/ai-diagnostics.spec.ts` ให้ตรวจ scenario identifiersครบ6รายการ และทดสอบเลือก/เริ่ม natural และ receipt อย่างชัดเจน ตรวจว่าไม่เริ่มเองเมื่อเปิดหน้า requestส่งcase+providerถูกตัว ปุ่มpendingและผล/diagnostic metadataยังทำงาน ใช้ job IDsแยกแต่ละscenario ไม่แชร์สถานะเปิดรายละเอียดโดยบังเอิญ
+- รัน browser suiteทั้งชุดกับ Docker Compose/Nginxที่สร้างแยกชื่อ `smart-finance-ci-fix` ฐานข้อมูล/Redis/บัญชีสาธิตใหม่บน localhost:18080: **60 passed (3.1m)** Desktop30และMobile30 รวม4เคสloginที่เคยล้ม TypeScript typecheckผ่าน ไม่แก้production authentication/throttling ไม่เพิ่มretryหรือข้ามtests ไม่มีการเข้าถึงข้อมูลจริงบนserver
+- ผลในเครื่องแสดงว่าปัญหาloginไม่เกิดซ้ำในชุดที่แก้แล้ว ไม่สรุปสาเหตุ429จากlogเดิมที่แสดงเพียงheading timeout ไม่มีfrontend production/backend/env/schema changesในรอบนี้ ผลGitHubรอบใหม่ต้องตรวจแยกจากผลlocalนี้
+
 ## Direct AI data reads และแยกผู้ใช้ (14 ตุลาคม 2026)
 
 - เพิ่ม `fetch_finance` อ่าน balances/summary/transactions/budgets/analytics โดยตรง ไม่บังคับ plan→answer tool หรือ placeholder syntax ผู้ใช้พูดตามธรรมชาติ; โมเดลเลือกข้อมูลและตัวกรอง ส่วน backend ตรวจสิทธิ์/โครงสร้าง/ช่วงวัน/ตัวเลข อ่านต่อหลายชุดแล้วตอบเป็น normal Thai Markdown ได้ `understand_request` เป็นตัวเลือกเสริม เครื่องมือเดิมยังใช้ได้โดยไม่ทำ scope รายจ่ายกลายเป็นยอดคงเหลือ

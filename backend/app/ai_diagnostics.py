@@ -11,7 +11,7 @@ from .security import owner,login_limit
 
 router=APIRouter(prefix='/workspaces/{wid}/ai',dependencies=[Depends(owner)])
 EVENTS={'request','tool','provider_error','fallback','synthesis','result','review_repair'}
-TOOLS={'answer_finance_summary','load_toolkit','lookup_workspace','query_finance','prepare_transaction','prepare_correction','prepare_management_plan'}
+TOOLS={'interpret_request','answer_finance_summary','load_toolkit','lookup_workspace','query_finance','prepare_transaction','prepare_correction','prepare_management_plan'}
 RESOURCES={'accounts','categories','balances','budgets','goals','recurring','preferences','monthly_analysis','search_transactions'}
 STATUSES={'ok','failed','invalid','cached','limited','passed','skipped'}
 

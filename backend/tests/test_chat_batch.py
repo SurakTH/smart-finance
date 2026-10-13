@@ -129,7 +129,9 @@ def test_prompt_text_budget_and_unique_images(actor,monkeypatch):
     images=[part for m in turns if isinstance(m['content'],list) for part in m['content'] if part['type']=='image_url']
     notes=[m for m in turns if isinstance(m['content'],str) and m['content'].startswith('{"type": "older_user_excerpts"')]
     assert len(notes)==1 and len(notes[0]['content'])<=2400
-    recent=[m for m in turns if m not in notes]
+    indices=[m for m in turns if isinstance(m['content'],str) and m['content'].startswith('{"type": "user_message_index"')]
+    assert len(indices)<=1 and all(len(m['content'])<=1600 for m in indices)
+    recent=[m for m in turns if m not in notes+indices]
     assert len(images)==0 and len(recent)<=7
     assert sum(len(m['content']) for m in recent if isinstance(m['content'],str))<=24000
     assert all(m['role']=='user' for m in notes)

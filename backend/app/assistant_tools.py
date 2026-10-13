@@ -16,11 +16,12 @@ def all_tools():
     from .assistant_management import tool as management
     from .assistant_finance import tools
     from .assistant_lookup import tool as lookup
-    return [tool(),management(),*tools(),lookup()]
+    from .request_interpreter import tool as interpret_tool
+    return [tool(),management(),*tools(),lookup(),interpret_tool()]
 
 
 def catalog(active):
-    names={'prepare_transaction','query_finance','lookup_workspace'}
+    names={'prepare_transaction','query_finance','lookup_workspace','interpret_request'}
     if 'management' in active:names.add('prepare_management_plan')
     if 'corrections' in active:names.add('prepare_correction')
     result=[tool for tool in all_tools() if tool['function']['name'] in names]

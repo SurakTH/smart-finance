@@ -74,6 +74,13 @@ def call_model(db, job):
         from .assistant_images import selected_images
         image_ids=selected_images(history,job,db) if assistant else []
         if older_notes:messages.append({'role':'user','content':older_notes})
+        if assistant:
+            from .request_interpreter import context as request_context
+            pending_request=request_context(get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id']))
+            if pending_request:messages.append({'role':'user','content':pending_request})
+            from .request_interpreter import message_index
+            index=message_index(history)
+            if index:messages.append({'role':'user','content':index})
         sent_images=set()
         for m in reversed(history):
             content=re.sub(r'\n\nรหัสทางเลือก:\nยืนยัน [A-F0-9]{8}\n$','',m.content)[:4000]

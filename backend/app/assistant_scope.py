@@ -19,6 +19,7 @@ class Scope:
     error:bool=False
     q:str=''
     transaction_kind:str|None=None
+    include_items:bool=False
 
 
 def subject(text,names):

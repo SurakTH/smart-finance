@@ -75,6 +75,31 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             repaired=True;record(job,'review_repair',status='invalid')
             turns.extend([{'role':'assistant','content':answer.content},{'role':'system','content':REPAIR}])
             continue
+        if answer.tool_name=='interpret_request':
+            if sandbox:raise ValueError('Unexpected sandbox interpreter')
+            from .request_interpreter import interpret,NeedInfo,QUESTIONS
+            try:
+                interpreted,reply,kit=interpret(db,room,job,answer.draft)
+            except NeedInfo as missing:
+                from .request_interpreter import remember_clarification
+                remember_clarification(db,room,job,missing.field)
+                record(job,'tool',tool='interpret_request',status='invalid')
+                return AssistantReply(QUESTIONS[missing.field])
+            except (ValidationError,ValueError) as error:
+                from .tool_arguments import issues
+                invalid(answer,dict(error='invalid_arguments',issues=issues(error) if isinstance(error,ValidationError) else [],message='ส่งเจตนา วันที่ และตัวกรองตาม schema อ้างคำจากข้อความผู้ใช้เท่านั้น ห้ามใส่ tenant/user/SQL ถ้ากำกวมใช้ clarify'))
+                if repairs>=2:return AssistantReply(QUESTIONS['intent'])
+                continue
+            record(job,'tool',tool='interpret_request',status='ok')
+            if interpreted is not None:task=interpreted
+            if reply is not None:
+                return checked(AssistantReply(reply)) if interpreted and interpreted.kind=='conversation' else AssistantReply(reply)
+            if task.kind!='mutation':
+                publish(job,'progress',stage='summarizing')
+                return AssistantReply(evidence.grounded(db,room,job,task,getattr(job,'_read_cache',{})))
+            if kit:active.add(kit);job._assistant_toolkits=sorted(active)
+            feedback(answer,dict(intent='mutation',toolkit=kit,message='ยังไม่ได้เปลี่ยนข้อมูล เตรียมร่างด้วยเครื่องมือที่มีและรอผู้ใช้ยืนยัน ห้ามยืนยันเอง'))
+            continue
         if answer.tool_name=='answer_finance_summary':
             from .assistant_summary import answer as summary_answer
             try:

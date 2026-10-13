@@ -1,5 +1,16 @@
 # ผลตรวจสอบ Smart Finance
 
+## Model-assisted intent/date/filter interpretation (14 ตุลาคม 2026)
+
+- เพิ่ม strict `interpret_request` schema สำหรับ balances/period/budget/comparison/transactions/mutation/conversation/clarify ใน production catalog ลดการพึ่ง regex เป็นทางเดียว งานอ่านที่ครบข้อมูลคืน backend-verified answer ได้ใน1 model request โดยไม่บังคับ planner call แยก; backward-compatible tools เดิมคงอยู่
+- Backend ตรวจ period phrase กับวันที่จริง (วันนี้/เมื่อวาน/เดือน/สัปดาห์จันทร์–อาทิตย์/Nวันรวมวันนี้/ต้นเดือนถึงวันนี้/ISO range≤366วัน), account/category phrase แบบ unique partial match ใน workspace, คำค้นจากผู้ใช้, current names/dates override history และป้องกันฟิลเตอร์กาแฟหายจาก scope ที่รู้จัก
+- Historical source ต้องเป็นข้อความ user ในห้อง/workspaceเดียวกัน ภายใน20ข้อความผู้ใช้ล่าสุด/15นาที ส่ง original history เดิมพร้อม untrusted message index สูงสุด8ข้อความ/1,600ตัวอักษร ถ้ากำกวมถามเพิ่มพร้อมเก็บ scoped origin ใน conversation JSON ไม่อ้าง assistant prose เป็นคำสั่ง
+- Mutation intent เป็นแค่ transition ไป typed draft tools ไม่โพสต์ ledger ไม่รับ confirm/tenant/user/SQL fields คำตอบคุยทั่วไปยังผ่าน evidence guard และ strip thinking; stop/context/epoch fences ครอบเส้นทางใหม่เหมือนเดิม Telegram ใช้ interpreter และ durable outbox เดียวกัน
+- PostgreSQL disposable ทั้งชุด **531 passed / 1 warning Starlette/httpx เดิม**, 84.71วินาที เพิ่ม36กรณีจากฐาน495: หลายสำนวนวัน/เดือน, คุยทั่วไปมีคำว่าเดือน, financial intent downgrade, filter omission, unique/ambiguous names, clarification followup/latest override, sourceอื่นห้อง/ผู้ใช้/หมดอายุ, forbidden authority fields, วัน/จำนวนวันขัดกัน, draft→plain confirm, Telegram, mutationระหว่างรอ, filtered comparison/list rows, null optional field และ private think stripping
+- Focused interpreter/dialogue/batch รอบก่อนรวม **56 passed**; Docker API/worker/migrate buildผ่าน (`a9a5a63fec16`) ไม่มี frontend runtime/schema/env changes ไม่เรียก provider/Telegram จริง ไม่ deploy Ubuntu จากเครื่องพัฒนา
+- ไม่รับรองทุกสำนวน/ทุกโมเดล โมเดลยังอาจใช้ fallback เดิมหรือจำเป็นต้องถามเพิ่ม AI Labบนเว็บยังเป็น5โจทย์เดิม ไม่ใช่expanded language evaluation; semantic memory และ analytics ช่วงอิสระยังไม่ได้เพิ่มในรอบนี้ ควรตรวจ Qwen/Gemma จริงด้วย synthetic cases ก่อนอ้างความสำเร็จ/latency/token savings
+
+
 ## แก้ AI Chat audit F1–F5 (14 ตุลาคม 2026)
 
 - แยก typed `assistant_scope` และ `assistant_render` ให้ q/บัญชี/หมวด/ช่วงวัน/ชนิดรายการอยู่ด้วยกันจน aggregate SQL และ render ยอดกรองรวมครบทุกหน้า ไม่ใช้ยอดจาก partial search page; ลิงก์หลักฐานเก็บ q ด้วย

@@ -51,11 +51,11 @@ def financial_report(db,room,job,task):
             lines.append(f"- {title}: เดือนนี้ **{money(result[key])} บาท** · เดือนก่อน **{money(previous[key])} บาท** · {'เพิ่ม' if delta>=0 else 'ลด'} **{money(abs(delta))} บาท**")
         return '\n'.join(lines)+'\n\nจากรายการที่บันทึกแล้ว ไม่ใช่ยอดคงเหลือสะสมค่ะ'
     lines=[f"ช่วง **{task.start.isoformat()} ถึง {task.end.isoformat()}** · {label}"]
-    if task.transaction_kind:
+    if task.transaction_kind in ('transfer','card_payment'):
         title={'transfer':'โอนเงิน','card_payment':'จ่ายบัตรเครดิต'}[task.transaction_kind]
         lines.append(f"- {title}: **{money(result['amount'])} บาท** ({result['count']} รายการ) ไม่คิดเป็นรายจ่ายซ้ำ")
     else:lines.extend([f"- รายจ่าย: **{money(result['expense'])} บาท**",f"- รายรับ: **{money(result['income'])} บาท**",f"- รายรับหักรายจ่าย: **{money(result['income']-result['expense'])} บาท**"])
-    if __import__('re').search(r'มีอะไร|รายการ|รายละเอียด|บัญชีไหน',task.text):
+    if task.include_items or __import__('re').search(r'มีอะไร|รายการ|รายละเอียด|บัญชีไหน',task.text):
         report=transaction_report(db,room.workspace_id,task.start,task.end,task.transaction_kind,
             result['account_id'],result['category_id'],task.q,page_size=10)
         lines.append(f"\nรายการที่ตรงเงื่อนไข {report['total']} รายการ:")

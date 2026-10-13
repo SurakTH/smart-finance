@@ -20,7 +20,8 @@ def resolve_period(text,previous_texts=()):
     now=today()
     text=normalize_months(text)
     previous_texts=[normalize_months(t) for t in previous_texts]
-    has_period=lambda t: bool(re.search(r'\d{4}-\d{2}|เดือนนี้|เดือนที่แล้ว|เดือนก่อน|วันนี้|เมื่อวาน|ปี|\d+\s*เดือน',t) or any(m in t for m in MONTHS))
+    from .assistant_questions import PATTERN
+    has_period=lambda t: bool(PATTERN.search(t) or re.search(r'\d{4}-\d{2}|เดือนนี้|เดือนที่แล้ว|เดือนก่อน|วันนี้|เมื่อวาน|ปี|\d+\s*เดือน',t) or any(m in t for m in MONTHS))
     source=text
     if not has_period(text) and any(w in text for w in ('แล้ว','ล่ะ','ละ','บัญชีไหน','มีอะไรบ้าง')):
         source=next((t for t in previous_texts if has_period(t)),text)
@@ -41,6 +42,11 @@ def resolve_period(text,previous_texts=()):
             year=int(match[0]) if match else now.year
             if year>2400: year-=543
             return month_bounds(f'{year:04}-{index:02}')
+    from .assistant_questions import relative_period
+    relative=relative_period(source)
+    if relative:
+        if relative['question']:raise ValueError('weekday requires a date')
+        return relative['start'],relative['end']
     if 'เมื่อวาน' in source: return now-timedelta(days=1),now-timedelta(days=1)
     if 'วันนี้' in source: return now,now
     if 'เดือนที่แล้ว' in source or 'เดือนก่อน' in source:

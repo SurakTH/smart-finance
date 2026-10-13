@@ -1,5 +1,17 @@
 # ผลตรวจสอบ Smart Finance
 
+## แก้ภาษาพูด/ตัวกรองผิด/สัปดาห์และวันในแชท (14 ตุลาคม 2026)
+
+- Reproduce ข้อความผู้ใช้ทั้งชุด: เมื่อวานเสียตังกับไรบ้าง → สัปดาห์ที่แล้วใช้ตังไรบ้าง → เดือนนี้ละ ใช้ตังเท่าไหร่ → เมื่อวานมีไรบ้าง → วันอาทิตย์ละ ทดสอบด้วยรายการสังเคราะห์ต่างวัน/ต่างเดือน ยอดและรายละเอียดตรงช่วง ไม่มี q จากคำพูดทั่วไป ไม่มี intent clarification ที่ผิดจุด ไม่มี ChatAction/ledger posting
+- `assistant_questions` เป็น narrow fully-consumed read grammar + relative period ไม่ใช่ keyword-only broadening เรียก verified renderer โดยตรงก่อน provider เฉพาะข้อความล้วนใน production runtime ไม่แทรก sandbox หรือข้อความแนบรูป ไม่รับ subject/account/amount/write/analytics/extra text แบบ partial match จึงไม่เพิ่ม model requests สำหรับเคสที่ตรวจครบแล้ว และยังใช้ stop check/final context/permission/epoch fences เดิม
+- previous week จันทร์–อาทิตย์ใช้ร่วมกับ fallback report; explicit week ในข้อความล่าสุดไม่ถูก previous month จาก history ทับ ขยาย interpreter weekday mode และ bare weekday ถามวันที่ ตอบ qualifier ต่อได้เฉพาะ adjacent user message/ห้อง/workspaceเดิม/expiry15นาที ไม่เดาวันเป็นเดือนนี้ ไม่ใช้บริบทที่หมดอายุหรือมีข้อความแทรก
+- Followup คง scoped account/category/literal q จริงจาก verified scope ภายในห้อง ไม่กลายเป็นยอดทั้งพื้นที่ รักษาคำกับข้าว/ละมุด และไม่นำ filler q “ละ ใช้ตัง” จากรุ่นก่อนมาใช้ซ้ำ แก้เฉพาะ chat context ไม่แก้ financial records
+- Filtered income/expense reports และ evidence cards แสดงเฉพาะชนิดนั้น ไม่สร้างความหมายว่าอีกชนิดเป็นศูนย์ทั้งพื้นที่ Status repairing เป็น “กำลังตรวจคำถามและเงื่อนไขอีกครั้ง…” แทนข้อความเหมือนกำลังแก้ข้อมูลผู้ใช้
+- Final PostgreSQL disposable suite **610 passed / 1 warning Starlette/httpx เดิม**, 92.32วินาที เพิ่ม33 regressionจากฐาน577 ครอบคลุม conversation reproductions, colloquial spellings, full-match rejection, weekday bounds/clarification/expiry/interruption, historical filter retention/filler cleanup, filtered week query และ Telegram; picture-caption test ยืนยันยังส่งภาพเข้า model path และไม่บันทึกเอง
+- Focused กลุ่มภาษา/interpreter/scope/analytics รอบก่อน **134 passed** และ colloquial final **33 passed**; TypeScript ผ่าน; actual React server rendering ของ evidence cards ผ่าน filtered income/expense/URL filters และ unfiltered totals Docker API/worker/migrate `c2fc2e596b1b`, web `87f6bef58d50` buildผ่าน
+- ไม่มี env/schema migration changes ไม่ deploy local app ลงข้อมูลเดิม ไม่เรียกโมเดล/Telegramจริง ไม่เข้าถึงหรือยืนยันข้อมูลจริงบน Ubuntu Browser regression assertion ของ progress label อัปเดตไว้ให้ CI แต่ไม่ได้รัน browser suite ในเครื่องรอบนี้ ไม่อ้างความแม่นยำทุกสำนวนของโมเดลหรือข้อมูลจริงจาก synthetic tests
+
+
 ## Analytics ช่วงอิสระใน AI Chat (14 ตุลาคม 2026)
 
 - ขยาย `interpret_request` ด้วย strict analytics plan: summary/compare/trend/average/ranking, quoted period และ compare_period, bucket วัน/สัปดาห์/เดือน และอันดับ category/account/description สูงสุด10กลุ่ม ช่วงละ≤366วัน รองรับ ISO/dd/mm/yyyy รวม พ.ศ./เลขไทย ปฏิเสธ SQL/authority fields/พารามิเตอร์เกินขอบเขต

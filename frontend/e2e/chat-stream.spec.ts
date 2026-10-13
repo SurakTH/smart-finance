@@ -16,6 +16,7 @@ test('live previews escape text, reconnect safely, clear on room change and load
  await emit({kind:'start',job_id:'one'});await expect(page.locator('.thinking')).toContainText('กำลังเตรียมคำตอบ');
  await expect.poll(()=>log.evaluate(el=>el.scrollHeight-el.clientHeight)).toBeGreaterThan(400);
  await log.evaluate(el=>{el.scrollTop=el.scrollHeight-el.clientHeight-240;el.dispatchEvent(new Event('scroll'));});const thinkingTop=await log.evaluate(el=>el.scrollTop);
+ await emit({kind:'progress',job_id:'one',stage:'repairing'});await expect(page.locator('.stream-notice')).toContainText('กำลังตรวจคำถามและเงื่อนไขอีกครั้ง');
  await emit({kind:'progress',job_id:'one',stage:'lookup'});await expect(page.locator('.stream-notice')).toContainText('กำลังค้นข้อมูล');
  await emit({kind:'delta',job_id:'one',snapshot:true,text:'ส่วนแรก <img src=x onerror=alert(1)>'});await expect(page.locator('.live-answer')).toContainText('ส่วนแรก');await expect(page.locator('.live-answer img')).toHaveCount(0);await emit({kind:'delta',job_id:'one',text:' และส่วนถัดไป'});await expect(page.locator('.live-answer')).toContainText('และส่วนถัดไป');
  await expect.poll(()=>log.evaluate(el=>el.scrollTop)).toBeCloseTo(thinkingTop,0);

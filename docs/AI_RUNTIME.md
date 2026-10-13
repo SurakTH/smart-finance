@@ -112,3 +112,12 @@ Read answers reuse evidence renderers/SQL totals and references. Conversational 
 - SQL aggregate ครบทุกหน้า เปรียบเทียบใช้เงื่อนไขเดียวกันสองช่วง Trend ใช้ CASE group ตามปฏิทินสูงสุด366ช่วง เติมศูนย์และ render12ช่วงท้าย Ranking aggregate ก่อน limit1–10 พร้อม group count และสัดส่วนยอดทั้งหมด ลำดับ ties ชื่อ/id คงที่
 - คำอธิบายเชิงตัวเลขสร้างจากผลที่ตรวจแล้วโดย backend โมเดลเลือกขอบเขต/รูปแบบวิเคราะห์ ไม่มีสิทธิ์แทรกยอดอิสระหรือเดาสาเหตุ เพิ่ม branch ใน evidence boundary จึงใช้ stop/context/epoch final fences และ Telegram durable delivery เดิม ไม่เพิ่ม schema migration/env/provider calls
 - ค่าเริ่มต้นรายจ่าย; รายรับเลือกชัด แยกไม่ปน transfer/card/opening; per-calendar-day denominator เป็นจำนวนวันเต็มของช่วงที่ขอ per-transaction denominator เป็นจำนวนรายการจริง ไม่ใช่เฉพาะวันที่มีรายการหรือรายการที่แสดง ฐานศูนย์/ไม่มีรายการไม่สร้าง infinity หรือหารศูนย์ ไม่อ้าง capacity/latency จากผลทดสอบหน่วย
+
+
+## Colloquial read recovery — 14 ตุลาคม 2026
+
+`assistant_questions.py` ตรวจคำถามอ่านข้อมูลแบบ fully consumed + relative period หนึ่งช่วงก่อนเรียก provider เฉพาะข้อความที่ไม่มี attachment ใน production `converse` (ไม่แทรก AI Lab sandbox) ทำให้คำถามตัง/ตังค์/ไรบ้างที่ชัดเจนไม่พึ่ง model tool/schema/q ภายนอก ไม่รับชื่อ/เลข/คำสั่งเขียน/ข้อความอื่นแบบ partial match และยังผ่าน stop check + final authorization/context/epoch fence เดิม อ่านด้วย evidence renderer และ transaction_conditions เดิม จึงไม่เพิ่ม SQL หรือเส้นทาง posting ใหม่
+
+Shared relative-period resolver ใช้ Bangkok date, previous week Monday–Sunday และ weekday ที่ระบุ past/upcoming ชัด `Period.weekday` ตรวจ phrase ไม่รับวันที่เดา Bare weekday คืนคำถามวันที่ผ่าน backend; `weekday_question` JSON เก็บ origin/day/expiry900s และยอมรับ qualifier ต่อเฉพาะเมื่อ origin เป็น user message ก่อนหน้าในห้อง/workspaceนี้ ไม่มี migration อัปเดต grammar แบบ edge-only ใน fallback scope โดยรักษาคำอย่างกับข้าว/ละมุด และคง literal filters ที่ตรวจแล้วใน date followups แก้เฉพาะ legacy filler query ที่พิสูจน์จากรายงานผู้ใช้ ไม่แก้ ledger
+
+การแสดง `repairing` เปลี่ยนเป็นตรวจคำถาม/เงื่อนไข และ filtered income/expense cards/renderers ไม่อ้างยอดอีกชนิดเป็นศูนย์ทั้งหมด คำถามอื่นยังใช้ bounded model runtime เดิม ผลการทดสอบข้อมูลสังเคราะห์ไม่ใช่การยืนยัน server/model จริงทุกสำนวน

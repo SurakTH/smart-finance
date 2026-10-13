@@ -54,6 +54,9 @@ def financial_report(db,room,job,task):
     if task.transaction_kind in ('transfer','card_payment'):
         title={'transfer':'โอนเงิน','card_payment':'จ่ายบัตรเครดิต'}[task.transaction_kind]
         lines.append(f"- {title}: **{money(result['amount'])} บาท** ({result['count']} รายการ) ไม่คิดเป็นรายจ่ายซ้ำ")
+    elif task.transaction_kind in ('income','expense'):
+        title='รายรับ' if task.transaction_kind=='income' else 'รายจ่าย'
+        lines.append(f"- {title}: **{money(result[task.transaction_kind])} บาท** · {result['count']} รายการ (เฉพาะ{title})")
     else:lines.extend([f"- รายจ่าย: **{money(result['expense'])} บาท**",f"- รายรับ: **{money(result['income'])} บาท**",f"- รายรับหักรายจ่าย: **{money(result['income']-result['expense'])} บาท**"])
     if task.include_items or __import__('re').search(r'มีอะไร|รายการ|รายละเอียด|บัญชีไหน',task.text):
         report=transaction_report(db,room.workspace_id,task.start,task.end,task.transaction_kind,

@@ -26,6 +26,17 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
     from . import assistant_evidence as evidence
     task=evidence.Scope('mutation' if sandbox.case in ('transaction','followup','receipt') else 'query','') if sandbox else evidence.scope(db,room,job.payload.get('text',''))
     job._suppress_preview=True
+    from .assistant_questions import for_turn,remember
+    clear_question=None if sandbox or job.payload.get('attachment_id') else for_turn(db,room,job)
+    def recovered():
+        if not clear_question:return None
+        record(job,'synthesis',status='ok')
+        remember(room,job,clear_question)
+        if clear_question.question:return AssistantReply(clear_question.question)
+        return AssistantReply(evidence.grounded(db,room,job,clear_question.scope(db,room),{}))
+    if clear_question:
+        check_stop(job,True)
+        return recovered()
     def checked(answer):
         record(job,'synthesis',status='ok')
         return AssistantReply(sandbox.finish(answer.content,getattr(job,'_read_cache',{})) if sandbox else evidence.finish(db,room,job,task,answer.content,getattr(job,'_read_cache',{})))

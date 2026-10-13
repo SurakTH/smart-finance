@@ -14,7 +14,7 @@ from .assistant_analytics import Analysis
 
 class Period(BaseModel):
     model_config=ConfigDict(extra='forbid')
-    mode:Literal['today','yesterday','month_to_date','current_month','previous_month','month','last_days','current_week','previous_week','range']
+    mode:Literal['today','yesterday','month_to_date','current_month','previous_month','month','last_days','current_week','previous_week','weekday','range']
     phrase:str=Field(min_length=1,max_length=150)
     month:str|None=Field(default=None,pattern=r'^\d{4}-\d{2}$')
     start:date|None=None
@@ -58,7 +58,7 @@ class NeedInfo(Exception):
 
 def tool():
     return {'type':'function','function':{'name':'interpret_request','description':
-        'Translate natural conversation into a validated intent, dates and filters. Prefer this for financial questions in varied language, unclear intent, short follow-ups, or casual chat that mentions months. Use transactions when the user wants dated line items, period for totals. Read intents directly return a backend-verified answer in ONE call; no extra lookup needed for obvious names. period phrase/account phrase/category phrase/q must be verbatim from the chosen user message; source_message_id can reference a recent user message in THIS room when answering a clarification. Use clarify with missing field if ambiguous. Dates are computed/checked by backend, never guess a date/ID. Relative modes omit start/end; last_days includes today. Use analytics with analysis.operation summary/compare/trend/average/ranking for arbitrary date windows (up to 366 days each). compare requires compare_period quoted from the user; no implicit prior dates. bucket day/week/month, ranking group_by category/account/description and order highest/lowest. Choose income or expense only; omit transaction_kind for expense. Dates can be ISO or dd/mm/yyyy (Thai Buddhist years supported). Read replies include grounded explanations, averages and evidence links. Legacy comparison supports this month vs previous month only. mutation only selects the next draft toolkit, never saves/confirms. For clear write requests existing prepare tools remain available. No tenant/user/SQL fields.',
+        'Translate natural conversation into a validated intent, dates and filters. Prefer this for financial questions in varied language, unclear intent, short follow-ups, or casual chat that mentions months. Thai colloquial เสียตัง/ใช้ตัง means spending, ไรบ้าง asks for line items, and ละ/ล่ะ are conversation particles, NEVER description search terms. สัปดาห์ที่แล้ว is previous_week. Bare weekdays require clarify period; weekday mode supports explicitly past/upcoming weekdays. Use transactions when the user wants dated line items, period for totals. Read intents directly return a backend-verified answer in ONE call; no extra lookup needed for obvious names. period phrase/account phrase/category phrase/q must be verbatim from the chosen user message; source_message_id can reference a recent user message in THIS room when answering a clarification. Use clarify with missing field if ambiguous. Dates are computed/checked by backend, never guess a date/ID. Relative modes omit start/end; last_days includes today. Use analytics with analysis.operation summary/compare/trend/average/ranking for arbitrary date windows (up to 366 days each). compare requires compare_period quoted from the user; no implicit prior dates. bucket day/week/month, ranking group_by category/account/description and order highest/lowest. Choose income or expense only; omit transaction_kind for expense. Dates can be ISO or dd/mm/yyyy (Thai Buddhist years supported). Read replies include grounded explanations, averages and evidence links. Legacy comparison supports this month vs previous month only. mutation only selects the next draft toolkit, never saves/confirms. For clear write requests existing prepare tools remain available. No tenant/user/SQL fields.',
         'parameters':Request.model_json_schema()}}
 
 
@@ -84,6 +84,11 @@ def date_range(value):
         start,end=month_bounds(day.strftime('%Y-%m'))
     elif value.mode in ('current_week','previous_week'):
         start=current-timedelta(days=current.weekday()+7*int(value.mode=='previous_week'));end=start+timedelta(days=6)
+    elif value.mode=='weekday':
+        from .assistant_questions import relative_period
+        resolved=relative_period(phrase)
+        if not resolved or resolved['question'] or not phrase.startswith('วัน'):raise NeedInfo('period')
+        start,end=resolved['start'],resolved['end']
     elif value.mode=='last_days':
         match=re.search(r'(\d+|หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ)\s*วัน',phrase)
         if not match or re.search(r'ไม่รวมวันนี้',phrase) or not re.search(r'ที่ผ่านมา|ย้อนหลัง|ล่าสุด',phrase):raise NeedInfo('period')
@@ -152,6 +157,12 @@ def interpret(db,room,job,raw):
     effective=job.payload.get('source_user_message_id') if job.payload.get('repair_review') else job.payload.get('user_message_id')
     current=db.scalar(select(Message).where(Message.id==effective,Message.workspace_id==room.workspace_id,Message.conversation_id==room.id,Message.role=='user'))
     if not current:raise NeedInfo('intent')
+    from .assistant_questions import parse as parse_question
+    clear=None if current.attachment_id else parse_question(current.content)
+    if clear:
+        if clear.question:return None,clear.question,None
+        room.capture_context={k:v for k,v in (room.capture_context or {}).items() if k!='request_clarification'}
+        return clear.scope(db,room),None,None
     text=row.content+('\n'+current.content if row.id!=current.id else '')
     if value.intent=='clarify':
         field=value.missing or 'intent'

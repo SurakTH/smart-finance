@@ -29,17 +29,19 @@ def subject(text,names):
     for name in sorted(names,key=len,reverse=True):value=value.replace(name,' ')
     value=re.sub(r'\d{4}-\d{2}(?:-\d{2})?|(?<!\d)(?:20|25)\d{2}(?!\d)',' <period> ',value)
     for name in MONTHS:value=value.replace(name,' <period> ')
+    from .assistant_questions import PATTERN
+    value=PATTERN.sub(' <period> ',value)
     for word in ('เดือนที่แล้ว','เดือนก่อน','เดือนนี้','เมื่อวาน','วันนี้'):
         value=value.replace(word,' <period> ')
-    prefixes=['รายรับหักรายจ่าย','เปรียบเทียบ','ค่าใช้จ่าย','โอนเงิน','โอน','จ่ายบัตรเครดิต','จ่ายบัตร','รายจ่าย','รายรับ','รายการ','ใช้จ่าย','ใช้ไป','ใช้เงิน','จ่ายไป','ช่วย','สรุป','แสดง','อยากรู้ว่า','อยากรู้','ขอทราบ','ขอดู','รบกวน','เทียบกับ','เทียบ','เฉพาะ','ทุกบัญชี','ทุกหมวด','ทั้งหมด','ภาพรวม','รายละเอียด','หมวด','บัญชี','จาก','ผ่าน','ค้นหา','ค้น','ดู','ค่า','จ่าย','ใช้','ถาม','รวม','ของฉัน','มีรายจ่าย','มีรายรับ','ใน','ช่วง']
-    suffixes=['ใช้ไปเท่าไหร่','ใช้ไปเท่าไร','จ่ายไปเท่าไหร่','จ่ายไปเท่าไร','เท่าไหร่','เท่าไร','เท่าใด','อะไรบ้าง','มีอะไร','บัญชีไหน','รายละเอียด','ทั้งหมด','ภาพรวม','หน่อย','ได้ไหม','ให้หน่อย','คงเหลือ','ยอดรวม','ยอด','กี่บาท','ค่ะ','ครับ','นะ','ล่ะ','ละ','แล้ว','วิเคราะห์','ช่วย','ใช้ไป','จ่ายไป','ที่จ่าย','ที่ใช้','ของฉัน','ใน']
+    prefixes=['รายรับหักรายจ่าย','เปรียบเทียบ','ค่าใช้จ่าย','โอนเงิน','โอน','จ่ายบัตรเครดิต','จ่ายบัตร','รายจ่าย','รายรับ','รายการ','เสียตังค์','เสียตัง','ใช้ตังค์','ใช้ตัง','จ่ายตังค์','จ่ายตัง','เสียเงิน','ใช้จ่าย','ใช้ไป','ใช้เงิน','จ่ายไป','ช่วย','สรุป','แสดง','อยากรู้ว่า','อยากรู้','ขอทราบ','ขอดู','รบกวน','เทียบกับ','เทียบ','เฉพาะ','ทุกบัญชี','ทุกหมวด','ทั้งหมด','ภาพรวม','รายละเอียด','หมวด','บัญชี','จาก','ผ่าน','ค้นหา','ค้น','ดู','ค่า','จ่าย','ใช้','ถาม','รวม','ของฉัน','มีรายจ่าย','มีรายรับ','ใน','ช่วง']
+    suffixes=['ใช้ไปเท่าไหร่','ใช้ไปเท่าไร','จ่ายไปเท่าไหร่','จ่ายไปเท่าไร','เท่าไหร่','เท่าไร','เท่าใด','กับอะไรบ้าง','กับไรบ้าง','อะไรบ้าง','ไรบ้าง','มีไรบ้าง','มีอะไร','บัญชีไหน','รายละเอียด','ทั้งหมด','ภาพรวม','หน่อย','ได้ไหม','ให้หน่อย','คงเหลือ','ยอดรวม','ยอด','กี่บาท','ค่ะ','ครับ','นะ','ล่ะ','ละ','แล้ว','วิเคราะห์','ช่วย','ใช้ไป','จ่ายไป','ที่จ่าย','ที่ใช้','ของฉัน','ใน']
     pre=re.compile(r'^(?:'+'|'.join(re.escape(w) for w in sorted(prefixes,key=len,reverse=True))+r')')
     post=re.compile(r'(?:'+'|'.join(re.escape(w) for w in sorted(suffixes,key=len,reverse=True))+r')$')
     parts=[]
     for part in value.split('<period>'):
         old=None
         while part!=old:
-            old=part;part=pre.sub('',post.sub('',part.strip(' :：?？'))).strip()
+            old=part;part=re.sub(r'^(?:ละ|ล่ะ)(?:\s+|$)','',part.strip());part=re.sub(r'^(?:ฉัน|ผม|เรา)(?=ใช้|เสีย|จ่าย|มี|อยาก|ขอ)','',part);part=pre.sub('',post.sub('',part.strip(' :：?？'))).strip()
         if part in ('','เยอะไหม','น้อยไหม','เยอะ','น้อย','มี','เป็นอย่างไร','ยังไง','เดือน','กับ','และ','ถึง','มีรายการ','มีรายการบ้าง'):continue
         if part not in parts:parts.append(part)
     if len(parts)>1:raise ValueError('ambiguous description filter')
@@ -48,8 +50,11 @@ def subject(text,names):
 
 def scope(db,room,text):
     if re.search(r'จด|บันทึก|แก้|เพิ่ม|สร้าง|ตั้งงบ|ปรับงบ|เปลี่ยน|ลบ|record|save|update|delete',text,re.I):return Scope('mutation',text)
+    from .assistant_questions import parse
+    question=parse(text)
+    if question:return question.scope(db,room)
     balance=bool(re.search(r'มีเงิน|ยอด(?:เงิน|บัญชี|คงเหลือ)|เงิน.*เหลือ|balance|how much money',text,re.I))
-    period=bool(re.search(r'รายจ่าย|รายรับ|ใช้(?:ไป|เงิน)|จ่าย(?:ไป|อะไร)|เดือน|spent|income|expense',text,re.I) or (re.search(r'วันนี้|เมื่อวาน|ย้อนหลัง',text) and re.search(r'เท่าไร|เท่าไหร่|กี่บาท|กิน|ซื้อ',text)))
+    period=bool(re.search(r'รายจ่าย|รายรับ|(?:ใช้|เสีย|จ่าย)(?:ตัง(?:ค์)?|เงิน)|ใช้(?:ไป|เงิน)|จ่าย(?:ไป|อะไร)|เดือน|spent|income|expense',text,re.I) or (re.search(r'วันนี้|เมื่อวาน|ย้อนหลัง',text) and re.search(r'เท่าไร|เท่าไหร่|กี่บาท|กิน|ซื้อ',text)))
     kind='budget' if 'งบ' in text else 'comparison' if period and re.search(r'เปรียบเทียบ|เทียบ.*กับ',text) else 'balance' if balance and not period else 'period' if period else 'query' if re.search(r'บัญชี|หมวด|รายการ|เป้าหมาย|ต่อ|ที่เหลือ',text) else 'conversation'
     result=Scope(kind,text)
     if re.search(r'แนวโน้ม|เฉลี่ย|สูงสุด|ต่ำสุด|มากที่สุด|น้อยที่สุด|คาดการณ์',text) and kind in ('period','balance'):

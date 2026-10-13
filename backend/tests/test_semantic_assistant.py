@@ -51,7 +51,7 @@ def test_model_resolves_natural_date_range_without_demanding_iso_from_user(assis
 def test_internal_schema_error_is_repaired_without_asking_user_to_reformat(assistant):
     c,w,u,b,cid,wallet,cat,state,post,send=assistant
     post(8000,'กาแฟ','2026-10-10')
-    state['responses']=[plan(period={'mode':'last_week'}),plan(period={'mode':'previous_week'},metric='expense'),answer('อาทิตย์ก่อนใช้ไป {{expense}} ค่ะ')]
+    state['responses']=[plan(period={'mode':'unsupported_period'}),plan(period={'mode':'previous_week'},metric='expense'),answer('อาทิตย์ก่อนใช้ไป {{expense}} ค่ะ')]
     content=send('อาทิตย์ก่อนเงินหายไปกับอะไรหนักๆบ้างอะ')['content']
     assert '80.00 บาท' in content and 'อาทิตย์ก่อนใช้ไป' in content and len(state['calls'])==3
     assert json.loads(state['calls'][1]['messages'][-1]['content'])['error']=='invalid_arguments'

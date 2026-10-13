@@ -37,7 +37,10 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         record(job,'synthesis',status='ok')
         remember(room,job,clear_question)
         if clear_question.question:return AssistantReply(clear_question.question)
-        return AssistantReply(evidence.grounded(db,room,job,clear_question.scope(db,room),{}))
+        content=evidence.grounded(db,room,job,clear_question.scope(db,room),{})
+        if (room.capture_context or {}).get('verified_scope'):
+            room.capture_context={**room.capture_context,'verified_scope':{**room.capture_context['verified_scope'],'source_user_message_id':job.payload.get('user_message_id'),'read_kind':'period','include_items':clear_question.include_items}}
+        return AssistantReply(content)
     if clear_question:
         check_stop(job,True)
         return recovered()
@@ -117,7 +120,9 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             try:result=sandbox.fetch(answer.draft,job) if sandbox else fetch(db,room,job,answer.draft)
             except (ValidationError,ValueError,HTTPException,NeedInfo) as error:
                 from .tool_arguments import issues
-                invalid(answer,dict(error='invalid_arguments',issues=issues(error) if isinstance(error,ValidationError) else [],message='แก้ argument ของเครื่องมือเองจากบริบทหรือค้นชื่อก่อน ไม่ต้องให้ผู้ใช้กรอก format และห้ามเลือกผู้ใช้/workspaceอื่น'))
+                from .assistant_calendar import argument_help
+                if sandbox:sandbox.problem(error)
+                invalid(answer,dict(error='invalid_arguments',**argument_help(),issues=issues(error) if isinstance(error,ValidationError) else [],message='แก้ argument ของเครื่องมือเองจากบริบทหรือค้นชื่อก่อน ไม่ต้องให้ผู้ใช้กรอก format และห้ามเลือกผู้ใช้/workspaceอื่น'))
                 if repairs>=2:return AssistantReply(fallback(job)) if getattr(job,'_direct_evidence',None) else AssistantReply('ฉันยังค้นข้อมูลส่วนนี้ไม่สำเร็จค่ะ อยากให้ดูบัญชีหรือช่วงไหนเป็นพิเศษคะ?')
                 continue
             job._direct_finance_read=True
@@ -167,7 +172,8 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
                 continue
             except (ValidationError,ValueError,HTTPException) as error:
                 from .tool_arguments import issues
-                invalid(answer,dict(error='invalid_arguments',issues=issues(error) if isinstance(error,ValidationError) else [],message='แก้แผนของคุณตาม schema ใช้ period mode ให้ถูกต้อง เลือกชื่อจาก workspace เท่านั้น ไม่ต้องให้ผู้ใช้กรอกคำสั่งใหม่'))
+                from .assistant_calendar import argument_help
+                invalid(answer,dict(error='invalid_arguments',**argument_help(),issues=issues(error) if isinstance(error,ValidationError) else [],message='แก้แผนของคุณตาม schema ใช้ period mode ให้ถูกต้อง เลือกชื่อจาก workspace เท่านั้น ไม่ต้องให้ผู้ใช้กรอกคำสั่งใหม่'))
                 if repairs>=2:return AssistantReply(clarification(db,room,'intent'))
                 continue
             record(job,'tool',tool=answer.tool_name,status='ok')

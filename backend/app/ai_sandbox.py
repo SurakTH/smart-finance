@@ -91,8 +91,8 @@ class Sandbox:
         if case=='natural':names={'fetch_finance','understand_request','respond_finance','lookup_workspace'}
         self.tools=[t for t in catalog({'conversation_answer'} if case=='natural' else set()) if t['function']['name'] in names]
     def fetch(self,raw,job):
-        from .assistant_data import Fetch,remember
-        value=Fetch.model_validate_json(raw)
+        from .assistant_data import parse_fetch,remember
+        value=parse_fetch(raw,PROMPTS[self.case])
         if value.resource not in ('summary','transactions'):raise TestFailed('wrong_tool')
         if value.account_id or value.category_id or value.cursor or value.compare_period or value.bucket or value.group_by or value.operation!='summary':raise TestFailed('invalid_arguments')
         args=dict(intent='transactions' if value.resource=='transactions' else 'report',q=value.q,metric=value.metric,period=value.period.model_dump(mode='json') if value.period else ({'mode':'last_days','days':30} if value.resource=='transactions' else {'mode':'month_to_date'}))
@@ -104,15 +104,20 @@ class Sandbox:
         from .assistant_scope import Scope
         value=Plan.model_validate_json(raw)
         if self.case!='natural':raise TestFailed('wrong_tool')
-        if value.intent not in ('report','transactions') or value.q!='กาแฟ' or value.account or value.category or value.reuse_previous_scope or value.source_message_id or value.compare_period or value.action:raise TestFailed('invalid_arguments')
+        if value.intent not in ('report','transactions') or value.account or value.category or value.reuse_previous_scope or value.source_message_id or value.compare_period or value.action:raise TestFailed('invalid_arguments')
+        # Literal search over synthetic records, with a distractor. Do not make
+        # one exact spelling of coffee an undocumented tool argument contract.
+        examples=[dict(description='คาเฟ่ กาแฟตัวอย่าง',amount=8000),dict(description='อาหารตัวอย่าง',amount=92000)]
+        matches=[row for row in examples if value.q and value.q.strip().casefold() in row['description'].casefold()]
+        if matches!=examples[:1]:raise TestFailed('invalid_arguments')
         if not value.period or value.metric not in (None,'expense'):raise TestFailed('invalid_arguments')
         start,end=bounds(value.period)
         if (start,end)!=(today().replace(day=1),today()):raise TestFailed('invalid_arguments')
-        return Scope('period','',start=start,end=end,transaction_kind='expense',q='กาแฟ',include_items=value.intent=='transactions'),None,None
+        return Scope('period','',start=start,end=end,transaction_kind='expense',q=value.q.strip(),include_items=value.intent=='transactions'),None,None
     def semantic_prepare(self,job,task):
         self.semantic_used=True
-        scope=f'ข้อมูลสังเคราะห์ · {task.start} ถึง {task.end} · ค้นคำ กาแฟ'
-        facts=dict(expense='80.00 บาท',count='1 รายการ',item_0_description='กาแฟตัวอย่าง',item_0_amount='80.00 บาท')
+        scope=f'ข้อมูลสังเคราะห์ · {task.start} ถึง {task.end} · ค้นคำ {task.q}'
+        facts=dict(expense='80.00 บาท',count='1 รายการ',item_0_description='คาเฟ่ กาแฟตัวอย่าง',item_0_amount='80.00 บาท')
         self.semantic_fallback=scope+'\nรายจ่าย 80.00 บาท จาก 1 รายการ'
         job._semantic_evidence=dict(facts=facts,principal={'expense','count','item_0_amount'},scope=scope,fallback=self.semantic_fallback)
         return dict(source='synthetic_backend',scope=scope,facts=facts,notice='ตอบภาษาปกติ ตัวเลขทั้งหมดมาจาก facts ไม่ต้องใช้แม่แบบ')
@@ -166,7 +171,8 @@ def evaluate(db,job,p,case,deadline,budget):
         if answer.tool_name!='prepare_transaction':raise TestFailed(sandbox.last_failure or 'no_tool')
         check_draft(answer.draft,case)
     elif case=='natural':
-        if not sandbox.semantic_used or not any((e.get('tool')=='respond_finance' or e.get('event')=='synthesis') and e.get('status')=='ok' for e in getattr(job,'_diagnostic_events',[])):raise TestFailed('answer_mismatch')
+        if not sandbox.semantic_used:raise TestFailed(sandbox.last_failure or 'no_tool')
+        if not any((e.get('tool')=='respond_finance' or e.get('event')=='synthesis') and e.get('status')=='ok' for e in getattr(job,'_diagnostic_events',[])):raise TestFailed('answer_mismatch')
     elif not answer.content:raise TestFailed('answer_mismatch')
 
 def run(db,job):

@@ -1,5 +1,13 @@
 # โครงสร้าง AI Chat และผลการปรับปรุง
 
+## Plain calendar transport และ source-bound recovery (14 ตุลาคม 2026)
+
+`assistant_calendar.parameters` แทนเฉพาะperiod/compare_periodในadvertised Fetch/Plan schemasด้วยdate-word stringหรือflat start/end ลดnested enum refsที่โมเดลมักส่งผิด Internal Window/boundsยังเป็นcanonical strict structure Aliases/Thai Buddhist dates/relative mathอยู่backendทั้งหมด ไม่เพิ่ม user-command routing grammar
+
+`parse_fetch` จับเฉพาะperiod-only validation failure, ปฏิเสธextra/other-field errorsและnested object/arrayก่อนrecoverจากcalendar mentionเดียวในactualownedUserMessage source ห้ามchoose-firstเมื่อdate hintsขัดกัน ไม่มีfallbackเดือนนี้จากinvaliddate Explicitfilters/authority/boundsยังvalidateหลังซ่อม Date-only followup require adjacentsource ID+room scope+15min expiry ไม่ใช้assistantclaimsเป็นsource Metadata errorsยังsanitizedและมีcalendar repairexamplesภายใน
+
+Sandboxใช้parserเดียวกันกับpromptสังเคราะห์ มีcoffee/cafe literal fixtureและdinnerdistractorเพื่อทดสอบscopeโดยไม่ต้องส่งexact qstringแบบลับ ยอด80/count1และวันที่MTDยังตรวจเหมือนเดิม แยกinvalidargumentsจากanswer mismatch ไม่มีledgerreadหรือrealprovider assuranceจากmock tests
+
 ## Direct reads and ordinary prose — 14 ตุลาคม 2026 (เส้นทางปัจจุบัน)
 
 - `assistant_data.Fetch` / `fetch_finance` เป็น primary direct read tool ใน initial catalog; `understand_request` เป็น optional plan สำหรับงานซับซ้อน ไม่บังคับ plan→respond สำหรับคำถามอ่านข้อมูล User text ไม่เข้าตัว parser นี้ มีเฉพาะ tool arguments จากโมเดลที่ normalize internal calendar aliases แล้วตรวจ strict schema; ไม่มี tenant/user/SQL/confirmation fields

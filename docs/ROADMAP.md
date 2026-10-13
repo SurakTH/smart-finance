@@ -58,3 +58,6 @@
 
 
 อัปเดตสนทนาแบบ model-led — 14 ตุลาคม 2026: ใช้ understand_request ตีความโดยไม่บังคับ user phrase/command format และ respond_finance ให้ AI เรียบเรียงคำตอบด้วย fact slots ที่ backendเติมตัวเลขจริง ซ่อมแผนภายในก่อนถามเพิ่ม คุยแนวคิดการเงินได้ โหลด answer schema หลังมีfacts และซ่อนlegacy parserจากinitialcatalog เพิ่ม AI Lab natural scenario ใช้แต่ข้อมูลสังเคราะห์ ยังคงทวน/ยืนยันทุก mutation และอยู่ขั้น3จาก4: ต้องวัดความเข้าใจ/ความถูกต้องเชิงความหมาย/latencyกับQwen/Gemmaจริง ยังไม่มีsemantic searchทุกคำพ้องหรือการรับรองความถูกต้องทุกประโยคจากmocktests
+
+
+อัปเดตการอ่านข้อมูลของเลขา AI (14 ตุลาคม 2026): เพิ่ม direct fetch ของยอด/รายการ/งบ/analytics และอ่านหลายชุดเพื่อตอบเป็นภาษาไทยปกติ ไม่บังคับ plan หรือ answer placeholders ผู้ใช้ไม่ต้องพิมพ์ตามformat ตรวจสิทธิ์ user/workspace/private roomที่backendก่อนอ่านทุกครั้ง ข้อมูลการเงินร่วมกันได้เฉพาะworkspaceที่เชิญสมาชิก; personal preferences/chatยังแยกคน ร่างและยืนยันก่อนเขียนเหมือนเดิม ยังอยู่ขั้น3จาก4 ต้องประเมินโมเดลจริงและserver deploymentหลังCIผ่าน

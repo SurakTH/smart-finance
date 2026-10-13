@@ -1,5 +1,15 @@
 # ผลตรวจสอบ Smart Finance
 
+## Direct AI data reads และแยกผู้ใช้ (14 ตุลาคม 2026)
+
+- เพิ่ม `fetch_finance` อ่าน balances/summary/transactions/budgets/analytics โดยตรง ไม่บังคับ plan→answer tool หรือ placeholder syntax ผู้ใช้พูดตามธรรมชาติ; โมเดลเลือกข้อมูลและตัวกรอง ส่วน backend ตรวจสิทธิ์/โครงสร้าง/ช่วงวัน/ตัวเลข อ่านต่อหลายชุดแล้วตอบเป็น normal Thai Markdown ได้ `understand_request` เป็นตัวเลือกเสริม เครื่องมือเดิมยังใช้ได้โดยไม่ทำ scope รายจ่ายกลายเป็นยอดคงเหลือ
+- ทุก direct/lookup/semantic/legacy-summary reader bind current job user/workspace/private room และตรวจ membership อีกครั้งก่อนอ่าน ไม่รับ tenant/user/SQL fields จากโมเดล ID ชื่อและ cursorต่างพื้นที่ถูกปฏิเสธ actor-bound evidence cacheใช้ข้ามคน/ห้องไม่ได้ Shared workspace ledgerยังให้สมาชิกที่เชิญเข้ามาอ่านร่วมได้; private chatและpreferencesยังแยกผู้ใช้
+- SQL totalsครบทุกหน้า transaction page≤10 เก็บ current-page facts/search context และรวม source refsหลายชุด bounded24 Defaults/scopesแสดงชัดเจน Explicit scoped IDยังทำงานเมื่อชื่อบัญชีซ้ำ ไม่ต้องให้ผู้ใช้พิมพ์formatวันหรือID
+- Natural proseตรวจตัวเลข/หน่วยกับ numeric backend facts รองรับเลขไทย/รายการลำดับ ไม่เอาเลขในชื่อบัญชีหรือdescriptionมาเป็นหลักฐานยอด ไม่เอายอดรวมไปอ้างเป็นค่าเฉลี่ยบาท/วันหรือบาท/รายการที่ไม่ได้อ่าน ถ้าผิดให้แก้ภายในก่อนคืนรายงานจริง ป้องกันfake write receiptsและphantom review; model proseไม่มีสิทธิ์บันทึกหรือยืนยัน ร่างจริงยังรอข้อความ **ยืนยัน**
+- Final disposable PostgreSQL suite **680 passed / 1 warning Starlette/httpx เดิม**, 104.18วินาที เพิ่ม37testsจากฐาน643 ครอบคลุม direct→plain reply, multi-read, aliases/default dates, complete pagination/correction selection, cross-user identical names/different balances, scoped IDs, authority-field rejection, shared-ledger/private-room/private-preference boundaries, membership revocationในdirect/semantic/lookup, actorcache binding, fake amounts/review recovery/manual posting, Telegram same runtime และ synthetic AI Lab
+- Focused release grounding+semantic **70 passed**; ก่อนหน้า reader/security/scope focused **99 passed** Docker API/worker/migrate buildผ่าน image **bb08dbac9fd9** ไม่มีfrontend/env/schema migration changes; ไม่รันbrowser suiteซ้ำเพราะไม่มีfrontendchanges CIยังตรวจตามworkflowเดิม
+- Testsใช้model/Telegram transportsจำลองและฐานข้อมูลทิ้งได้ ไม่เรียกQwen/Gemma/Ollamaปลายทางจริง ไม่ deploy local appหรืออ่านเงินจริงบนUbuntu ผลตรวจตัวเลขและisolationไม่ได้พิสูจน์ว่าความหมายของคำตอบหรือfilterที่โมเดลเลือกจะถูกทุกครั้ง ต้องลองAI Lab/คำถามจริงหลังdeploy-homeสำเร็จ ไม่มีข้ออ้างว่าserverdeployผ่านแล้ว
+
 ## Model-led conversation และ natural answer จาก facts (14 ตุลาคม 2026)
 
 - เพิ่ม primary `understand_request` โดยไม่บังคับ user phrase/q/date ให้ตรง legacy regex ให้โมเดลตีความภาษา/ชื่อเรียก/วันที่/บริบท แล้ว backendตรวจschema/ชนิดบัญชี/workspace/source recency/ช่วง≤366วันเท่านั้น ถอด `interpret_request` จากinitialcatalog แต่รับprotocolเก่าภายในเหมือนเดิม

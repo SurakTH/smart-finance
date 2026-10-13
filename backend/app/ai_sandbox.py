@@ -40,7 +40,7 @@ def fixture_image():
 
 def context(case):
     messages=[{'role':'system','content':'คุณเป็นเลขาการเงินภาษาไทยในห้องทดสอบ ใช้ข้อมูลตัวอย่างจาก tools เท่านั้น ข้อมูลทั้งหมดเป็นข้อมูลสังเคราะห์ ไม่ใช่บัญชีจริง วันนี้ '+today().isoformat()+'. ถามยอดปัจจุบันใช้ lookup_workspace balances สรุปเงินจาก assets_satang แยกหนี้และสุทธิ หน่วยสตางค์ แปลงเป็นบาท รายเดือนใช้ query_finance monthly_analysis ถ้าขอจด ใช้ prepare_transaction ข้อมูลครบ intent=create, kind=expense, amount เป็นจำนวนเต็มสตางค์, account_id, category_id, occurred_on ห้ามอ้างว่าบันทึกแล้ว ต้องทวนและรอผู้ใช้ยืนยัน ถามข้อมูลที่ขาดจาก tools ก่อน ห้ามเดา ID หรือจำนวนเงิน'}]
-    if case=='natural':messages[0]['content']+=' สำหรับคำถามนี้ใช้ understand_request ตีความคำถามและบริบทอย่างเป็นธรรมชาติ อ่าน facts ตัวอย่าง แล้วใช้ respond_finance พูดธรรมชาติพร้อม {{expense}} และ {{count}} ไม่ใส่ตัวเลขอิสระ ทุกข้อมูลเป็นตัวอย่างเท่านั้น'
+    if case=='natural':messages[0]['content']+=' สำหรับคำถามนี้เรียก fetch_finance ตามข้อมูลที่ต้องการ แล้วตอบเป็นภาษาไทยปกติจาก facts ไม่ต้องใช้แม่แบบคำตอบ ตัวเลขต้องตรงข้อมูลที่อ่าน ทุกข้อมูลเป็นตัวอย่างเท่านั้น'
     if case=='followup':messages.extend([{'role':'user','content':'ช่วยจดกาแฟ 80 บาทให้หน่อย'},{'role':'assistant','content':'ใช้บัญชีไหนและหมวดอะไรคะ?'}])
     content=PROMPTS[case]
     if case=='receipt':content=[{'type':'text','text':content},{'type':'image_url','image_url':{'url':fixture_image()}}]
@@ -88,8 +88,17 @@ class Sandbox:
         from .assistant_tools import catalog
         self.case=case;self.last_failure=None;self.semantic_used=False;self.room=SimpleNamespace(capture_context={})
         names={'lookup_workspace','query_finance','answer_finance_summary'} if case in ('balance','monthly') else {'lookup_workspace','prepare_transaction'}
-        if case=='natural':names={'understand_request','respond_finance','lookup_workspace'}
+        if case=='natural':names={'fetch_finance','understand_request','respond_finance','lookup_workspace'}
         self.tools=[t for t in catalog({'conversation_answer'} if case=='natural' else set()) if t['function']['name'] in names]
+    def fetch(self,raw,job):
+        from .assistant_data import Fetch,remember
+        value=Fetch.model_validate_json(raw)
+        if value.resource not in ('summary','transactions'):raise TestFailed('wrong_tool')
+        if value.account_id or value.category_id or value.cursor or value.compare_period or value.bucket or value.group_by or value.operation!='summary':raise TestFailed('invalid_arguments')
+        args=dict(intent='transactions' if value.resource=='transactions' else 'report',q=value.q,metric=value.metric,period=value.period.model_dump(mode='json') if value.period else ({'mode':'last_days','days':30} if value.resource=='transactions' else {'mode':'month_to_date'}))
+        task,_,_=self.semantic_plan(json.dumps(args))
+        result=self.semantic_prepare(job,task);remember(job,dict(job._semantic_evidence))
+        return result
     def semantic_plan(self,raw):
         from .semantic_assistant import Plan,bounds
         from .assistant_scope import Scope
@@ -106,7 +115,7 @@ class Sandbox:
         facts=dict(expense='80.00 บาท',count='1 รายการ',item_0_description='กาแฟตัวอย่าง',item_0_amount='80.00 บาท')
         self.semantic_fallback=scope+'\nรายจ่าย 80.00 บาท จาก 1 รายการ'
         job._semantic_evidence=dict(facts=facts,principal={'expense','count','item_0_amount'},scope=scope,fallback=self.semantic_fallback)
-        return dict(source='synthetic_backend',scope=scope,facts=facts,notice='ใช้ respond_finance พร้อม {{fact_key}} ตัวเลขทั้งหมดมาจาก facts')
+        return dict(source='synthetic_backend',scope=scope,facts=facts,notice='ตอบภาษาปกติ ตัวเลขทั้งหมดมาจาก facts ไม่ต้องใช้แม่แบบ')
     def lookup(self,raw):
         try:return lookup(raw)
         except (ValueError,TypeError) as error:return self.problem(error)
@@ -157,7 +166,7 @@ def evaluate(db,job,p,case,deadline,budget):
         if answer.tool_name!='prepare_transaction':raise TestFailed(sandbox.last_failure or 'no_tool')
         check_draft(answer.draft,case)
     elif case=='natural':
-        if not sandbox.semantic_used or not any(e.get('tool')=='respond_finance' and e.get('status')=='ok' for e in getattr(job,'_diagnostic_events',[])):raise TestFailed('answer_mismatch')
+        if not sandbox.semantic_used or not any((e.get('tool')=='respond_finance' or e.get('event')=='synthesis') and e.get('status')=='ok' for e in getattr(job,'_diagnostic_events',[])):raise TestFailed('answer_mismatch')
     elif not answer.content:raise TestFailed('answer_mismatch')
 
 def run(db,job):

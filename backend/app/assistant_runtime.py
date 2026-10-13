@@ -23,6 +23,9 @@ from pydantic import ValidationError
 def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budget,sandbox=None):
     from .assistant_finance import read
     room=sandbox.room if sandbox else get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id'])
+    if not sandbox:
+        from .assistant_data import authorize
+        authorize(db,job,room)
     turns=list(messages)
     from . import assistant_evidence as evidence
     task=evidence.Scope('mutation' if sandbox.case in ('transaction','followup','receipt') else 'query','') if sandbox else evidence.scope(db,room,job.payload.get('text',''))
@@ -79,26 +82,65 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         return answer
     def finish():
         record(job,'synthesis',status='ok');publish(job,'progress',stage='summarizing')
+        if getattr(job,'_direct_finance_read',False) and getattr(job,'_direct_evidence',None):
+            from .assistant_data import fallback
+            return AssistantReply(fallback(job))
         return AssistantReply(sandbox.finish('',getattr(job,'_read_cache',{})) if sandbox else evidence.grounded(db,room,job,task,getattr(job,'_read_cache',{})))
     for _ in range(7):
         answer=request()
-        if not answer.tool_name and (claims_review(answer.content) or (task.kind=='mutation' and not re.search(r'ไหน|อะไร|เท่าไร|เท่าไหร่|\?',answer.content))):
+        if not answer.tool_name and claims_review(answer.content):
+            if repaired:return AssistantReply(UNPREPARED)
+            repaired=True;record(job,'review_repair',status='invalid')
+            turns.extend([{'role':'assistant','content':answer.content},{'role':'system','content':REPAIR}])
+            continue
+        if not answer.tool_name and getattr(job,'_direct_evidence',None) and (getattr(job,'_direct_finance_read',False) or task.error or task.kind in ('query','conversation')):
+            from .assistant_data import natural,fallback
+            try:content=natural(job,answer.content)
+            except ValueError:
+                repairs+=1;record(job,'synthesis',status='invalid');publish(job,'progress',stage='repairing')
+                if repairs>=2:return AssistantReply(fallback(job))
+                turns.extend([{'role':'assistant','content':answer.content},{'role':'system','content':'ปรับคำตอบให้ตรงข้อมูลที่อ่านจริง ตอบภาษาปกติได้ ไม่ต้องใช้แม่แบบ อย่าใส่ตัวเลขที่ไม่มีในข้อมูล และอย่าอ้างว่าได้บันทึก/แก้ไขข้อมูล ถ้าข้อมูลไม่พอเรียกเครื่องมืออ่านเพิ่ม'}])
+                continue
+            record(job,'synthesis',status='ok')
+            return AssistantReply(content)
+        if not answer.tool_name and task.kind=='mutation' and not re.search(r'ไหน|อะไร|เท่าไร|เท่าไหร่|\?',answer.content):
             if repaired:return AssistantReply(UNPREPARED)
             repaired=True;record(job,'review_repair',status='invalid')
             turns.extend([{'role':'assistant','content':answer.content},{'role':'system','content':REPAIR}])
             continue
         if answer.tool_name and answer.tool_name not in ('respond_finance','understand_request'):
             job.__dict__.pop('_semantic_evidence',None)
+        if answer.tool_name=='fetch_finance':
+            from .assistant_data import read as fetch,fallback
+            if read_budget[0]>=3:return AssistantReply(fallback(job)) if getattr(job,'_direct_evidence',None) else finish()
+            from .request_interpreter import NeedInfo
+            try:result=sandbox.fetch(answer.draft,job) if sandbox else fetch(db,room,job,answer.draft)
+            except (ValidationError,ValueError,HTTPException,NeedInfo) as error:
+                from .tool_arguments import issues
+                invalid(answer,dict(error='invalid_arguments',issues=issues(error) if isinstance(error,ValidationError) else [],message='แก้ argument ของเครื่องมือเองจากบริบทหรือค้นชื่อก่อน ไม่ต้องให้ผู้ใช้กรอก format และห้ามเลือกผู้ใช้/workspaceอื่น'))
+                if repairs>=2:return AssistantReply(fallback(job)) if getattr(job,'_direct_evidence',None) else AssistantReply('ฉันยังค้นข้อมูลส่วนนี้ไม่สำเร็จค่ะ อยากให้ดูบัญชีหรือช่วงไหนเป็นพิเศษคะ?')
+                continue
+            job._direct_finance_read=True
+            record(job,'tool',tool=answer.tool_name,status='ok',resources=[json.loads(answer.draft)['resource']]);read_budget[0]+=1
+            if result.get('items') is not None:active.add('corrections')
+            feedback(answer,result)
+            continue
         if answer.tool_name=='respond_finance':
             from .semantic_assistant import respond
-            try:content=respond(job,answer.draft)
+            try:
+                if getattr(job,'_direct_evidence',None):
+                    from .assistant_data import natural
+                    from .semantic_assistant import Answer
+                    content=natural(job,Answer.model_validate_json(answer.draft).text)
+                else:content=respond(job,answer.draft)
             except (ValidationError,ValueError):
-                invalid(answer,dict(error='invalid_arguments',message='ใช้ {{fact_key}} ที่ได้รับสำหรับตัวเลขทั้งหมด ไม่ใส่ยอดอิสระ ไม่อ้างบันทึก/แก้แล้ว ตอบตาม scope ของ facts'))
-                if repairs>=2:return AssistantReply(getattr(job,'_semantic_evidence',{}).get('fallback') or evidence.UNVERIFIED)
+                invalid(answer,dict(error='invalid_arguments',message='ตอบภาษาปกติได้ แต่ตัวเลขต้องตรงข้อมูลที่อ่าน ไม่อ้างผลบันทึกหรือแก้ไขที่ไม่ได้ทำ ตรวจข้อมูลหรืออ่านเพิ่มเองก่อนตอบ'))
+                if repairs>=2:return finish() if getattr(job,'_direct_evidence',None) else AssistantReply(getattr(job,'_semantic_evidence',{}).get('fallback') or evidence.UNVERIFIED)
                 continue
             record(job,'tool',tool=answer.tool_name,status='ok')
             return AssistantReply(content)
         if answer.tool_name=='understand_request':
+            if not sandbox:authorize(db,job,room)
             from .semantic_assistant import plan,prepare,clarification,general_reply
             job.__dict__.pop('_semantic_evidence',None)
             from .request_interpreter import NeedInfo,QUESTIONS
@@ -114,8 +156,9 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
                     feedback(answer,dict(intent='mutation',toolkit=kit,message='เตรียมร่างด้วย tools ที่มี รอยืนยันจากผู้ใช้เท่านั้น'))
                     continue
                 if read_budget[0]>=3:return finish()
-                job._finance_refs=[]
                 result=sandbox.semantic_prepare(job,task) if sandbox else prepare(db,room,job,task)
+                from .assistant_data import remember
+                remember(job,dict(job._semantic_evidence));job._direct_finance_read=True
             except NeedInfo as missing:
                 result=dict(error='missing_or_ambiguous',issues=[dict(field=missing.field,code='unknown_reference')],
                     message='ตรวจข้อความและบริบทแล้วแก้แผนก่อน ถ้าเป็นชื่อใช้ lookup_workspace ค้นชื่อจริง ถ้ากำกวมจริงใช้ clarify พร้อม question ธรรมชาติเฉพาะจุด ห้ามสั่งผู้ใช้กรอก format')
@@ -133,6 +176,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             feedback(answer,result)
             continue
         if answer.tool_name=='interpret_request':
+            if not sandbox:authorize(db,job,room)
             if sandbox:raise ValueError('Unexpected sandbox interpreter')
             from .request_interpreter import interpret,NeedInfo,QUESTIONS
             try:
@@ -158,6 +202,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             feedback(answer,dict(intent='mutation',toolkit=kit,message='ยังไม่ได้เปลี่ยนข้อมูล เตรียมร่างด้วยเครื่องมือที่มีและรอผู้ใช้ยืนยัน ห้ามยืนยันเอง'))
             continue
         if answer.tool_name=='answer_finance_summary':
+            if not sandbox:authorize(db,job,room)
             from .assistant_summary import answer as summary_answer
             try:
                 from .assistant_summary import parse
@@ -214,6 +259,9 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             feedback(answer,cache[key])
             return finish()
         stage='lookup';publish(job,'progress',stage=stage)
+        if not sandbox:
+            from .assistant_data import authorize
+            authorize(db,job,room)
         if answer.tool_name=='lookup_workspace':
             from .assistant_lookup import read as lookup
             result=sandbox.lookup(answer.draft) if sandbox else lookup(db,room,answer.draft)
@@ -222,6 +270,8 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             invalid(answer,result)
             if repairs>=2:return AssistantReply('ฉันยังค้นข้อมูลตามเงื่อนไขนี้ไม่สำเร็จค่ะ ช่วยระบุช่วงวันหรือชื่อบัญชีที่ต้องการอีกนิดได้ไหมคะ? ยังไม่ได้เปลี่ยนข้อมูล')
             continue
+        from .assistant_data import remember_lookup
+        if answer.tool_name=='lookup_workspace':remember_lookup(job,result)
         read_budget[0]+=1
         if answer.tool_name=='query_finance':
             for old in list(cache):

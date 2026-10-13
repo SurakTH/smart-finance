@@ -1,5 +1,15 @@
 # โครงสร้าง AI Chat และผลการปรับปรุง
 
+## Direct reads and ordinary prose — 14 ตุลาคม 2026 (เส้นทางปัจจุบัน)
+
+- `assistant_data.Fetch` / `fetch_finance` เป็น primary direct read tool ใน initial catalog; `understand_request` เป็น optional plan สำหรับงานซับซ้อน ไม่บังคับ plan→respond สำหรับคำถามอ่านข้อมูล User text ไม่เข้าตัว parser นี้ มีเฉพาะ tool arguments จากโมเดลที่ normalize internal calendar aliases แล้วตรวจ strict schema; ไม่มี tenant/user/SQL/confirmation fields
+- `assistant_data.authorize` join conversation + membership + active workspace ทุก direct/lookup read โดย bind job.user_id/job.workspace_id/job.conversation_id และตรวจ room owner ไม่ใช้ authority ที่ส่งจากโมเดล ประกอบกับ initial worker authorization และ final workspace/epoch/context/stop fence เดิม Shared workspace ledger เป็นทรัพยากรร่วมเฉพาะสมาชิกที่ได้รับสิทธิ์; room และ preferences ยังคง user-private
+- Direct read ใช้ structural semantic resolution + verified SQL เดิม รับชื่อที่ resolve ภายใน workspace หรือ UUID ที่ตรวจ scoped kind แล้วเท่านั้น Defaults: summary/analytics month-to-date, transactions last30days, budgets current month, balances current cumulative; max366วัน Pagination ผ่าน scoped cursor และผล10รายการ มี full SQL totals, current-page facts และ search selection context สำหรับ corrections; source refs รวมหลายชุด bounded24
+- Evidence job-local สูงสุด3datasets bind actor tuple(user,workspace,room) ไม่อนุญาต reuseข้ามคน/ห้อง `natural` รับ normal prose/Markdown และตัวเลขปกติ/เลขไทย เทียบ numeric quantities/units จาก bounded backend facts รวม optional placeholders เพื่อ compatibility ตรวจเลข substring, unknown amounts, fake write/review claims ไม่รับ model URLs; scopeและlinksมาจาก backend ไม่ส่ง key/SQL/raw errorsเข้าmodel
+- Plain prose responseไม่ต้องมี tool call; ถ้าตัวเลขไม่ผ่านให้ซ่อมภายในก่อน fallbackจากข้อมูลจริง ไม่บังคับให้ผู้ใช้พิมพ์ใหม่ตามformat ยังจำกัด3successful reads/2repairs/8model requestsและ deadline90s; sourcecacheในlegacy pathที่ยังไม่มีsemantic/directscopeรักษา independent question scope ไม่แทนรายจ่ายด้วยยอดบัญชีที่อ่านมาประกอบ
+- AI Lab natural scenario รองรับ fetch+plain reply ผ่าน production runtime แต่ fake adapterส่งเฉพาะsynthetic facts ไม่ resolveแหล่งข้อมูลจริง ส่วนการอ่าน/เตรียมจริงและledger mutationยังแยกจากsandbox การตรวจnumeric provenanceไม่พิสูจน์semantic correctnessของข้อความหรือfilterที่โมเดลเลือก และไม่รับรองlatency/qualityของQwen/Gemmaจริง
+- ไม่มี env/schema migration/route changes; provider routing/privacyและmanual confirmationคงเดิม ข้อความอ่านข้อมูลที่แจ้งว่าจะมีร่างรอยืนยันโดยยังไม่มีpreparetool ถูกส่งกลับให้โมเดลสร้างร่างจริงหรือแก้คำตอบ ไม่ส่งphantom reviewให้ผู้ใช้
+
 วันที่ 11 ตุลาคม 2026 — โฟกัสความต่อเนื่องของบทสนทนา การเรียก tools และต้นทุนบริบท ไม่รับรองคุณภาพโมเดลจริงจากผล mock tests
 
 ## จุดที่ตรวจพบและแก้แล้ว

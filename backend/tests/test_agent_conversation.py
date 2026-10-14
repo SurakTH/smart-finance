@@ -33,7 +33,8 @@ def test_receipt_unknown_caption_and_direction_correction_keep_same_draft(assist
     with SessionLocal() as db:
         assert db.get(Conversation,cid).capture_context['ai_followup']['draft']['attachment_id']==aid
     def description(body):
-        assert sum(isinstance(m['content'],list) for m in body['messages'])==1
+        assert not any(isinstance(m['content'],list) for m in body['messages'])
+        assert any(aid in str(m['content']) and '6000' in str(m['content']) for m in body['messages'] if m['role']=='user')
         return tool('prepare_transaction',dict(intent='create',continue_draft=True,description='ค่าริดผ้า'))
     state['responses']=[description]
     send('ค่าริดผ้า')
@@ -106,7 +107,7 @@ def test_free_question_after_image_keeps_receipt_for_an_unknown_caption(assistan
         image=next(m for m in body['messages'] if isinstance(m['content'],list))
         assert uploaded['attachment_id'] in image['content'][0]['text']
         return tool('prepare_transaction',dict(intent='create',kind='expense',description='ค่าริดผ้า',amount=6000,account_id=wallet,category_id=cat,attachment_id=uploaded['attachment_id']))
-    state['responses']=[next_step]
+    state['responses']=[tool('load_toolkit',{'toolkit':'receipt'}),next_step]
     assert '฿60.00' in send('ค่าริดผ้า')['content'] and count(w)==0
 
 
@@ -114,7 +115,9 @@ def test_receipt_focus_cannot_include_an_image_from_another_room(assistant):
     from app.assistant_images import selected_images
     c,w,u,b,cid,wallet,cat,state,post,send=assistant
     other=c.post(b+'/conversations',json={}).json()['id']
+    state['responses']=[{'content':'รูปนี้ยังไม่ได้บันทึกค่ะ'}]
     aid=c.post(b+f'/conversations/{other}/images',files={'file':receipt()},data={'text':'อื่น'}).json()['attachment_id']
+    assert run_once()  # Do not leave a job for another test's model transport.
     with SessionLocal.begin() as db:
         room=db.get(Conversation,cid)
         room.capture_context={'receipt_focus':{'attachment_id':aid,'expires':now()+900}}

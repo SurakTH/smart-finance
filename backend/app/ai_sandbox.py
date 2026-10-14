@@ -20,6 +20,7 @@ from .assistant_finance import Read
 from .chat_dialogue import Suggestion
 from .ai_diagnostics import record
 from .reporting import today
+from .assistant_limits import REQUESTS
 
 CASH='11111111-1111-4111-8111-111111111111'
 FOOD='22222222-2222-4222-8222-222222222222'
@@ -100,7 +101,8 @@ class Sandbox:
         self.tools=[t for t in [*all_tools(),summary_tool()] if t['function']['name'] in names]
     def fetch(self,raw,job):
         from .assistant_data import parse_fetch,remember
-        value=parse_fetch(raw,PROMPTS[self.case])
+        # Synthetic scenarios independently report all semantic mismatches.
+        value=parse_fetch(raw,PROMPTS[self.case],check_scope=False)
         if value.resource not in ('summary','transactions'):raise TestFailed('wrong_tool','resource')
         for field in ('account_id','category_id','cursor','compare_period','bucket','group_by'):
             if getattr(value,field):raise TestFailed('invalid_arguments',field)
@@ -206,6 +208,6 @@ def run(db,job):
             job._test_result=dict(case=case,status='passed',reason='passed',provider_id=p.id,calls=budget[0],synthetic_only=True)
             record(job,'result',status='passed',provider_id=p.id);job.status='done';job.error=None;job.payload={};return
         record(job,'provider_error',provider_id=p.id,error=reason,status='failed')
-        if budget[0]>=8 or time.monotonic()>=deadline:break
+        if budget[0]>=REQUESTS or time.monotonic()>=deadline:break
     job._test_result=dict(case=case,status='skipped' if reason=='image_disabled' else 'failed',reason=reason,calls=budget[0],synthetic_only=True)
     record(job,'result',status=job._test_result['status']);job.status='done';job.error=None;job.payload={}

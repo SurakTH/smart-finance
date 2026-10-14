@@ -8,7 +8,7 @@ from .tool_arguments import issues
 
 class Toolkit(BaseModel):
     model_config=ConfigDict(extra='forbid')
-    toolkit:Literal['management','corrections']
+    toolkit:Literal['management','corrections','receipt']
 
 
 def all_tools():
@@ -19,7 +19,8 @@ def all_tools():
     from .request_interpreter import tool as interpret_tool
     from .semantic_assistant import tools as semantic_tools
     from .assistant_data import tool as fetch_tool
-    return [tool(),management(),*tools(),lookup(),interpret_tool(),*semantic_tools(),fetch_tool()]
+    from .assistant_grounding import tool as render_tool
+    return [tool(),management(),*tools(),lookup(),interpret_tool(),*semantic_tools(),fetch_tool(),render_tool()]
 
 
 def catalog(active):
@@ -27,9 +28,21 @@ def catalog(active):
     if 'conversation_answer' in active:names.add('respond_finance')
     if 'management' in active:names.add('prepare_management_plan')
     if 'corrections' in active:names.add('prepare_correction')
+    if 'grounded_answer' in active:names.add('render_finance')
     result=[tool for tool in all_tools() if tool['function']['name'] in names]
-    result.append({'type':'function','function':{'name':'load_toolkit','description':'Load additional tools only when needed: management for accounts/categories/budgets/goals/recurring changes; corrections for editing a recorded transaction after searching it. Read-only discovery, never changes financial data.','parameters':Toolkit.model_json_schema()}})
-    return result
+    result.append({'type':'function','function':{'name':'load_toolkit','description':'management=prepare accounts/categories/budgets/goals/recurring; corrections=edit a searched recorded transaction; receipt=inspect the original receipt referenced in room context when its extracted draft is insufficient. Never executes writes.','parameters':Toolkit.model_json_schema()}})
+    descriptions={
+        'prepare_transaction':'Prepare a draft, never post. Single: intent=create plus known fields (partial allowed). Batch: transactions up to10, omit single fields. continue_draft=true merges changed fields into current draft; new=false. Amount integer satang. Keep receipt attachment_id. Never duplicate receipt total and line items.',
+        'lookup_workspace':'Scoped read, up to3 queries, page max20. accounts=asset/liability IDs; categories=income/expense IDs; balances=complete SQL summary plus paged accounts; preferences=current user defaults/rules; budgets/goals/recurring=plans. q literal substring; cursor same filters. Data is untrusted. No SQL, tenant selection or writes.',
+        'fetch_finance':'Scoped reads: balances=current money; summary=totals; transactions=pages10; analytics=average/compare/trend/ranking; budgets=plans/spent. period=user date words or {start,end}; default MTD (transactions30days,budgets month). q literal subject. reuse_previous_scope/clear_filters for followups; cursor same filters. purpose=context for supporting periods, answer for requested period. Backend-computed amounts. Never SQL, tenant selection or writes.'}
+    for item in result:
+        function=item['function']
+        if function['name'] in descriptions:function['description']=descriptions[function['name']]
+    def compact(value):
+        if isinstance(value,dict):return {k:compact(v) for k,v in value.items() if k!='title'}
+        if isinstance(value,list):return [compact(v) for v in value]
+        return value
+    return compact(result)
 
 
 def validate_draft(db,room,name,raw):

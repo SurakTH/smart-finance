@@ -4,6 +4,7 @@ There is no user-command parser here. Tool argument normalization is internal;
 users never supply JSON, resource names, date modes or fact placeholders.
 """
 import json,re
+from copy import deepcopy
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
@@ -33,6 +34,7 @@ class Fetch(BaseModel):
     cursor:UUID|None=None
     reuse_previous_scope:bool=False
     clear_filters:bool=False
+    purpose:Literal['answer','context']='answer'
 
     @field_validator('period','compare_period',mode='before')
     @classmethod
@@ -71,11 +73,14 @@ def remember(job,evidence):
     previous=getattr(job,'_direct_evidence',None)
     if previous and previous['actor']!=identity(job):raise Invalidated('membership_revoked')
     previous=previous or dict(actor=identity(job),datasets=[])
-    previous['datasets']=[*previous['datasets'],evidence][-3:]
+    # Every authorized read remains available until this turn ends. Identical
+    # evidence keeps a stable dataset ID; latest tracks the current result.
+    if evidence not in previous['datasets']:previous['datasets'].append(evidence)
+    previous['latest']=previous['datasets'].index(evidence)
     job._direct_evidence=previous
 
 
-def parse_fetch(raw,text=None):
+def parse_fetch(raw,text=None,check_scope=True):
     try:value=Fetch.model_validate_json(raw)
     except ValidationError as error:
         errors=error.errors(include_input=False,include_url=False)
@@ -89,18 +94,39 @@ def parse_fetch(raw,text=None):
         if not period:raise
         data['period']=period
         value=Fetch.model_validate(data)
-    if text and value.resource!='balances':
+    if text and check_scope and value.purpose=='answer' and value.resource!='balances':
         from .assistant_calendar import hint
         from .request_interpreter import NeedInfo
         requested=hint(text)
         if requested:
             try:
                 if value.period is None:raise ValueError('missing requested calendar')
-                bounds(value.period)
+                actual=bounds(value.period)
+                expected=bounds(Window.model_validate(requested))
+                # A plain "this month" can reasonably mean month-to-date.
+                compatible=requested['mode']=='current_month' and value.period.mode=='month_to_date'
+                if actual!=expected and not compatible:
+                    raise CalendarConflict('period conflicts with explicit user date')
+            except CalendarConflict:raise
             except (ValueError,NeedInfo):
                 period=Window.model_validate(requested);bounds(period)
                 value=value.model_copy(update={'period':period})
     return value
+
+
+class CalendarConflict(ValueError):pass
+
+
+def read_context(room):
+    return {key:deepcopy((room.capture_context or {}).get(key)) for key in ('verified_scope','finance_search','finance_selected')}
+
+
+def restore_context(room,snapshot):
+    context=dict(room.capture_context or {})
+    for key,value in snapshot.items():
+        if value is None:context.pop(key,None)
+        else:context[key]=deepcopy(value)
+    room.capture_context=context
 
 
 def followup_scope(db,room,job,value,text):
@@ -123,7 +149,7 @@ def read(db,room,job,raw):
     account=named_id(db,room,value.account_id,value.account,('asset','liability'))
     category=named_id(db,room,value.category_id,value.category,('income','expense'))
     intent={'summary':'report','balances':'balances','transactions':'transactions','analytics':'analytics','budgets':'budget'}[value.resource]
-    args=value.model_dump(mode='json',exclude={'resource','account_id','category_id','cursor'})
+    args=value.model_dump(mode='json',exclude={'resource','account_id','category_id','cursor','purpose'})
     args.update(intent=intent,account=value.account,category=value.category)
     if intent!='analytics':
         for key in ('operation','bucket','group_by','order','limit'):args.pop(key,None)
@@ -133,9 +159,25 @@ def read(db,room,job,raw):
             args['reuse_previous_scope']=False
             args['period']=dict(mode='current_month' if intent=='budget' else 'last_days' if intent=='transactions' else 'month_to_date',**({'days':30} if intent=='transactions' else {}))
     task,_,_=plan(db,room,job,json.dumps(args),resolved={k:v for k,v in {'account':account,'category':category}.items() if v is not None})
+    key=json.dumps(dict(resource=value.resource,start=str(task.start),end=str(task.end),
+        account=task.account.id if task.account else None,category=task.category.id if task.category else None,
+        q=task.q,metric=task.transaction_kind,analysis=task.analysis,cursor=str(value.cursor) if value.cursor else None,purpose=value.purpose),sort_keys=True)
+    cache=getattr(job,'_fetch_cache',None)
+    if cache is None:
+        cache={};job._fetch_cache=cache;job._fetch_cache_actor=identity(job)
+    if job._fetch_cache_actor!=identity(job):raise Invalidated('membership_revoked')
+    job._last_fetch_cached=key in cache;job._last_fetch_key=key
+    if key in cache:
+        result,evidence,snapshot=cache[key]
+        remember(job,evidence)
+        if value.purpose=='answer':restore_context(room,snapshot)
+        return result
+    context_before=read_context(room)
     previous_refs=list(getattr(job,'_finance_refs',[]))
     result=prepare(db,room,job,task)
     evidence=dict(job._semantic_evidence)
+    evidence['purpose']=value.purpose
+    if value.purpose=='context':evidence['scope']='ข้อมูลประกอบ · '+evidence['scope']
     if intent=='transactions':
         from .assistant_finance import read as search
         from .assistant_render import totals,transaction_line,money
@@ -156,14 +198,20 @@ def read(db,room,job,raw):
     refs={str((r['type'],r['filters'])):r for r in [*previous_refs,*getattr(job,'_finance_refs',[])]}
     job._finance_refs=list(refs.values())[-24:]
     remember(job,evidence)
-    result.update(facts=evidence['facts'],notice='Answer the requested result first in natural Thai Markdown, including the relevant total from facts (net for balances); suggestions alone are not an answer. Amounts and totals are computed by backend; do not invent or sum partial pages. No user format or fact placeholders required. Other data can be fetched as needed within the same authorized scope.')
+    result['dataset_id']=job._direct_evidence['latest']+1
+    result.update(facts=evidence['facts'],notice='Use render_finance with dataset_id and relevant fact keys, including the requested total (net for balances). Backend owns figures, labels and signs. Read more only if necessary. No invented arithmetic or user command format.')
+    result['purpose']=value.purpose
+    cache[key]=(result,evidence,read_context(room))
+    if value.purpose=='context':restore_context(room,context_before)
     return result
 
 
 def fallback(job):
     data=getattr(job,'_direct_evidence',None)
     if not data or data['actor']!=identity(job):raise Invalidated('membership_revoked')
-    return '\n\n'.join(d['fallback'] for d in data['datasets'])[:16000]
+    primary=[d for d in data['datasets'] if d.get('purpose','answer')=='answer']
+    if not primary:return 'ฉันอ่านข้อมูลประกอบได้แล้ว แต่ยังไม่มีข้อมูลตรงช่วงที่ถามค่ะ ยังไม่ได้เปลี่ยนข้อมูล'
+    return '\n\n'.join(d['fallback'] for d in primary)[:16000]
 
 
 NUMBER=re.compile(r'[-+]?\d[\d,]*(?:\.\d+)?')
@@ -177,6 +225,8 @@ def natural(job,text):
     """Accept prose, not an answer syntax. Compare figures with retrieved data."""
     data=getattr(job,'_direct_evidence',None)
     if not data or data['actor']!=identity(job):raise Invalidated('membership_revoked')
+    primary=[d for d in data['datasets'] if d.get('purpose','answer')=='answer']
+    if not primary:raise ValueError('no answering scope')
     from .assistant_contract import claims_review
     value=visible(text).strip()
     if claims_review(value):raise ValueError('unprepared review')
@@ -205,18 +255,22 @@ def natural(job,text):
         if NUMBER.search(label) and not NUMBER.fullmatch(label.strip()) and not re.search(r'บาท|สตางค์|฿|%',label):
             remaining=re.sub(r'(?<![0-9])'+re.escape(label)+r'(?![0-9]|\s*(?:บาท|สตางค์|%|รายการ))',' FACT ',remaining)
     remaining=re.sub(r'(?m)^\s*\d{1,2}[.)]\s+','- ',remaining)
+    from .assistant_grounding import check_relationships
+    signed_variants=check_relationships(data['datasets'],remaining)
     answered=set()
     for match in NUMBER.finditer(remaining):
         number=Decimal(match[0].replace(',',''))
         unit=re.match(r'\s*(บาท(?:/วัน|/รายการ)?|สตางค์|%|รายการ)',remaining[match.end():])
         if remaining[max(0,match.start()-1):match.start()]=='฿':unit_type='บาท'
         else:unit_type=unit[1] if unit else None
-        if number not in (allowed.get(unit_type,set()) if unit_type else all_numbers):raise ValueError('unsupported figure')
+        permitted=allowed.get(unit_type,set()) if unit_type else all_numbers
+        if number not in permitted and (match.start(),number) not in signed_variants:raise ValueError('unsupported figure')
         if unit_type!='รายการ':answered.add(number)
     # A valid suggestion without the requested result is still a failed answer.
     # Check the latest read, so a figure repeated from an earlier dataset cannot
     # stand in for the current result. Item amounts/counts are not summary totals.
-    latest=data['datasets'][-1]['facts']
+    current=data['datasets'][data.get('latest',len(data['datasets'])-1)]
+    latest=(current if current.get('purpose','answer')=='answer' else primary[-1])['facts']
     keys=('net',) if 'net' in latest else ('amount',) if 'amount' in latest else ('income','expense','planned','spent','remaining')
     required={Decimal(m[0].replace(',','')) for key in keys if key in latest for m in NUMBER.finditer(str(latest[key]).translate(DIGITS))}
     if required and not answered.intersection(required):raise ValueError('missing requested total')
@@ -232,6 +286,13 @@ def remember_lookup(job,result):
     facts={};lines=[];resources=[]
     for group in result.get('results',[result]):
         resource=group.get('resource','transactions');resources.append(resource)
+        if resource=='preferences':
+            facts['preferences_enabled']='เปิด' if group.get('enabled') else 'ปิด'
+            lines.append('ความจำส่วนตัว: '+facts['preferences_enabled'])
+            for kind in ('expense','income'):
+                label=(group.get(kind+'_account') or {}).get('name') or 'ยังไม่ได้เลือก'
+                facts['preferences_'+kind+'_account_name']=label
+                lines.append(('บัญชีเริ่มต้นรายจ่าย' if kind=='expense' else 'บัญชีเริ่มต้นรายรับ')+': '+label)
         summary=group.get('summary',{})
         for key in ('assets_satang','liabilities_satang','net_satang'):
             if type(summary.get(key)) is int:facts[resource+'_'+key]=money(summary[key])+' บาท'
@@ -245,4 +306,6 @@ def remember_lookup(job,result):
                 if item.get(key):facts[f'{resource}_{i}_{key}']=str(item[key])
             lines.append(label+(' · '+' / '.join(values) if values else ''))
         if group.get('has_more'):lines.append('ยังมีข้อมูลหน้าถัดไป ไม่ใช่ยอดรวมทั้งหมด')
-    if facts:remember(job,dict(facts=facts,scope='ข้อมูลที่ค้นในพื้นที่นี้ · '+' / '.join(resources),fallback='\n'.join(lines)[:8000]))
+    if facts:
+        remember(job,dict(facts=facts,scope='ข้อมูลที่ค้นในพื้นที่นี้ · '+' / '.join(resources),fallback='\n'.join(lines)[:8000]))
+        return dict(dataset_id=job._direct_evidence['latest']+1,facts=facts)

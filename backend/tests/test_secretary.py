@@ -61,8 +61,11 @@ def test_image_asks_then_uses_caption_followup_and_keeps_evidence(actor,monkeypa
         body=json.loads(req.content);calls.append(body)
         assert body['reasoning_effort']=='high' and 'temperature' not in body
         images=[m for m in body['messages'] if isinstance(m.get('content'),list)]
-        assert len(images)==1
         if len(calls)==1:return reply('เห็นยอดในสลิปแล้วค่ะ ใช้บัญชีไหนคะ?')
+        if len(calls)==2:
+            assert not images
+            return httpx.Response(200,json={'choices':[{'message':{'tool_calls':[{'id':'receipt_read','type':'function','function':{'name':'load_toolkit','arguments':json.dumps({'toolkit':'receipt'})}}]}}]})
+        assert len(images)==1
         value=suggestion(w);value['attachment_id']=images[0]['content'][0]['text'].split('attachment_id=')[1].split(';')[0]
         return draft(value)
     transport(monkeypatch,handler)

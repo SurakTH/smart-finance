@@ -19,6 +19,7 @@ from .chat_stream import publish
 from .chat_stop import check as check_stop
 from .assistant_tools import catalog,Toolkit,validate_draft,canonical_read
 from pydantic import ValidationError
+from .assistant_limits import REQUESTS,READS
 
 def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budget,sandbox=None):
     from .assistant_finance import read
@@ -58,7 +59,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         remaining=deadline-time.monotonic()
         if remaining<=0:raise AIRequestError('timeout')
         used=getattr(job,'_assistant_requests',0)
-        if used>=12:raise AIRequestError('turn_limit')
+        if used>=REQUESTS:raise AIRequestError('turn_limit')
         job._assistant_requests=used+1
         body={'model':p.model,'messages':request_messages(turns),**parameters(p),'stream':True}
         if not final:body.update(tools=sandbox.tools if sandbox else catalog(active),tool_choice='auto',parallel_tool_calls=False)
@@ -83,7 +84,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         from .assistant_balance_reply import fallback as balance_fallback
         latest_balance=balance_fallback(dict([list(cache.items())[-1]])) if cache else None
         return AssistantReply(sandbox.finish('',cache) if sandbox else latest_balance or evidence.grounded(db,room,job,task,cache))
-    for _ in range(12):
+    for _ in range(REQUESTS):
         try:answer=request()
         except (httpx.HTTPError,ValueError,KeyError,TypeError) as error:
             # A failed language-model continuation does not invalidate a completed
@@ -133,9 +134,21 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             continue
         if answer.tool_name and answer.tool_name not in ('respond_finance','understand_request'):
             job.__dict__.pop('_semantic_evidence',None)
+        if answer.tool_name=='render_finance':
+            from .assistant_grounding import render
+            try:
+                if sandbox:raise ValueError('Unexpected sandbox renderer')
+                content=render(job,answer.draft)
+            except (ValueError,ValidationError) as error:
+                invalid(answer,dict(error='invalid_arguments',message='Use dataset_id and quantity fact keys returned by reads. Include the requested total. Commentary has no figures or execution claims.'))
+                if repairs>=2:return finish()
+                continue
+            record(job,'tool',tool='render_finance',status='ok')
+            record(job,'synthesis',status='ok')
+            return AssistantReply(content)
         if answer.tool_name=='fetch_finance':
             from .assistant_data import read as fetch,fallback
-            if read_budget[0]>=6:return AssistantReply(fallback(job)) if getattr(job,'_direct_evidence',None) else finish()
+            if read_budget[0]>=READS:return AssistantReply(fallback(job)) if getattr(job,'_direct_evidence',None) else finish()
             from .request_interpreter import NeedInfo
             try:result=sandbox.fetch(answer.draft,job) if sandbox else fetch(db,room,job,answer.draft)
             except (ValidationError,ValueError,HTTPException,NeedInfo) as error:
@@ -146,6 +159,13 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
                 if repairs>=2:return AssistantReply(fallback(job)) if getattr(job,'_direct_evidence',None) else AssistantReply('ฉันยังค้นข้อมูลส่วนนี้ไม่สำเร็จค่ะ อยากให้ดูบัญชีหรือช่วงไหนเป็นพิเศษคะ?')
                 continue
             job._direct_finance_read=True
+            active.add('grounded_answer')
+            if not sandbox and getattr(job,'_last_fetch_cached',False):
+                counts=getattr(job,'_fetch_repeats',{});key=job._last_fetch_key;counts[key]=counts.get(key,0)+1;job._fetch_repeats=counts
+                record(job,'tool',tool=answer.tool_name,status='cached')
+                if counts[key]>=2:return finish()
+                feedback(answer,dict(cached=True,dataset_id=result['dataset_id'],message='Already read in this turn. Use earlier facts to answer or continue the requested draft; do not fetch the same data again.'))
+                continue
             record(job,'tool',tool=answer.tool_name,status='ok',resources=[json.loads(answer.draft)['resource']]);read_budget[0]+=1
             if result.get('items') is not None:active.add('corrections')
             feedback(answer,result)
@@ -180,7 +200,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
                     if kit:active.add(kit);job._assistant_toolkits=sorted(active)
                     feedback(answer,dict(intent='mutation',toolkit=kit,message='เตรียมร่างด้วย tools ที่มี รอยืนยันจากผู้ใช้เท่านั้น'))
                     continue
-                if read_budget[0]>=6:return finish()
+                if read_budget[0]>=READS:return finish()
                 result=sandbox.semantic_prepare(job,task) if sandbox else prepare(db,room,job,task)
                 from .assistant_data import remember
                 remember(job,dict(job._semantic_evidence));job._direct_finance_read=True
@@ -256,6 +276,18 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
                 invalid(answer,dict(error='invalid_arguments',issues=issues(error),message='เลือก toolkit management หรือ corrections'))
                 if repairs>=2:return AssistantReply('ฉันยังเลือกเครื่องมือสำหรับงานนี้ไม่สำเร็จค่ะ บอกงานที่ต้องการอีกครั้งได้เลย ยังไม่ได้เปลี่ยนข้อมูล')
                 continue
+            if kit=='receipt':
+                from .assistant_images import inspect
+                try:image=inspect(db,room,job,p)
+                except ValueError:
+                    invalid(answer,dict(error='invalid_arguments',message='No authorized available receipt, or this provider cannot read images. Continue using extracted room draft; ask only for genuinely missing details.'))
+                    if repairs>=2:return finish()
+                    continue
+                feedback(answer,dict(available=True,attachment_id=image['attachment_id'],untrusted=True))
+                if 'receipt' not in active:turns.append(image['message'])
+                else:return finish()
+                active.add('receipt');record(job,'tool',tool='load_toolkit',status='ok')
+                continue
             if kit in active:return finish()
             active.add(kit);job._assistant_toolkits=sorted(active)
             record(job,'tool',tool='load_toolkit',status='ok')
@@ -279,7 +311,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
                         return checked(AssistantReply(value.reply or 'อยากให้ช่วยดูเรื่องไหนคะ?'))
                 record(job,'tool',tool=answer.tool_name,status='ok')
             return answer if answer.tool_name else checked(answer)
-        if read_budget[0]>=6:return finish()
+        if read_budget[0]>=READS:return finish()
         cache=getattr(job,'_read_cache',None)
         if cache is None:
             from .assistant_data import identity
@@ -305,7 +337,12 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             if repairs>=2:return AssistantReply('ฉันยังค้นข้อมูลตามเงื่อนไขนี้ไม่สำเร็จค่ะ ช่วยระบุช่วงวันหรือชื่อบัญชีที่ต้องการอีกนิดได้ไหมคะ? ยังไม่ได้เปลี่ยนข้อมูล')
             continue
         from .assistant_data import remember_lookup
-        if answer.tool_name=='lookup_workspace':remember_lookup(job,result)
+        if answer.tool_name=='lookup_workspace':
+            bindings=remember_lookup(job,result)
+            if bindings:
+                result={**result,**bindings}
+                from .assistant_data import quantity
+                if any(quantity(k) for k in bindings['facts']):active.add('grounded_answer')
         read_budget[0]+=1
         if answer.tool_name=='query_finance':
             for old in list(cache):

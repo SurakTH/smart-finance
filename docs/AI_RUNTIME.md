@@ -1,5 +1,21 @@
 # โครงสร้าง AI Chat และผลการปรับปรุง
 
+## หลัง audit: facts, cache และบริบท (branch ทดลอง)
+
+โมเดลยังเลือกงาน/เครื่องมือจากบทสนทนาเอง เครื่องมือหลักเริ่มต้นยังมี 4 ตัว หลังอ่านยอดจะมี `render_finance` เพิ่มให้เลือก dataset และ fact keys Backend ใส่ตัวเลข ชื่อบัญชี ช่วงวันที่ และทิศทางเพิ่ม/ลดให้จากหลักฐานจริง คำเกริ่นและคำแนะนำใช้ข้อความไม่มีตัวเลข ผู้ใช้คุยตามปกติ ไม่ต้องรู้ schema คำตอบ prose ของ protocol เดิมยังรองรับพร้อมตรวจ label/value และหน่วย การตรวจ prose ไม่ใช่การพิสูจน์ความหมายภาษาธรรมชาติทั้งหมด จึงแนะนำเส้นทาง renderer สำหรับคำตอบตัวเลข
+
+`fetch_finance` ตรวจความขัดแย้งกับวันที่ชัดเจนหนึ่งช่วงในคำถาม `purpose=answer` เป็นค่าเริ่มต้น หากต้องอ่านช่วงอื่นประกอบใช้ `purpose=context` และยังต้องอ่านช่วงคำถามก่อนสรุป ข้อมูลประกอบไม่แทน verified scope ของการคุยต่อ ไม่ผ่านเป็นคำตอบหลักเพียงอย่างเดียว และมีป้ายแยกช่วงเมื่อแสดงร่วมกัน คำถามกำกวมหรือหลายช่วงยังให้โมเดลเลือก/ถามเพิ่ม
+
+ผลอ่านทุกชุดใน turn มี dataset ID คงที่และเก็บหลักฐานครบ Cache ใช้ filters หลัง resolve จริง รวมช่วงวัน ID บัญชี/หมวด cursor และ purpose พร้อมตรวจ actor `(user, workspace, room)` ก่อนใช้ทุกครั้ง ไม่ใช้ข้าม turn หรือสมาชิก หากอ่านชุดเดิมซ้ำจะส่งเพียง cache reference; วนซ้ำอีกจะจบด้วยผล backend ที่ตรวจแล้ว ขอบเขตใช้ร่วมกันทุก provider/retry: 6 reads, 12 model calls, deadline เดิม การเปลี่ยนข้อมูล/สิทธิ์/หยุดงานยังมี final fence ตามเดิม
+
+แนบ pixels เมื่อส่งรูปใหม่ ครั้งถัดไปส่งเพียงร่างและ `receipt_source` ที่อ้าง attachment ในห้องเดิม ถ้าโมเดลต้องตรวจต้นฉบับใช้ `load_toolkit receipt`; backend ตรวจ user/workspace/room และความสามารถรับภาพอีกครั้ง ร่างบางส่วนและร่างรอยืนยันยังรักษา attachment ID/ยอด/วัน เมื่อภาพถูกโหลดใน turn หนึ่ง อาจยังส่งซ้ำระหว่าง tool rounds ภายใน turn นั้นเพื่อรักษาความต่อเนื่องของ provider ยังไม่ได้ทำ OCR cache ถาวรหรือรับรองความแท้ของสลิป
+
+บริบท main agent: สูงสุด 12 ข้อความ/12,000 ตัวอักษร (แต่ละข้อความสูงสุด 4,000; ข้อความล่าสุดคงไว้) พร้อมข้อความผู้ใช้เก่าที่ตัดย่อและ source IDs; เพิ่มสถานะงานเก่าจาก ChatAction สูงสุด 3 งานพร้อม source action IDs โดยไม่ส่งยอดเก่าเป็นความจริงทางการเงิน ไม่มี model call เพิ่มเพื่อสรุปและไม่ลบประวัติจริง ความจำนี้เป็น bounded extractive context และ structured outcomes ไม่ใช่ semantic memory ไม่จำกัดความยาว ความชอบส่วนบุคคลอ่านแยกตาม user/workspace
+
+ชื่อ workspace, search/paging context และร่างอยู่ user/tool data role; system มีคำสั่งจาก backend ข้อมูลส่วนตัวไม่ถูกยกเป็น system authority Plain cancel หลังรายงานยกเลิกได้โดยไม่ต้องทวนใหม่ แต่ plain confirm ยังตรวจข้อความทวนล่าสุดเหมือนเดิม รหัส cancel เก่าไม่ยกเลิกร่างใหม่ และยกเลิกบางส่วนไม่เปลี่ยน ledger
+
+ผลวัดขนาด payload ดู [AI_PAYLOAD_COMPARISON.md](AI_PAYLOAD_COMPARISON.md) Tests ใช้ provider จำลองเพื่อพิสูจน์ contracts/isolation/confirmation; ยังต้องทดสอบคุณภาพและ token กับโมเดลจริงบน preview ก่อน merge/deploy เนื้อหาด้านล่างเป็นประวัติ implementation และ compatibility ไม่ใช่ข้อกำหนดของเส้นทางหลักล่าสุดทุกข้อ
+
 ## Conversation-first agent (14 ตุลาคม 2026)
 
 เส้นทางโมเดลหลักไม่เรียก `assistant_evidence.scope` หรือ `assistant_questions.for_turn` เพื่อตัดสินเจตนาก่อนโมเดล และไม่แทนคำตอบปกติด้วยรายงานจาก keyword scope เริ่มด้วย4tools: fetch_finance, lookup_workspace, prepare_transaction, load_toolkit อ่านตามที่โมเดลเลือก แล้วตรวจ facts/สิทธิ์ตามเดิม เครื่องมือ interpret/semantic/query/summary เก่ายังมี compatibility handler เฉพาะเมื่อมีการเรียก protocol เก่า ไม่อยู่ใน catalog หลัก ไม่มี provider ที่ใช้งานได้ยังใช้ demo/legacy ตาม setting เดิม

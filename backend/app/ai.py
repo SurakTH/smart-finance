@@ -30,6 +30,7 @@ def assistant_tools():
     return all_tools()
 
 from .assistant_runtime import converse
+from .assistant_limits import REQUESTS
 
 
 def call_model(db, job):
@@ -43,13 +44,15 @@ def call_model(db, job):
     assistant=bool(job.payload.get('_assistant'))
     if job.task=='chat':
         from .chat_context import history_and_notes
-        history,older_notes=history_and_notes(db,job.workspace_id,job.payload['conversation_id'])
+        history,older_notes=history_and_notes(db,job.workspace_id,job.payload['conversation_id'],compact=assistant)
         from .finance_chat import answer_report
         direct = None if job.payload.get('_dialogue') or (assistant and providers) else answer_report(db,job,history)
         if direct is not None and (not assistant or not providers): return direct, False
         if assistant:
             from .chat_dialogue import assistant_instruction
             messages.append({'role':'system','content':assistant_instruction(db,job.workspace_id)})
+            room=get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id'])
+            messages.append({'role':'user','content':json.dumps({'type':'workspace_context','name':db.get(Workspace,job.workspace_id).name},ensure_ascii=False)})
             from .assistant_management import pending_context
             pending=pending_context(db,get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id']))
             if pending:messages.append({'role':'user','content':pending})
@@ -58,11 +61,11 @@ def call_model(db, job):
             if partial:messages.append({'role':'user','content':partial})
             from .assistant_finance import begin_turn
             search=begin_turn(get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id']),job.payload.get('text',''),job.payload.get('user_message_id'))
-            if search:messages.append({'role':'system','content':search})
+            if search:messages.append({'role':'user','content':search})
             from .assistant_lookup import begin_turn as lookup_context
             paging=lookup_context(get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id']),job.payload.get('text',''))
-            if paging:messages.append({'role':'system','content':paging})
-            if direct is not None:messages.append({'role':'system','content':'ข้อมูลรายงานจากระบบ ใช้ตอบผู้ใช้โดยไม่แต่งตัวเลขเพิ่ม:\n'+direct})
+            if paging:messages.append({'role':'user','content':paging})
+            if direct is not None:messages.append({'role':'user','content':'ข้อมูลรายงานจากระบบ ใช้ตอบผู้ใช้โดยไม่แต่งตัวเลขเพิ่ม:\n'+direct})
         elif job.payload.get('_dialogue'):
             from .chat_dialogue import instruction
             messages.append({'role':'system','content':instruction(db,job.workspace_id)})
@@ -72,15 +75,18 @@ def call_model(db, job):
             snapshot=[{'name':a['name'],'kind':a['kind'],'balance_satang':a['balance']} for a in account_balances(db,job.workspace_id) if a['kind'] in ('asset','liability')]
             messages.append({'role':'system','content':'ยอดสะสมจริงของบัญชีสินทรัพย์และหนี้สินในหน่วยสตางค์ (ไม่ใช่ยอดรายเดือน หมวดรายรับ/รายจ่ายไม่ใช่บัญชีเงิน): '+json.dumps(snapshot,ensure_ascii=False)})
         from .assistant_images import selected_images
-        image_ids=selected_images(history,job,db) if assistant else []
+        image_ids=[job.payload['attachment_id']] if assistant and job.payload.get('attachment_id') else []
+        if assistant:
+            from .assistant_images import receipt_context
+            receipt_source=receipt_context(db,room,job,history)
+            if receipt_source:messages.append({'role':'user','content':receipt_source})
         if older_notes:messages.append({'role':'user','content':older_notes})
         if assistant:
             from .request_interpreter import context as request_context
             pending_request=request_context(get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id']))
             if pending_request:messages.append({'role':'user','content':pending_request})
-            from .request_interpreter import message_index
-            index=message_index(history)
-            if index:messages.append({'role':'user','content':index})
+            # The primary tools resolve current sources server-side; duplicating
+            # eight user excerpts plus UUIDs here provided no additional context.
         sent_images=set()
         for m in reversed(history):
             content=re.sub(r'\n\nรหัสทางเลือก:\nยืนยัน [A-F0-9]{8}\n$','',m.content)[:4000]
@@ -109,7 +115,7 @@ def call_model(db, job):
     for provider_index,p in enumerate(providers):
         if provider_index:record(job,'fallback',provider_id=p.id,status='ok')
         check_stop(job,True)
-        if getattr(job,'_assistant_requests',0)>=8:job._last_ai_error='turn_limit';break
+        if getattr(job,'_assistant_requests',0)>=REQUESTS:job._last_ai_error='turn_limit';break
         target_stage='dns'
         try:
             url,headers,extensions=target(p)
@@ -121,7 +127,7 @@ def call_model(db, job):
             record(job,'provider_error',provider_id=p.id,error=target_stage,status='failed')
             continue
         for attempt in range(p.retries+1):
-            if getattr(job,'_assistant_requests',0)>=8:job._last_ai_error='turn_limit';break
+            if getattr(job,'_assistant_requests',0)>=REQUESTS:job._last_ai_error='turn_limit';break
             check_stop(job,True)
             remaining=deadline-time.monotonic()
             if remaining<=0:break

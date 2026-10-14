@@ -123,6 +123,11 @@ def handle(db,c,user_id,text,review_message_id=None,allow_model_dialogue=False):
         if pending:return 'กำลังเตรียมข้อเสนอใหม่ค่ะ ยังไม่บันทึก กรุณารอข้อความทวนให้เสร็จก่อน แล้วพิมพ์ ยืนยัน อีกครั้ง'
     context=dict(c.capture_context or {})
     partial=context.get('ai_followup',{})
+    if text=='ยกเลิก' and partial.get('expires',0)>now() and partial.get('draft'):
+        for old in db.scalars(select(ChatAction).where(*scope,ChatAction.status=='pending').with_for_update()):old.status='cancelled'
+        for key in ('pending','ai_followup','receipt_focus'):context.pop(key,None)
+        c.capture_context=context
+        return 'ยกเลิกร่างที่กำลังกรอกแล้ว ยังไม่ได้เปลี่ยนข้อมูลทางการเงิน'
     if (text=='ยืนยัน' or command and command[1]=='ยืนยัน') and partial.get('expires',0)>now() and partial.get('draft'):
         return 'ร่างที่กำลังแก้ยังขาดข้อมูลค่ะ ขอให้ครบและทวนร่างใหม่ก่อน จึงจะยืนยันได้ ยังไม่ได้บันทึกข้อมูล'
     if text in ('ทวนอีกที','ทวนหน่อย','ทวนรายการ','สรุปที่จะบันทึก'):
@@ -134,7 +139,7 @@ def handle(db,c,user_id,text,review_message_id=None,allow_model_dialogue=False):
         action=db.scalar(select(ChatAction).where(*scope,ChatAction.id==context.get('review_action_id')).with_for_update())
         if not action:return 'ยังไม่มีรายการให้ยืนยันค่ะ บอกสิ่งที่อยากบันทึกก่อน แล้วฉันจะทวนให้ตรวจ'
         if action.status=='confirmed':return 'ข้อเสนอนี้บันทึกแล้ว ไม่มีการบันทึกซ้ำค่ะ'
-        if action.status=='pending':
+        if action.status=='pending' and text=='ยืนยัน':
             latest=db.scalar(select(Message).where(Message.workspace_id==c.workspace_id,Message.conversation_id==c.id,Message.role=='assistant').order_by(Message.created_at.desc(),Message.id.desc()).limit(1))
             expected=context.get('review_message_id')
             if not latest or latest.id!=expected or (review_message_id is not None and str(review_message_id)!=expected):
@@ -155,7 +160,11 @@ def handle(db,c,user_id,text,review_message_id=None,allow_model_dialogue=False):
         if action.expires<=now():
             action.status='expired'; return 'ข้อเสนอหมดอายุแล้ว กรุณาส่งคำขอใหม่เพื่อตรวจสอบอีกครั้ง'
         if command[1]=='ยกเลิก':
-            action.status='cancelled'; return 'ยกเลิกข้อเสนอแล้ว ยังไม่ได้เปลี่ยนข้อมูลทางการเงิน'
+            action.status='cancelled'
+            if action.id==context.get('review_action_id'):
+                for key in ('pending','ai_followup','receipt_focus'):context.pop(key,None)
+                c.capture_context=context
+            return 'ยกเลิกข้อเสนอแล้ว ยังไม่ได้เปลี่ยนข้อมูลทางการเงิน'
         p=action.payload
         if p.get('type')=='management':
             from .assistant_management import apply

@@ -56,7 +56,12 @@ def query(db,c,data):
         if not pref['enabled']:return dict(resource=data.resource,enabled=False)
         rules=pref['rules']
         if data.q:rules=[r for r in rules if r['keyword'].casefold() in data.q.casefold()]
-        return dict(resource=data.resource,enabled=True,expense_account_id=pref['expense_account_id'],income_account_id=pref['income_account_id'],rules=rules,has_more=False)
+        defaults={}
+        for kind in ('expense','income'):
+            identifier=pref[kind+'_account_id']
+            account=db.scalar(select(Account).where(Account.workspace_id==wid,Account.id==identifier,Account.kind.in_(('asset','liability') if kind=='expense' else ('asset',)))) if identifier else None
+            defaults[kind+'_account']=dict(id=account.id,name=account.name) if account else None
+        return dict(resource=data.resource,enabled=True,expense_account_id=pref['expense_account_id'],income_account_id=pref['income_account_id'],rules=rules,has_more=False,**defaults)
     model={'accounts':Account,'categories':Account,'balances':Account,'budgets':Budget,'goals':Goal,'recurring':RecurringRule}[data.resource]
     conditions=[model.workspace_id==wid]
     field=Account.name if model==Account else Goal.name if model==Goal else RecurringRule.description if model==RecurringRule else Account.name

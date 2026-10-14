@@ -193,5 +193,7 @@ def test_missing_or_incomplete_model_period_uses_clear_user_date_not_default_mon
 
 
 def test_a_valid_explicit_model_range_can_still_fetch_additional_context():
-    value=parse_fetch(json.dumps(dict(resource='summary',period='last week')),'เมื่อวานฉันใช้เยอะไหม')
+    value=parse_fetch(json.dumps(dict(resource='summary',period='last week',purpose='context')),'เมื่อวานฉันใช้เยอะไหม')
     assert tuple(str(d) for d in bounds(value.period))==('2026-10-05','2026-10-11')
+    from app.assistant_data import CalendarConflict
+    with pytest.raises(CalendarConflict):parse_fetch(json.dumps(dict(resource='summary',period='last week')),'เมื่อวานฉันใช้เยอะไหม')

@@ -86,11 +86,12 @@ def test_total_provider_requests_are_bounded_across_retries_and_fallback(assista
     c,w,u,b,cid,wallet,cat,state,post,send=assistant
     with SessionLocal.begin() as db:
         db.scalar(select(Provider).where(Provider.workspace_id==w)).retries=2
-        db.add_all(Provider(workspace_id=w,task='chat',kind='ollama',model='fallback'+str(i),priority=i+20,retries=2) for i in range(2))
+        db.add_all(Provider(workspace_id=w,task='chat',kind='ollama',model='fallback'+str(i),priority=i+20,retries=2) for i in range(4))
+    assert c.put(b+'/ai/settings',json=dict(cloud_enabled=False,demo_fallback=True,max_attempted_providers=5)).status_code==200
     def busy(body):raise httpx.ConnectError('synthetic unavailable')
-    state['responses']=[busy]*8
+    state['responses']=[busy]*12
     value=send('สวัสดี')
-    assert len(state['calls'])==8 and 'จำนวนรอบ' in value['content'] and count(w)==0
+    assert len(state['calls'])==12 and 'จำนวนรอบ' in value['content'] and count(w)==0
 
 
 def test_asking_account_does_not_dump_hundreds_of_names(assistant):

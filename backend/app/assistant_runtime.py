@@ -70,7 +70,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         if used>=8:raise AIRequestError('turn_limit')
         job._assistant_requests=used+1
         body={'model':p.model,'messages':request_messages(turns),**parameters(p),'stream':True}
-        if not final:body.update(tools=sandbox.tools if sandbox else catalog(active),tool_choice='auto')
+        if not final:body.update(tools=sandbox.tools if sandbox else catalog(active),tool_choice='auto',parallel_tool_calls=False)
         publish(job,'start')
         publish(job,'progress',stage='summarizing' if final else stage)
         with tracked_stream(db,job,p,client,'POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json=body,timeout=httpx.Timeout(min(p.timeout_seconds,remaining),connect=5)) as response:
@@ -121,7 +121,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             except ValueError:
                 repairs+=1;record(job,'synthesis',status='invalid');publish(job,'progress',stage='repairing')
                 if repairs>=2:return AssistantReply(fallback(job))
-                turns.extend([assistant_message(answer),{'role':'system','content':'ปรับคำตอบให้ตรงข้อมูลที่อ่านจริง ตอบภาษาปกติได้ ไม่ต้องใช้แม่แบบ อย่าใส่ตัวเลขที่ไม่มีในข้อมูล และอย่าอ้างว่าได้บันทึก/แก้ไขข้อมูล ถ้าข้อมูลไม่พอเรียกเครื่องมืออ่านเพิ่ม'}])
+                turns.extend([assistant_message(answer),{'role':'system','content':'ปรับคำตอบให้ตรงข้อมูลที่อ่านจริง บอกผลที่ผู้ใช้ถามพร้อมยอดรวมที่เกี่ยวข้องก่อนเสนอคำถามต่อ อย่าตอบแค่ชวนคุย ตอบภาษาปกติได้ ไม่ต้องใช้แม่แบบ อย่าใส่ตัวเลขที่ไม่มีในข้อมูล และอย่าอ้างว่าได้บันทึก/แก้ไขข้อมูล ถ้าข้อมูลไม่พอเรียกเครื่องมืออ่านเพิ่ม'}])
                 continue
             record(job,'synthesis',status='ok')
             return AssistantReply(content)

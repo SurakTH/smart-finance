@@ -42,6 +42,7 @@ def test_strict_thinking_api_accepts_complete_tool_roundtrip(assistant,stream,pr
     c,w,u,b,cid,wallet,cat,state,post,send=assistant;post(8000,on='2026-10-10')
     first={**fetch(period='สัปดาห์ที่แล้ว',metric='expense'),**private,'content':'กำลังตรวจข้อมูล'}
     def strict_server(body):
+        assert body['parallel_tool_calls'] is False
         outgoing=body['messages'][-2]
         # This is an API contract, not an always-200 model stub.
         if any(outgoing.get(key)!=value for key,value in private.items()):
@@ -63,6 +64,17 @@ def test_strict_thinking_api_accepts_complete_tool_roundtrip(assistant,stream,pr
         assert not db.scalar(select(ChatAction.id).where(ChatAction.workspace_id==w))
     state['responses']=[prose('ยินดีค่ะ')];send('ขอบคุณจ้า')
     assert PRIVATE not in json.dumps(state['calls'][-1])
+
+
+def test_followup_suggestion_without_amount_is_repaired_before_display(assistant):
+    c,w,u,b,cid,wallet,cat,state,post,send=assistant
+    post(41200,on='2026-10-13')
+    state['responses']=[fetch(period='เมื่อวาน',metric='expense'),prose('อยากให้ดูเพิ่มอีกไหมคะ'),prose('เมื่อวานใช้ไป **412 บาท** ค่ะ')]
+    reply=send('เมื่อวานละ')
+    assert '**412 บาท**' in reply['content']
+    assert 'อยากให้ดูเพิ่ม' not in reply['content']
+    assert len(state['calls'])==3
+    assert 'บอกผลที่ผู้ใช้ถามพร้อมยอดรวม' in state['calls'][-1]['messages'][0]['content']
 
 
 @pytest.mark.parametrize('stream',[False,True])

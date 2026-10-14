@@ -156,7 +156,7 @@ def read(db,room,job,raw):
     refs={str((r['type'],r['filters'])):r for r in [*previous_refs,*getattr(job,'_finance_refs',[])]}
     job._finance_refs=list(refs.values())[-24:]
     remember(job,evidence)
-    result.update(facts=evidence['facts'],notice='Answer normally in Thai Markdown. Amounts and totals are computed by backend; do not invent or sum partial pages. No user format or fact placeholders required. Other data can be fetched as needed within the same authorized scope.')
+    result.update(facts=evidence['facts'],notice='Answer the requested result first in natural Thai Markdown, including the relevant total from facts (net for balances); suggestions alone are not an answer. Amounts and totals are computed by backend; do not invent or sum partial pages. No user format or fact placeholders required. Other data can be fetched as needed within the same authorized scope.')
     return result
 
 
@@ -205,12 +205,21 @@ def natural(job,text):
         if NUMBER.search(label) and not NUMBER.fullmatch(label.strip()) and not re.search(r'บาท|สตางค์|฿|%',label):
             remaining=re.sub(r'(?<![0-9])'+re.escape(label)+r'(?![0-9]|\s*(?:บาท|สตางค์|%|รายการ))',' FACT ',remaining)
     remaining=re.sub(r'(?m)^\s*\d{1,2}[.)]\s+','- ',remaining)
+    answered=set()
     for match in NUMBER.finditer(remaining):
         number=Decimal(match[0].replace(',',''))
         unit=re.match(r'\s*(บาท(?:/วัน|/รายการ)?|สตางค์|%|รายการ)',remaining[match.end():])
         if remaining[max(0,match.start()-1):match.start()]=='฿':unit_type='บาท'
         else:unit_type=unit[1] if unit else None
         if number not in (allowed.get(unit_type,set()) if unit_type else all_numbers):raise ValueError('unsupported figure')
+        if unit_type!='รายการ':answered.add(number)
+    # A valid suggestion without the requested result is still a failed answer.
+    # Check the latest read, so a figure repeated from an earlier dataset cannot
+    # stand in for the current result. Item amounts/counts are not summary totals.
+    latest=data['datasets'][-1]['facts']
+    keys=('net',) if 'net' in latest else ('amount',) if 'amount' in latest else ('income','expense','planned','spent','remaining')
+    required={Decimal(m[0].replace(',','')) for key in keys if key in latest for m in NUMBER.finditer(str(latest[key]).translate(DIGITS))}
+    if required and not answered.intersection(required):raise ValueError('missing requested total')
     if re.search(r'(?:หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|ร้อย|พัน|หมื่น|แสน|ล้าน)\s*(?:บาท|สตางค์)',remaining):raise ValueError('unsupported written amount')
     scopes=list(dict.fromkeys(d['scope'] for d in data['datasets']))
     return '\n'.join(scopes)+'\n\n'+value

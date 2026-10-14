@@ -278,3 +278,19 @@ def test_money_cannot_be_presented_as_an_unverified_daily_or_per_item_average():
     with pytest.raises(ValueError):natural(job,'เฉลี่ย 80.00 บาท/วันค่ะ')
     with pytest.raises(ValueError):natural(job,'เฉลี่ย 80.00 บาท/รายการค่ะ')
     assert '80.00 บาท' in natural(job,'ใช้ไป 80.00 บาทค่ะ')
+
+
+def test_suggestions_and_item_figures_cannot_replace_latest_requested_total():
+    job=SimpleNamespace(user_id='a',workspace_id='w',payload={'conversation_id':'r'})
+    remember(job,dict(facts={'expense':'80.00 บาท'},scope='สัปดาห์ก่อน',fallback='80 บาท'))
+    remember(job,dict(facts={'expense':'412.00 บาท','count':'4 รายการ','item_0_amount':'248.00 บาท'},scope='เมื่อวาน',fallback='412 บาท'))
+    for text in ('อยากให้ดูเพิ่มอีกไหมคะ', 'เมื่อวานมี 4 รายการค่ะ', 'รายการแรก 248 บาทค่ะ', 'สัปดาห์ก่อนใช้ 80 บาทค่ะ'):
+        with pytest.raises(ValueError,match='missing requested total'):natural(job,text)
+    assert '412 บาท' in natural(job,'เมื่อวานใช้ไป **412 บาท** ค่ะ')
+
+
+def test_balance_answer_must_include_net_instead_of_only_zero_debt():
+    job=SimpleNamespace(user_id='a',workspace_id='w',payload={'conversation_id':'r'})
+    remember(job,dict(facts={'net':'800.00 บาท','assets':'900.00 บาท','liabilities':'100.00 บาท'},scope='ยอดปัจจุบัน',fallback='800 บาท'))
+    with pytest.raises(ValueError,match='missing requested total'):natural(job,'มีสินทรัพย์ 900 บาท หนี้ 100 บาทค่ะ')
+    assert '฿800' in natural(job,'ยอดสุทธิ **฿800** ค่ะ')

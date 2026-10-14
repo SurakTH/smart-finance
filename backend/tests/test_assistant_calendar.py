@@ -128,7 +128,7 @@ def test_date_only_followup_inherits_owned_adjacent_filters_without_model_flag(a
 @pytest.mark.parametrize('change',['expired','intervening'])
 def test_calendar_followup_does_not_inherit_stale_or_interrupted_filters(assistant,change):
     c,w,u,b,cid,wallet,cat,state,post,send=assistant;post(8000,'กาแฟ','2026-10-13');post(92000,'อาหาร','2026-10-13')
-    state['responses']=[tool('fetch_finance',dict(resource='summary',period='last week',q='กาแฟ')),{'content':'รอบก่อนยังไม่พบค่าใช้จ่ายค่ะ'}]
+    state['responses']=[tool('fetch_finance',dict(resource='summary',period='last week',q='กาแฟ')),{'content':'รอบก่อนรายจ่าย 0 บาท ยังไม่พบรายการค่ะ'}]
     send('ลองดูคาเฟ่รอบก่อนให้หน่อยจ้า')
     with SessionLocal.begin() as db:
         room=db.get(Conversation,cid)

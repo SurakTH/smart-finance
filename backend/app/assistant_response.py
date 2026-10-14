@@ -1,6 +1,9 @@
 """Separate visible replies from untrusted tool arguments and private reasoning."""
 import json
 import re
+
+MAX_PRIVATE_BYTES=1_048_576
+MAX_RESPONSE_BYTES=16_777_216
 from dataclasses import dataclass,field
 
 @dataclass
@@ -23,7 +26,7 @@ def private_fields(message):
         details=message['reasoning_details']
         if not isinstance(details,list) or len(details)>1024 or any(not isinstance(d,dict) for d in details):raise ValueError('Invalid continuation')
         fields['reasoning_details']=details
-    if len(json.dumps(fields,ensure_ascii=False).encode())>65536:raise ValueError('Continuation limit')
+    if len(json.dumps(fields,ensure_ascii=False).encode())>MAX_PRIVATE_BYTES:raise ValueError('Continuation limit')
     return fields
 
 def assistant_message(answer):
@@ -78,7 +81,7 @@ def read_stream(response,job):
         from .chat_stop import check
         check(job)
         size+=len(line.encode())+1
-        if size>256000 or time.monotonic()>deadline:raise ValueError('Stream limit')
+        if size>MAX_RESPONSE_BYTES or time.monotonic()>deadline:raise ValueError('Stream limit')
         if line.startswith('data:'):fields.append(line[5:].lstrip())
         elif line=='':
             if not fields:continue
@@ -104,7 +107,7 @@ def read_stream(response,job):
                 private.setdefault('reasoning_details',[]).extend(details)
                 private_size+=len(json.dumps(details,ensure_ascii=False).encode())
                 if len(private['reasoning_details'])>1024:raise ValueError('Continuation limit')
-            if private_size>65536:raise ValueError('Continuation limit')
+            if private_size>MAX_PRIVATE_BYTES:raise ValueError('Continuation limit')
             reason=choice.get('finish_reason')
             if reason is not None:
                 if reason=='length':

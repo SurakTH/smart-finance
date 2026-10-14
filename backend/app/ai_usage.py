@@ -9,6 +9,7 @@ from .db import get_db,SessionLocal
 from .models import AIUsage,AIUsagePolicy,Provider,Workspace,uid
 from .security import owner
 from .reporting import today
+from .assistant_response import MAX_RESPONSE_BYTES
 
 router=APIRouter(prefix='/workspaces/{wid}/ai/usage',dependencies=[Depends(owner)])
 class Price(BaseModel):
@@ -35,7 +36,7 @@ def save_policy(wid:str,data:Policy,db=Depends(get_db,scope='function')):
     models={p.id:p.model for p in db.scalars(select(Provider).where(Provider.workspace_id==wid))}
     for event in db.scalars(select(AIUsage).where(AIUsage.workspace_id==wid,AIUsage.cost.is_(None))):
         price=row.prices.get(event.provider_id)
-        if price and models.get(event.provider_id)==event.model:
+        if price and models.get(event.provider_id)==event.model and not (event.estimated and event.output_tokens==0):
             event.cost=cost(event.input_tokens,event.output_tokens,price);event.estimated=True
     db.flush()
     return policy(db,wid)
@@ -68,7 +69,7 @@ def reserve(db,job,p,body):
             return sum(len(str(k).encode())+estimate(v) for k,v in value.items())
         if isinstance(value,list):return sum(estimate(v)+8 for v in value)
         return len(str(value).encode())+8
-    i=estimate(body);o=p.max_tokens;charge=cost(i,o,price) if price else None
+    i=estimate(body);o=p.max_tokens;charge=cost(i,o,price) if price and (o or p.kind=='ollama') else None
     month=today().strftime('%Y-%m')
     used=db.scalar(select(func.coalesce(func.sum(AIUsage.cost),0)).where(AIUsage.workspace_id==job.workspace_id,AIUsage.month==month))
     if options['monthly_limit'] and p.kind!='ollama':
@@ -96,7 +97,7 @@ class Meter:
             yield line
     def iter_bytes(self):
         for chunk in self.response.iter_bytes():
-            if len(self.raw)+len(chunk)<=256000:self.raw+=chunk
+            if len(self.raw)+len(chunk)<=MAX_RESPONSE_BYTES:self.raw+=chunk
             yield chunk
         try:self.usage=tokens(json.loads(self.raw).get('usage')) or self.usage
         except (ValueError,AttributeError):pass

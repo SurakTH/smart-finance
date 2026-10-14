@@ -13,7 +13,7 @@ from .ledger import get_scoped
 from .ai_parameters import parameters
 from .ai_usage import tracked_stream
 from .ai_errors import ensure_response,AIRequestError
-from .assistant_response import AssistantReply,completion,completion_choice,read_stream,assistant_message,request_messages
+from .assistant_response import AssistantReply,completion,completion_choice,read_stream,assistant_message,request_messages,MAX_RESPONSE_BYTES
 from .ai_diagnostics import record
 from .chat_stream import publish
 from .chat_stop import check as check_stop
@@ -80,7 +80,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
                 raw=b''
                 for chunk in response.iter_bytes():
                     raw+=chunk
-                    if len(raw)>256000:raise ValueError('Response too large')
+                    if len(raw)>MAX_RESPONSE_BYTES:raise ValueError('Response too large')
                 answer=completion_choice(json.loads(raw)['choices'][0])
         return answer
     def finish():

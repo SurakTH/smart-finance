@@ -195,3 +195,11 @@ def test_streamed_read_tool_preserves_fragmented_call_id_without_exposing_argume
     reply=read_stream(response,SimpleNamespace(payload={}))
     assert reply.call_id=='call_finance123' and reply.tool_name=='query_finance'
     assert json.loads(reply.draft)=={'operation':'monthly_analysis'} and events==[]
+
+
+@pytest.mark.parametrize('kind',['gemini','openrouter','groq','openai','compatible','ollama'])
+@pytest.mark.parametrize('effort',['default','high'])
+def test_provider_default_output_budget_omits_both_token_limit_fields(kind,effort):
+    body=parameters(SimpleNamespace(kind=kind,model='model',reasoning_effort=effort,max_tokens=0,temperature=50))
+    assert 'max_tokens' not in body and 'max_completion_tokens' not in body
+    if effort=='high':assert ('reasoning' if kind=='openrouter' else 'reasoning_effort') in body

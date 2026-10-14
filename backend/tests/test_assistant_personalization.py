@@ -1,4 +1,5 @@
 import json,uuid
+from types import SimpleNamespace
 import httpx
 import pytest
 from sqlalchemy import select
@@ -101,8 +102,9 @@ def cloud(c,w,b,**values):
     with SessionLocal.begin() as db:
         p=Provider(workspace_id=w,kind='compatible',endpoint='https://api.example.com/v1',model='test-model',task='chat',retries=0,**values);db.add(p);db.flush();return p.id
 
-def test_usage_actual_and_estimated_no_sensitive_data(actor,monkeypatch):
-    c,w,u,b,cid=setup(actor);pid=cloud(c,w,b)
+@pytest.mark.parametrize("output_budget",[1200,0])
+def test_usage_actual_and_estimated_no_sensitive_data(actor,monkeypatch,output_budget):
+    c,w,u,b,cid=setup(actor);pid=cloud(c,w,b,max_tokens=output_budget)
     monkeypatch.setattr(ai,'target',lambda p:('https://api.example.com/v1',{},{}))
     assert c.put(b+'/ai/usage/policy',json={'prices':{pid:{'input':1000000,'output':2000000}}}).status_code==200
     responses=[httpx.Response(200,json={'choices':[{'message':{'content':'สวัสดี'}}],'usage':{'prompt_tokens':100,'completion_tokens':50}}),reply('ยินดีค่ะ')]
@@ -205,3 +207,25 @@ def test_probe_counts_failures_and_respects_budget(actor,monkeypatch):
     c.put(b+'/ai/usage/policy',json={'monthly_limit':1,'prices':{pid:{'input':1000000,'output':1000000}}})
     assert c.post(b+'/providers/'+pid+'/test').status_code==422
     assert c.get(b+'/ai/usage').json()['requests']==1
+
+
+def test_model_default_unknown_usage_is_not_free_or_repriced_as_zero(actor,monkeypatch):
+    c,w,u,b,cid=setup(actor);pid=cloud(c,w,b,max_tokens=0)
+    monkeypatch.setattr(ai,'target',lambda p:('https://api.example.com/v1',{},{}))
+    transport(monkeypatch,lambda req:reply('ยินดีค่ะ'))
+    prices={pid:{'input':1000000,'output':2000000}}
+    c.put(b+'/ai/usage/policy',json={'prices':prices})
+    say(c,b,cid,'สวัสดี');assert run_once()
+    assert c.get(b+'/ai/usage').json()['unpriced_requests']==1
+    c.put(b+'/ai/usage/policy',json={'prices':prices})
+    assert c.get(b+'/ai/usage').json()['unpriced_requests']==1
+    with SessionLocal() as db:
+        row=db.scalar(select(AIUsage).where(AIUsage.workspace_id==w))
+        assert row.estimated and row.cost is None
+
+
+def test_model_default_with_capped_cloud_budget_is_blocked_before_network(actor):
+    c,w,u,b,cid=setup(actor);pid=cloud(c,w,b,max_tokens=0)
+    c.put(b+'/ai/usage/policy',json={'monthly_limit':1000000,'prices':{pid:{'input':1,'output':1}}})
+    with SessionLocal.begin() as db:
+        with pytest.raises(BudgetExceeded):reserve(db,SimpleNamespace(workspace_id=w,task='chat'),db.get(Provider,pid),{})

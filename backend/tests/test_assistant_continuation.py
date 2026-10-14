@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 from sqlalchemy import select
-from app.assistant_response import completion,read_stream
+from app.assistant_response import completion,read_stream,MAX_PRIVATE_BYTES
 from app.db import SessionLocal
 from app.models import Account,Conversation,Job,Message,ChatAction,Workspace,Membership
 from app.ai_errors import ensure_response,AIRequestError,metadata
@@ -179,7 +179,7 @@ def test_hidden_continuation_is_not_visible_or_repr(private,monkeypatch):
     for k,v in private.items():assert answer.continuation[k]==v
 
 
-@pytest.mark.parametrize('private',[{'reasoning_content':[]},{'reasoning_details':['invalid']},{'reasoning_content':'x'*65537}])
+@pytest.mark.parametrize('private',[{'reasoning_content':[]},{'reasoning_details':['invalid']},{'reasoning_content':'x'*(MAX_PRIVATE_BYTES+1)}])
 def test_invalid_or_unbounded_private_continuation_is_rejected(private):
     with pytest.raises(ValueError):completion({**fetch(),**private})
     with pytest.raises(ValueError):read_stream(streamed({**fetch(),**private}),SimpleNamespace(payload={}))
@@ -278,3 +278,13 @@ def test_semantic_feedback_repairs_multiple_fields_in_one_model_turn(lab,monkeyp
     transport(monkeypatch,handler);jid=start(c,b,'natural',pid);run_all()
     proof=lab_result(c,b,jid)['diagnostics'];assert proof['test']['status']=='passed' and len(calls)==3
     bad=[e for e in proof['events'] if e.get('status')=='invalid'];assert bad[0]['issues']==[{'field':'q','code':'unsupported_filter'},{'field':'period','code':'unsupported_filter'}]
+
+
+@pytest.mark.parametrize('stream',[False,True])
+def test_large_private_thinking_is_retained_without_publishing(stream,monkeypatch):
+    private='ความคิดส่วนตัว'*8000
+    events=[];monkeypatch.setattr('app.chat_stream.publish',lambda *a,**kw:events.append(kw))
+    message={**fetch(),'reasoning_content':private}
+    answer=read_stream(streamed(message),SimpleNamespace(payload={})) if stream else completion(message)
+    assert answer.continuation['reasoning_content']==private
+    assert not answer.content and events==[] and private not in repr(answer)

@@ -55,10 +55,16 @@ class ProviderInput(BaseModel):
     enabled: bool = True
     timeout_seconds: int = Field(default=20, ge=5, le=60)
     retries: int = Field(default=1, ge=0, le=2)
-    max_tokens: int = Field(default=1200, ge=64, le=8192)
+    max_tokens: int = Field(default=1200, ge=0, le=2_147_483_647, strict=True)
     temperature: int = Field(default=10, ge=0, le=200)
     reasoning_effort: Literal['default','none','minimal','low','medium','high','xhigh'] = 'default'
     supports_images: bool = False
+
+    @field_validator('max_tokens')
+    @classmethod
+    def output_budget(cls,value):
+        if 0 < value < 64:raise ValueError('Use model default or at least64 tokens')
+        return value
 
 class AISettingsInput(BaseModel):
     cloud_enabled: bool = False

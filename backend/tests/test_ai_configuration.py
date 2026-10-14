@@ -108,9 +108,10 @@ def test_probe_synthetic_prompt_and_filtered_model_discovery(configured,monkeypa
     assert c.post(b+'/providers/'+pid+'/models',json={}).json()=={'models':['valid/model']}
     assert len(calls)==2
 
-def test_runtime_routes_retries_disabled_cloud_and_demo(configured,monkeypatch):
+@pytest.mark.parametrize("output_budget",[0,333,32768,65536,131072])
+def test_runtime_routes_retries_disabled_cloud_and_demo(configured,monkeypatch,output_budget):
     c,b,w,u=configured;enable(c,b)
-    first=c.post(b+'/providers',json={**payload(),'model':'first','retries':0,'max_tokens':333,'temperature':80}).json()['id']
+    first=c.post(b+'/providers',json={**payload(),'model':'first','retries':0,'max_tokens':output_budget,'temperature':80}).json()['id']
     second=c.post(b+'/providers',json={**payload(),'model':'second','retries':0}).json()['id']
     disabled=c.post(b+'/providers',json={**payload(),'model':'disabled','priority':0,'enabled':False}).json()['id']
     c.put(b+'/ai/routes',json={'task':'extract','provider_ids':[first,disabled,second]})
@@ -119,7 +120,7 @@ def test_runtime_routes_retries_disabled_cloud_and_demo(configured,monkeypatch):
     def handler(req):
         body=json.loads(req.content);calls.append(body['model'])
         if body['model']=='first':
-            assert body['max_tokens']==333 and body['temperature']==.8
+            assert body.get('max_tokens')==(output_budget or None) and body['temperature']==.8
             return httpx.Response(503,json={'error':'hidden provider error'})
         return httpx.Response(200,json={'choices':[{'message':{'content':json.dumps({'proposals':[{'description':'AI draft','amount':8500,'kind':'expense'}]})}}]})
     monkeypatch.setattr(ai.httpx,'Client',lambda **kw:real(transport=httpx.MockTransport(handler),**kw))
@@ -241,3 +242,21 @@ def test_ollama_root_url_normalized_and_probe_accepts_tool_reply_without_posting
     monkeypatch.setattr(ai.httpx,'Client',lambda **kw:real(transport=httpx.MockTransport(handler),**kw))
     assert c.post(b+'/providers/'+row['id']+'/test',json={}).status_code==200
     assert c.get(b+'/transactions').json()==[]
+
+
+def test_output_budget_roundtrip_and_bounds(configured):
+    c,b,w,u=configured
+    row=c.post(b+'/providers',json={**payload(),'max_tokens':32768}).json()
+    assert row['max_tokens']==32768
+    assert c.put(b+'/providers/'+row['id'],json={**payload(),'max_tokens':65536}).json()['max_tokens']==65536
+    assert c.get(b+'/providers').json()[0]['max_tokens']==65536
+    for value in (1,63,2_147_483_648):
+        assert c.put(b+'/providers/'+row['id'],json={**payload(),'max_tokens':value}).status_code==422
+    assert c.get(b+'/providers').json()[0]['max_tokens']==65536
+
+
+def test_model_default_budget_persists_without_changing_other_settings(configured):
+    c,b,w,u=configured
+    row=c.post(b+'/providers',json={**payload(),'max_tokens':0,'reasoning_effort':'high'}).json()
+    assert row['max_tokens']==0 and row['reasoning_effort']=='high'
+    assert c.get(b+'/providers').json()[0]['max_tokens']==0

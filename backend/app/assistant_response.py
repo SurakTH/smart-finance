@@ -1,7 +1,7 @@
 """Separate visible replies from untrusted tool arguments and private reasoning."""
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass,field
 
 @dataclass
 class AssistantReply:
@@ -9,6 +9,33 @@ class AssistantReply:
     draft: str | None = None
     tool_name: str | None = None
     call_id: str | None = None
+    # Provider continuation state lives only in this request. Never persist,
+    # publish, log or carry it to a different provider or conversation.
+    continuation: dict | None = field(default=None,repr=False,compare=False)
+
+def private_fields(message):
+    fields={}
+    for key in ('reasoning_content','reasoning'):
+        if message.get(key) is not None:
+            if not isinstance(message[key],str):raise ValueError('Invalid continuation')
+            fields[key]=message[key]
+    if message.get('reasoning_details') is not None:
+        details=message['reasoning_details']
+        if not isinstance(details,list) or len(details)>1024 or any(not isinstance(d,dict) for d in details):raise ValueError('Invalid continuation')
+        fields['reasoning_details']=details
+    if len(json.dumps(fields,ensure_ascii=False).encode())>65536:raise ValueError('Continuation limit')
+    return fields
+
+def assistant_message(answer):
+    if answer.continuation:return answer.continuation
+    if answer.tool_name:return {'role':'assistant','content':'','tool_calls':[{'id':answer.call_id,'type':'function','function':{'name':answer.tool_name,'arguments':answer.draft}}]}
+    return {'role':'assistant','content':answer.content}
+
+def request_messages(messages):
+    # Some compatible chat templates reject a system message after user/tool
+    # messages. Keep backend instructions first without reordering tool pairs
+    # or promoting any user/tool content to system authority.
+    return [m for m in messages if m['role']=='system']+[m for m in messages if m['role']!='system']
 
 def visible(text):
     return re.sub(r'<think\b[^>]*>.*?(?:</think>|$)','',text,flags=re.S|re.I).strip()
@@ -26,7 +53,7 @@ def completion(message):
     if not isinstance(tools,list) or len(tools)>1:raise ValueError('Only one draft at a time')
     if not tools:
         if not visible(content):raise ValueError('Empty completion')
-        return AssistantReply(visible(content))
+        return AssistantReply(visible(content),continuation={'role':'assistant','content':content,**private_fields(message)})
     tool=tools[0]
     if not isinstance(tool,dict):raise ValueError('Invalid tool')
     function=tool.get('function',{})
@@ -36,12 +63,13 @@ def completion(message):
     if not isinstance(arguments,str) or len(arguments)>16000:raise ValueError('Invalid arguments')
     identifier=tool.get('id') or 'call_sf_read'
     if not isinstance(identifier,str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,100}',identifier):raise ValueError('Invalid tool id')
-    return AssistantReply('',arguments,function['name'],identifier)
+    continuation={'role':'assistant','content':content,'tool_calls':[{'id':identifier,'type':'function','function':{'name':function['name'],'arguments':arguments}}],**private_fields(message)}
+    return AssistantReply('',arguments,function['name'],identifier,continuation)
 
 def read_stream(response,job):
     from .chat_stream import publish
     import time
-    text='';name='';arguments='';identifier='';tool_seen=False;finished=False;fields=[];size=0
+    text='';name='';arguments='';identifier='';tool_seen=False;finished=False;fields=[];size=0;private={};private_size=0
     deadline=time.monotonic()+75
     for line in response.iter_lines():
         from .chat_stop import check
@@ -62,6 +90,18 @@ def read_stream(response,job):
             if not isinstance(choice,dict):raise ValueError('Invalid choice')
             delta=choice.get('delta',{})
             if not isinstance(delta,dict):raise ValueError('Invalid delta')
+            for key in ('reasoning_content','reasoning'):
+                if delta.get(key) is not None:
+                    if not isinstance(delta[key],str):raise ValueError('Invalid continuation')
+                    private[key]=private.get(key,'')+delta[key]
+                    private_size+=len(delta[key].encode())
+            if delta.get('reasoning_details') is not None:
+                details=delta['reasoning_details']
+                if not isinstance(details,list):raise ValueError('Invalid continuation')
+                private.setdefault('reasoning_details',[]).extend(details)
+                private_size+=len(json.dumps(details,ensure_ascii=False).encode())
+                if len(private['reasoning_details'])>1024:raise ValueError('Continuation limit')
+            if private_size>65536:raise ValueError('Continuation limit')
             reason=choice.get('finish_reason')
             if reason is not None:
                 if reason=='length':
@@ -91,9 +131,9 @@ def read_stream(response,job):
                 text+=part
                 shown=visible(text)
                 if part and shown and not tool_seen and not getattr(job,'_suppress_preview',False):publish(job,'delta',text=shown,snapshot=True)
-            # reasoning/reasoning_content/thoughts are intentionally neither stored nor published.
+            # Private continuation is replayed only to this provider, never UI/DB.
     if not finished:raise ValueError('Interrupted stream')
-    message={'content':text}
+    message={'content':text,**private}
     if tool_seen:message['tool_calls']=[{'type':'function','id':identifier or 'call_sf_read','function':{'name':name,'arguments':arguments}}]
     result=completion(message)
     if not result.content and result.draft is None:raise ValueError('Empty completion')

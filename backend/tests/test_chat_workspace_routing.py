@@ -8,6 +8,12 @@ from app.models import Provider
 from app.worker import run_once
 from test_chat_images import receipt
 
+@pytest.fixture(autouse=True)
+def synthetic_endpoint(monkeypatch):
+    # These tests exercise route selection, not live public DNS. Endpoint/SSRF
+    # validation has its own tests; no external provider should be contacted here.
+    monkeypatch.setattr(ai,'target',lambda p:('https://provider.example/v1',{},{}))
+
 @pytest.mark.parametrize('legacy',[None,'private','standard'])
 def test_all_rooms_use_workspace_priority_fallback_and_cloud_switch(actor,monkeypatch,legacy):
     c,w,u=actor;b=f'/workspaces/{w}'

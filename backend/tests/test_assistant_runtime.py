@@ -115,7 +115,7 @@ def test_batch_clarification_preserves_every_item_until_confirmation(assistant):
     assert count(w)==2
 
 
-def test_retry_reuses_read_result_and_keeps_it_in_final_context(assistant,monkeypatch):
+def test_failed_continuation_reuses_read_result_without_repeating_provider(assistant,monkeypatch):
     from app import assistant_lookup
     c,w,u,b,cid,wallet,cat,state,post,send=assistant
     with SessionLocal.begin() as db:db.scalar(select(Provider).where(Provider.workspace_id==w)).retries=1
@@ -123,11 +123,6 @@ def test_retry_reuses_read_result_and_keeps_it_in_final_context(assistant,monkey
     def tracked(*args):reads.append(1);return original(*args)
     monkeypatch.setattr(assistant_lookup,'read',tracked)
     def fail(body):raise httpx.ConnectError('synthetic interrupted request')
-    def final(body):
-        assert 'tools' not in body
-        outputs=[json.loads(m['content']) for m in body['messages'] if m['role']=='tool']
-        assert outputs and outputs[0]['results'][0]['items']
-        return {'content':'มีบัญชีเงินสดค่ะ'}
     query=tool('lookup_workspace',{'queries':[{'resource':'accounts'}]})
-    state['responses']=[query,fail,query]
-    assert 'เงินสด' in send('มีบัญชีอะไรบ้าง')['content'] and len(reads)==1 and len(state['calls'])==3
+    state['responses']=[query,fail]
+    assert 'เงินสด' in send('มีบัญชีอะไรบ้าง')['content'] and len(reads)==1 and len(state['calls'])==2

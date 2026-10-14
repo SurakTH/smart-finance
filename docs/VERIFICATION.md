@@ -1,5 +1,17 @@
 # ผลตรวจสอบ Smart Finance
 
+## แก้ Thinking/tool continuation และบัญชีปนหมวด (14 ตุลาคม 2026)
+
+- พิสูจน์กับโค้ด app ก่อนแก้ commit `04ede69` ในสำเนาแยก: regression 13 กรณีล้มตามคาด (JSON/SSE continuation 6, อ่านยอดแล้ว synthesis HTTP400/422/500 ล้ม 6, balance facts ปนหมวด 1) ใช้ HTTP transport ที่ตรวจ protocol และ PostgreSQL ตัวอย่างจริง ไม่มี API key/บัญชีการเงินจริงของผู้ใช้ ไม่อ้างว่ามี raw upstream error ของปลายทางผู้ใช้
+- แก้ replay assistant tool messages ให้คง content/ID/arguments และ private reasoning_content/reasoning/reasoning_details ตามที่ provider คืนมา ทั้ง read, lookup, repair คำตอบที่มีตัวเลขผิด และ toolkit paths จำกัด private continuation 64 KiB ในหน่วยความจำ ไม่เก็บ/แสดง/log/ส่งไปห้องหรือ provider ถัดไป OpenRouter รับ reasoning เพื่อใช้ continuation โดยไม่เปลี่ยน effort ที่ผู้ใช้เลือก
+- การอ่าน ledger/lookup ที่ authorize และสำเร็จแล้วไม่หายไปเพียงเพราะคำขอสรุปต่อโมเดลเสีย: ตอบ fallback ของ actor-bound SQL evidence พร้อม scope/references และบันทึก failed request/synthesis limited ใน diagnostics ไม่มี fallback ยอดเมื่อยังไม่อ่าน ไม่มีการบันทึก/แก้ ledger จาก error path AI Lab ยัง fail ต่อเมื่อ API เสีย ไม่ใช้ fallback ทำให้ผ่านเทียม Final stop/membership/context/epoch fences เดิมยังทำงาน
+- Balance facts/legacy snapshot ส่งเฉพาะ asset/liability พร้อม kind; income/expense/equity ไม่ถูกเสนอเป็นบัญชีเงิน แยกยอดหนี้/สินทรัพย์/สุทธิ และแจ้งขอบเขต 10 บัญชีแรก Diagnostics เพิ่มเฉพาะ HTTP status/field ที่อนุญาตและ static error reason ไม่มี upstream body/key/URL/private trace
+- Final disposable PostgreSQL suite **786 passed / 1 warning Starlette/httpx เดิม**, 114.89 วินาที เพิ่ม32เคส ชุดที่เกี่ยวข้องรอบก่อน **120 passed**; regression ตรวจ strict API roundtrip JSON/SSE, repair หลายรอบ, ไม่รั่ว durable/history/next turn/repr/stream, memory bounds, authenticated SQL fallback และ epoch invalidation, balance category exclusion/debt signs, Lab ไม่ซ่อน HTTP failure, redaction ของ diagnostics
+- Chrome Playwright **6 passed (19.5 วินาที)** คอม/มือถือ: diagnostics HTTP400/field/เหตุผล integration และสถานะตอบจากข้อมูลจริง, stream/reconnect/roomchange, stop/late output TypeScript ผ่าน Isolated Docker app healthy พอร์ต18080 ไม่ติดตั้งทับข้อมูลเดิม ไม่มี migration/env เพิ่ม
+- ระหว่าง full regression พบเทสต์เลือก Cloud provider ยัง resolve DNS จริงก่อน HTTP mock จึงทำให้ routing assertion ล้มเมื่อ DNS ใช้ไม่ได้ แก้เฉพาะ fixture ของ routing suite ให้ใช้ endpoint สังเคราะห์ การตรวจ DNS/SSRF ของ production และชุด security ไม่เปลี่ยน แล้ว full suite สุดท้ายผ่านทั้งหมด
+- ทดสอบ Qwen ที่ผู้ใช้ตั้งไว้จริงผ่าน AI Lab ก่อนอัปเดต (14 ตุลาคม 2026 เวลา10:01ไทย): fetch_finance transactions สำเร็จและโมเดลตอบต่อได้ แต่ validation คำตอบไม่ผ่าน แล้ว request รอบ repair ถูกปฏิเสธ เพิ่ม system-prefix ordering สำหรับทุก request รวม repair_review โดยไม่เปลี่ยน authority ของ user/tool และทดสอบ strict endpoint ว่าปฏิเสธ late system message ไม่มี raw upstream error จึงยังไม่ฟันธงสาเหตุเฉพาะของ gateway ก่อนอัปเดต
+- การทดสอบปลายทางจริงใช้ข้อมูลสมมติของ Lab เท่านั้น ไม่แก้ provider configuration/ไม่ส่งประวัติหรือ ledger จริง ผลหลังติดตั้งต้องตรวจแยกจาก local tests ไม่รับรองทุก provider extension/ทุกคุณภาพคำเรียบเรียง การบันทึกข้อมูลยังต้องทวน draft และยืนยันเสมอ ให้ CI ตรวจ source สุดท้ายก่อน deploy
+
 ## CI: ตรวจตัวกรองประวัติบนมือถือให้ชัดเจน (14 ตุลาคม 2026)
 
 - อ่าน archive ของ run `38476372601`: backend/typecheck ผ่าน แต่ browser ผ่าน 59/60 ข้อ ข้อที่ล้มคือ exports/mobile หลังกรอกวันเริ่มและวันสิ้นสุด แล้วพบ revision-card เป็น 0 แทน 1 ไม่ใช่ AI period regression; log ไม่มี HTTP response/ค่าของ input จึงยังระบุสาเหตุเชิงลึกไม่ได้

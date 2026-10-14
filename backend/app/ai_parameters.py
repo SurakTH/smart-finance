@@ -20,7 +20,9 @@ def parameters(p):
         return body
     validate(p.kind,p.model,effort)
     body={'max_tokens':p.max_tokens}
-    if p.kind=='openrouter':body['reasoning']={'effort':effort,'exclude':True}
+    # Tool continuations can need private reasoning blocks/signatures. They are
+    # handled in memory by the backend, never displayed or saved as chat history.
+    if p.kind=='openrouter':body['reasoning']={'effort':effort,'exclude':False}
     else:body['reasoning_effort']=effort
     if p.kind in ('openai','groq'):
         body={'max_completion_tokens':p.max_tokens,**{k:v for k,v in body.items() if k!='max_tokens'}}

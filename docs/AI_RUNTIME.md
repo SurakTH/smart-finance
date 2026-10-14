@@ -1,5 +1,17 @@
 # โครงสร้าง AI Chat และผลการปรับปรุง
 
+## Tool continuation และยอดคงเหลือ (14 ตุลาคม 2026)
+
+`AssistantReply.continuation` เก็บ assistant message เดิมพร้อม `reasoning_content`, `reasoning` หรือ `reasoning_details` ที่ provider ส่งมา เฉพาะในหน่วยความจำของ converse รอบนั้นแล้ว replay กลับ provider ตัวเดิม จัดข้อความ system ของ backend เป็น prefix ก่อน user/tool เพื่อรองรับ strict chat templates รวมรอบ repair_review โดยไม่เปลี่ยนลำดับ tool pairs หรือยกระดับข้อความผู้ใช้ ทั้ง JSON/SSE ใช้ feedback path เดียวกัน รวมรอบแก้ arguments และแก้คำตอบที่มีตัวเลขผิด ไม่สร้าง assistant message ใหม่ที่ทิ้ง metadata เหล่านี้ Content ที่ไม่มีค่าใช้ empty string; tool call ID/arguments จับคู่กับผลเครื่องมือเดิม Private continuation จำกัด 64 KiB และ stream/turn limits เดิม ยังไม่ persist ลง Message, Conversation, Job diagnostics, usage หรือเผยแพร่ SSE/Telegram; ไม่ส่งต่อ provider สำรองหรือห้องถัดไป ไม่แสดงใน repr ของ AssistantReply
+
+OpenRouter ที่เลือก effort ใช้ `reasoning.exclude=false` เพื่อให้ backend รับ continuation ที่อาจต้องใช้ต่อ โดยยังไม่แสดงหรือเก็บ reasoning ในประวัติ ผู้ให้บริการที่ไม่ส่ง fields นี้ยังใช้ protocol ปกติ ไม่มีการปิด Thinking หรือเปลี่ยน effort เงียบ ๆ อ้างอิง [Qwen thinking tool calls](https://docs.qwencloud.com/developer-guides/tool-calling/function-calling#thinking-mode) และ [OpenRouter reasoning continuation](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens)
+
+หาก fetch_finance/semantic plan หรือ lookup/query อ่านข้อมูลที่ authorize สำเร็จแล้ว แต่คำขอต่อโมเดลถูกปฏิเสธ/timeout/อ่านไม่ได้ ให้ส่ง fallback ของ actor-bound evidence ที่คำนวณแล้วพร้อม scope/references แทนการทิ้งยอดแล้วตอบ API error ไม่เพิ่ม model retries เมื่อมีข้อมูลตอบได้ ไม่อ้าง mutation สำเร็จ การบันทึกยังต้องมี draft และ typed confirmation เดิม Stop, membership, context และ workspace epoch ต้องผ่าน final fence อีกครั้ง หากยังไม่ได้อ่านจริงจะไม่สร้างยอด/ไม่ยืมคำตอบจากประวัติ AI Lab ไม่ใช้ทางกู้คำตอบนี้ จึงยัง fail เมื่อ provider continuation เสีย
+
+Balance facts และ snapshot ของ legacy chat จำกัด account kind asset/liability เท่านั้น รายรับ/รายจ่าย/equity เป็นหมวดบัญชี ไม่ใช่กระเป๋าเงิน แสดง kind ของแต่ละบัญชีและแจ้งเมื่อรายการบัญชีมีเพียง 10 แรก แต่ assets/liabilities/net คำนวณครบทุกบัญชีตามตัวกรอง หมวดไม่ถูกส่งปนใน balance facts หรือจำนวนเงินที่ยอมรับให้ตอบ
+
+Diagnostics เพิ่ม HTTP status และชื่อช่องจาก static allowlist เท่านั้น ไม่เก็บ upstream body, URL, key, argument, prompt หรือ reasoning แยก thinking_history/tool_history ออกจาก capability errors หน้า settings แสดงรายละเอียดที่ปลอดภัยและสถานะตอบจากข้อมูลที่ตรวจแล้ว คุณภาพคำเรียบเรียงยังขึ้นกับโมเดล และการรองรับ fields เฉพาะของ provider ที่นอกเหนือ protocol นี้ยังต้องทดสอบปลายทางจริง
+
 ## Plain calendar transport และ source-bound recovery (14 ตุลาคม 2026)
 
 `assistant_calendar.parameters` แทนเฉพาะperiod/compare_periodในadvertised Fetch/Plan schemasด้วยdate-word stringหรือflat start/end ลดnested enum refsที่โมเดลมักส่งผิด Internal Window/boundsยังเป็นcanonical strict structure Aliases/Thai Buddhist dates/relative mathอยู่backendทั้งหมด ไม่เพิ่ม user-command routing grammar

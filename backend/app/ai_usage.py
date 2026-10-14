@@ -108,7 +108,7 @@ def tracked_stream(db,job,p,client,*args,**kwargs):
     # Commit the reservation before network I/O; crashes conservatively retain it.
     with SessionLocal.begin() as billing:
         row,price=reserve(billing,job,p,kwargs.get('json',{}))
-    meter=None;ok=False;failure=None
+    meter=None;ok=False;failure=None;details={}
     try:
         with client.stream(*args,**kwargs) as response:
             from .chat_stop import watch
@@ -117,8 +117,9 @@ def tracked_stream(db,job,p,client,*args,**kwargs):
                 meter=Meter(response);yield meter;ok=True
             finally:guard.set()
     except Exception as error:
-        from .ai_errors import diagnose
+        from .ai_errors import diagnose,metadata
         failure=diagnose(error)
+        details=metadata(error)
         raise
     finally:
         row.status='success' if ok else 'failed'
@@ -129,7 +130,7 @@ def tracked_stream(db,job,p,client,*args,**kwargs):
         event={key:getattr(row,key) for key in ('id','workspace_id','provider_id','model','task','month','input_tokens','output_tokens','cost','estimated','status','created_at')}
         job._usage_events=getattr(job,'_usage_events',[])+[event]
         from .ai_diagnostics import record
-        record(job,'request',provider_id=p.id,status='ok' if ok else 'failed',error=failure,duration_ms=int((time.monotonic()-started)*1000),input_tokens=row.input_tokens,output_tokens=row.output_tokens,estimated=row.estimated)
+        record(job,'request',provider_id=p.id,status='ok' if ok else 'failed',error=failure,**details,duration_ms=int((time.monotonic()-started)*1000),input_tokens=row.input_tokens,output_tokens=row.output_tokens,estimated=row.estimated)
         with SessionLocal.begin() as billing:
             current=billing.get(AIUsage,row.id)
             if current:

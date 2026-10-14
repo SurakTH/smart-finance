@@ -13,7 +13,7 @@ from .ledger import get_scoped
 from .ai_parameters import parameters
 from .ai_usage import tracked_stream
 from .ai_errors import ensure_response,AIRequestError
-from .assistant_response import AssistantReply,completion,completion_choice,read_stream
+from .assistant_response import AssistantReply,completion,completion_choice,read_stream,assistant_message,request_messages
 from .ai_diagnostics import record
 from .chat_stream import publish
 from .chat_stop import check as check_stop
@@ -55,7 +55,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         action=db.get(ChatAction,pending)
         if action and action.workspace_id==room.workspace_id and action.conversation_id==room.id and action.status=='pending' and action.payload.get('type')=='management':active.add('management')
     def feedback(answer,result):
-        turns.extend([{'role':'assistant','content':None,'tool_calls':[{'id':answer.call_id,'type':'function','function':{'name':answer.tool_name,'arguments':answer.draft}}]},{'role':'tool','tool_call_id':answer.call_id,'content':json.dumps(result,ensure_ascii=False)}])
+        turns.extend([assistant_message(answer),{'role':'tool','tool_call_id':answer.call_id,'content':json.dumps(result,ensure_ascii=False)}])
     def invalid(answer,result):
         nonlocal repairs,stage
         stage='repairing'
@@ -69,7 +69,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         used=getattr(job,'_assistant_requests',0)
         if used>=8:raise AIRequestError('turn_limit')
         job._assistant_requests=used+1
-        body={'model':p.model,'messages':turns,**parameters(p),'stream':True}
+        body={'model':p.model,'messages':request_messages(turns),**parameters(p),'stream':True}
         if not final:body.update(tools=sandbox.tools if sandbox else catalog(active),tool_choice='auto')
         publish(job,'start')
         publish(job,'progress',stage='summarizing' if final else stage)
@@ -90,11 +90,30 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             return AssistantReply(fallback(job))
         return AssistantReply(sandbox.finish('',getattr(job,'_read_cache',{})) if sandbox else evidence.grounded(db,room,job,task,getattr(job,'_read_cache',{})))
     for _ in range(7):
-        answer=request()
+        try:answer=request()
+        except (httpx.HTTPError,ValueError,KeyError,TypeError) as error:
+            # A failed language-model continuation does not invalidate a completed
+            # authorized ledger read. Keep its exact scoped report and references.
+            # Lab must still expose the provider failure; it is not a fallback test.
+            check_stop(job,True)
+            if sandbox:raise
+            direct=getattr(job,'_direct_finance_read',False) and getattr(job,'_direct_evidence',None)
+            from .assistant_data import identity
+            cache=getattr(job,'_read_cache',{})
+            cached=bool(cache) and getattr(job,'_read_cache_actor',None)==identity(job)
+            if not direct and not cached:raise
+            from .ai_errors import diagnose
+            record(job,'provider_error',provider_id=p.id,error=diagnose(error),status='failed')
+            record(job,'synthesis',status='limited',error=diagnose(error))
+            if direct:return finish()
+            if task.kind=='mutation':return AssistantReply('ฉันอ่านข้อมูลที่เกี่ยวข้องได้แล้ว แต่ยังเตรียมร่างไม่สำเร็จค่ะ ยังไม่ได้บันทึกหรือแก้ข้อมูล')
+            from .assistant_balance_reply import fallback as balance_fallback
+            content=balance_fallback(cache) or evidence.grounded(db,room,job,evidence.Scope('query',''),cache)
+            return AssistantReply(content)
         if not answer.tool_name and claims_review(answer.content):
             if repaired:return AssistantReply(UNPREPARED)
             repaired=True;record(job,'review_repair',status='invalid')
-            turns.extend([{'role':'assistant','content':answer.content},{'role':'system','content':REPAIR}])
+            turns.extend([assistant_message(answer),{'role':'system','content':REPAIR}])
             continue
         if not answer.tool_name and getattr(job,'_direct_evidence',None) and (getattr(job,'_direct_finance_read',False) or task.error or task.kind in ('query','conversation')):
             from .assistant_data import natural,fallback
@@ -102,14 +121,14 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             except ValueError:
                 repairs+=1;record(job,'synthesis',status='invalid');publish(job,'progress',stage='repairing')
                 if repairs>=2:return AssistantReply(fallback(job))
-                turns.extend([{'role':'assistant','content':answer.content},{'role':'system','content':'ปรับคำตอบให้ตรงข้อมูลที่อ่านจริง ตอบภาษาปกติได้ ไม่ต้องใช้แม่แบบ อย่าใส่ตัวเลขที่ไม่มีในข้อมูล และอย่าอ้างว่าได้บันทึก/แก้ไขข้อมูล ถ้าข้อมูลไม่พอเรียกเครื่องมืออ่านเพิ่ม'}])
+                turns.extend([assistant_message(answer),{'role':'system','content':'ปรับคำตอบให้ตรงข้อมูลที่อ่านจริง ตอบภาษาปกติได้ ไม่ต้องใช้แม่แบบ อย่าใส่ตัวเลขที่ไม่มีในข้อมูล และอย่าอ้างว่าได้บันทึก/แก้ไขข้อมูล ถ้าข้อมูลไม่พอเรียกเครื่องมืออ่านเพิ่ม'}])
                 continue
             record(job,'synthesis',status='ok')
             return AssistantReply(content)
         if not answer.tool_name and task.kind=='mutation' and not re.search(r'ไหน|อะไร|เท่าไร|เท่าไหร่|\?',answer.content):
             if repaired:return AssistantReply(UNPREPARED)
             repaired=True;record(job,'review_repair',status='invalid')
-            turns.extend([{'role':'assistant','content':answer.content},{'role':'system','content':REPAIR}])
+            turns.extend([assistant_message(answer),{'role':'system','content':REPAIR}])
             continue
         if answer.tool_name and answer.tool_name not in ('respond_finance','understand_request'):
             job.__dict__.pop('_semantic_evidence',None)
@@ -258,7 +277,9 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             return answer if answer.tool_name else checked(answer)
         if read_budget[0]>=3:return finish()
         cache=getattr(job,'_read_cache',None)
-        if cache is None:cache={};job._read_cache=cache
+        if cache is None:
+            from .assistant_data import identity
+            cache={};job._read_cache=cache;job._read_cache_actor=identity(job)
         key=canonical_read(answer.tool_name,answer.draft)
         if key is not None and key in cache:
             record(job,'tool',tool=answer.tool_name,status='cached')
@@ -290,7 +311,6 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             remember_pages(room,answer.draft,result)
         from .finance_references import collect
         collect(job,result)
-        turns.append({'role':'assistant','content':None,'tool_calls':[{'id':answer.call_id,'type':'function','function':{'name':answer.tool_name,'arguments':answer.draft}}]})
-        turns.append({'role':'tool','tool_call_id':answer.call_id,'content':json.dumps(result,ensure_ascii=False)})
+        feedback(answer,result)
     return finish()
 

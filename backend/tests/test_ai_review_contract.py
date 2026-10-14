@@ -17,7 +17,11 @@ def test_phantom_review_is_repaired_to_real_draft_then_plain_confirm(assistant):
     state['responses']=[{'content':PHANTOM},draft(wallet,cat)]
     value=send('ช่วยจดอาหาร 138.60 บาท เงินสด')
     assert 'กรุณาตรวจสอบ' in value['content'] and count(w)==0 and len(state['calls'])==2
-    assert 'ข้อความก่อนหน้ายังไม่ได้สร้างร่างจริง' in state['calls'][1]['messages'][-1]['content']
+    messages=state['calls'][1]['messages']
+    assert any(m['role']=='system' and 'ข้อความก่อนหน้ายังไม่ได้สร้างร่างจริง' in m['content'] for m in messages)
+    assert messages[-1]['role']=='assistant' and messages[-1]['content']==PHANTOM
+    first_data=next(i for i,m in enumerate(messages) if m['role']!='system')
+    assert all(m['role']!='system' for m in messages[first_data:])
     assert c.post(b+f'/conversations/{cid}/messages',json={'text':'ยืนยัน','review_message_id':value['id']}).status_code==200
     assert count(w)==1
     c.post(b+f'/conversations/{cid}/messages',json={'text':'ยืนยัน'})

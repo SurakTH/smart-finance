@@ -23,6 +23,10 @@ def record(job,event,**values):
             try:item[key]=str(UUID(value))
             except (ValueError,TypeError,AttributeError):pass
         elif key in ('duration_ms','input_tokens','output_tokens','attempt') and type(value) is int:item[key]=max(0,min(value,1_000_000_000))
+        elif key=='http_status' and type(value) is int and 100<=value<=599:item[key]=value
+        elif key=='field':
+            from .ai_errors import FIELDS
+            if isinstance(value,str) and value in FIELDS:item[key]=value
         elif key=='tool' and isinstance(value,str) and value in TOOLS:item[key]=value
         elif key=='status' and isinstance(value,str) and value in STATUSES:item[key]=value
         elif key=='estimated' and type(value) is bool:item[key]=value

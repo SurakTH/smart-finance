@@ -23,6 +23,7 @@ def assistant(actor,monkeypatch):
         else:assert 'tool_choice' not in body  # bounded final text-only synthesis
         answer=state['responses'].pop(0)
         if callable(answer):answer=answer(body)
+        if isinstance(answer,httpx.Response):return answer
         return httpx.Response(200,json={'choices':[{'message':answer}]})
     monkeypatch.setattr(ai.httpx,'Client',lambda **kw:real(transport=httpx.MockTransport(handler),**kw))
     def post(amount=9000,description='กาแฟ',on=None):

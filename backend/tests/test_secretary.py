@@ -115,7 +115,7 @@ def test_tool_arguments_and_reasoning_never_stream_and_partial_tools_never_commi
 @pytest.mark.parametrize('kind,effort,expected',[
  ('openai','high',{'reasoning_effort':'high','max_completion_tokens':1500}),
  ('gemini','low',{'reasoning_effort':'low','max_tokens':1500}),
- ('openrouter','none',{'reasoning':{'effort':'none','exclude':True},'max_tokens':1500}),
+ ('openrouter','none',{'reasoning':{'effort':'none','exclude':False},'max_tokens':1500}),
  ('compatible','medium',{'reasoning_effort':'medium','max_tokens':1500}),
  ('ollama','none',{'reasoning_effort':'none','max_tokens':1500}),
  ('groq','high',{'reasoning_effort':'high','max_completion_tokens':1500,'include_reasoning':False}),

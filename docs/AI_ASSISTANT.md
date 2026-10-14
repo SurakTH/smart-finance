@@ -141,7 +141,7 @@ Web Chat และ Telegram ใช้ `interpret_request` → `intent=analytics`
 | Provider | การส่ง Thinking |
 |---|---|
 | OpenAI / Compatible / Ollama / Gemini | `reasoning_effort` เมื่อเลือกค่าที่ไม่ใช่ default |
-| OpenRouter | `reasoning.effort` และ `reasoning.exclude=true` |
+| OpenRouter | `reasoning.effort` และ `reasoning.exclude=false` (รับ continuation เฉพาะ backend ไม่แสดง/เก็บ reasoning ในแชท) |
 | Groq | `reasoning_effort` และซ่อน reasoning ตามรุ่น |
 
 OpenAI/Groq ใช้ `max_completion_tokens`; provider อื่นใช้ `max_tokens` ไม่ retry ด้วยการลบ effort ที่ผู้ใช้เลือก เมื่อ request ใช้ไม่ได้จะ retry/fallback ตาม route ที่ตั้ง แต่ upstream บางตัว เช่น Ollama บางรุ่น อาจใช้ค่าเริ่มต้นเมื่อไม่รู้จักระดับ จึงไม่อ้างว่าค่า thinking บังคับได้เหมือนกันทุกบริการ

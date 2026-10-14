@@ -21,7 +21,7 @@ def secretary(actor,monkeypatch):
     def handler(request):
         body=json.loads(request.content)
         names={t['function']['name'] for t in body['tools']}
-        assert {'prepare_transaction','query_finance','lookup_workspace','load_toolkit'}<=names
+        assert {'prepare_transaction','fetch_finance','lookup_workspace','load_toolkit'}<=names
         if 'prepare_management_plan' not in names:
             return httpx.Response(200,json={'choices':[{'message':{'tool_calls':[{'type':'function','function':{'name':'load_toolkit','arguments':json.dumps({'toolkit':'management'})}}]}}]})
         state['body']=body
@@ -239,7 +239,7 @@ def test_edit_pending_plan_keeps_original_operations_as_context(secretary):
     old=propose(ops)
     ops[1]['amount']=300000
     fresh=propose(ops,'จริง ๆ 3000 บาท')
-    systems=[m['content'] for m in state['body']['messages'] if m['role']=='system']
+    systems=[m['content'] for m in state['body']['messages'] if m['role']=='user']
     assert any('แผนเดิมที่ยังไม่ยืนยัน' in m and '200000' in m and '@pet' in m for m in systems)
     assert '฿3,000.00' in fresh['content'] and 'แผนจัดการ 2 ขั้นตอน' in fresh['content']
     confirm(old);assert not any(a['name']=='แมว' for a in c.get(b+'/accounts').json())

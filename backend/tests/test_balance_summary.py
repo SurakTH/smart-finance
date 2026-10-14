@@ -59,9 +59,9 @@ def test_duplicate_reads_final_text_call_uses_results_without_more_tools(assista
 
 def test_unique_read_limit_final_call_cannot_create_action(assistant):
     c,w,u,b,cid,wallet,cat,state,post,send=assistant
-    state['responses']=[tool('lookup_workspace',{'queries':[{'resource':'accounts','q':q}]}) for q in ('a','b','c','d')]+[tool('prepare_transaction',dict(intent='create',kind='expense',amount=8000,description='กาแฟ',account_id=wallet,category_id=cat,occurred_on=today().isoformat()))]
+    state['responses']=[tool('lookup_workspace',{'queries':[{'resource':'accounts','q':q}]}) for q in ('a','b','c','d','e','f','g')]+[tool('prepare_transaction',dict(intent='create',kind='expense',amount=8000,description='กาแฟ',account_id=wallet,category_id=cat,occurred_on=today().isoformat()))]
     answer=send('มีบัญชีอะไรบ้าง')['content']
-    assert 'ไม่พบรายการ' in answer and len(state['calls'])==4
+    assert 'ไม่พบรายการ' in answer and len(state['calls'])==7
     assert c.get(b+'/transaction-report').json()['total']==0
     with SessionLocal() as db:assert db.scalar(select(ChatAction).where(ChatAction.conversation_id==cid)) is None
 

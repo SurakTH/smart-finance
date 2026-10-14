@@ -5,6 +5,17 @@ from .models import now
 def selected_images(history,job,db=None):
     current=job.payload.get('attachment_id')
     if current:return [current]
+    if db is not None:
+        from sqlalchemy import select
+        from .models import Conversation,Message
+        room=db.scalar(select(Conversation).where(Conversation.id==job.payload.get('conversation_id'),Conversation.workspace_id==job.workspace_id,Conversation.user_id==job.user_id))
+        pending=(room.capture_context or {}).get('ai_followup',{}) if room else {}
+        focus=(room.capture_context or {}).get('receipt_focus',{}) if room else {}
+        identifier=(pending.get('draft') or {}).get('attachment_id') if pending.get('expires',0)>now() else None
+        identifier=identifier or (focus.get('attachment_id') if focus.get('expires',0)>now() else None)
+        if identifier:
+            owned=db.scalar(select(Message.id).where(Message.workspace_id==job.workspace_id,Message.conversation_id==room.id,Message.role=='user',Message.attachment_id==identifier))
+            if owned:return [identifier]
     text=job.payload.get('text','').strip()
     previous=next((m for m in history if m.role=='assistant'),None)
     image=next((m for m in history if m.role=='user' and m.attachment_id),None)

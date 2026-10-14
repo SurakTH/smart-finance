@@ -39,7 +39,7 @@ def test_normal_chat_uses_model_for_every_utterance_without_turning_examples_int
     say(c,b,cid,'วันนี้รู้สึกเหนื่อยจัง');assert run_once()
     assert 'วันนี้เป็นยังไง' in c.get(b+f'/conversations/{cid}/messages').json()[-1]['content']
     say(c,b,cid,'ขอตัวอย่างข้อมูลค่าอาหาร 200');assert run_once()
-    assert len(calls)==2 and any(m['content']=='วันนี้รู้สึกเหนื่อยจัง' for m in calls[-1]['messages'])
+    assert len(calls)==3 and any(m['content']=='วันนี้รู้สึกเหนื่อยจัง' for m in calls[-1]['messages'])
     with SessionLocal() as db:assert not db.scalar(select(ChatAction).where(ChatAction.conversation_id==cid))
     assert count(w)==0
 

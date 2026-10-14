@@ -13,7 +13,7 @@ from test_secretary import provider,transport,reply
 def test_fabricated_balance_replaced_by_verified_value(assistant):
     c,w,u,b,cid,wallet,cat,state,post,send=assistant
     opening(c,b,wallet,123456)
-    state['responses']=[{'content':'ตอนนี้คุณมีเงิน 999,999 บาทค่ะ'}]
+    state['responses']=[{'content':'ตอนนี้คุณมีเงิน 999,999 บาทค่ะ'},tool('fetch_finance',{'resource':'balances'}),{'content':'ยอดสุทธิ 1,234.56 บาทค่ะ'}]
     content=send('ตอนนี้ฉันมีเงินเท่าไร?')['content']
     assert '999,999' not in content and '1,234.56' in content
 
@@ -110,7 +110,12 @@ def test_unverified_stream_is_never_published(assistant,monkeypatch):
     from httpx._client import Client as real
     opening(c,b,wallet,10000)
     body='data: '+json.dumps({'choices':[{'delta':{'content':'คุณมีเงิน 999999 บาท'},'finish_reason':'stop'}]})+'\n\ndata: [DONE]\n\n'
-    monkeypatch.setattr(ai.httpx,'Client',lambda **kw:real(transport=httpx.MockTransport(lambda req:httpx.Response(200,headers={'content-type':'text/event-stream'},content=body)),**kw))
+    calls=[]
+    def stream_model(req):
+        calls.append(1)
+        if len(calls)==1:return httpx.Response(200,json={'choices':[{'message':tool('fetch_finance',{'resource':'balances'})}]})
+        return httpx.Response(200,headers={'content-type':'text/event-stream'},content=body)
+    monkeypatch.setattr(ai.httpx,'Client',lambda **kw:real(transport=httpx.MockTransport(stream_model),**kw))
     monkeypatch.setattr(chat_stream,'publish',lambda job,kind,**kw:events.append((kind,kw)))
     content=send('ตอนนี้มีเงินเท่าไร')['content']
     assert '100.00' in content and '999999' not in content

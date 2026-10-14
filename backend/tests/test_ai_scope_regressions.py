@@ -112,7 +112,7 @@ def test_filtered_total_includes_all_matches_and_followup_keeps_filter(assistant
     content=send('กาแฟเดือนนี้ใช้ไปเท่าไหร่')['content']
     assert '1,040.00' in content and '1,960.00' not in content
     assert any(r['filters'].get('q')=='กาแฟ' for r in c.get(b+f'/conversations/{cid}/messages').json()[-1]['references'])
-    state['responses']=[{'content':'กาแฟ 800 บาทค่ะ'}]
+    state['responses']=[tool('fetch_finance',dict(resource='summary',period='เดือนนี้',q='กาแฟ',metric='expense')),{'content':'กาแฟรวม 1,040.00 บาทค่ะ'}]
     assert '1,040.00' in send('ต่อ')['content']
 
 

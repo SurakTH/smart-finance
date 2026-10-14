@@ -73,8 +73,9 @@ def test_partial_draft_survives_history_window_and_expires(assistant):
         for i in range(24):db.add(Message(workspace_id=w,conversation_id=cid,role='assistant',content='ข้อความอื่น '+str(i),created_at=message_time(db,w,cid)));db.flush()
     state['responses']=[draft(wallet,cat)]
     send('ยอด 138.60 บาท')
-    system=' '.join(m['content'] for m in state['calls'][-1]['messages'] if m['role']=='system')
-    assert 'ค่าอาหารที่คุยค้าง' in system and '"missing": "amount"' in system
+    data=' '.join(m['content'] for m in state['calls'][-1]['messages'] if m['role']=='user')
+    assert 'ค่าอาหารที่คุยค้าง' in data and '"missing": "amount"' in data
+    assert all('ค่าอาหารที่คุยค้าง' not in m['content'] for m in state['calls'][-1]['messages'] if m['role']=='system')
     with SessionLocal.begin() as db:
         room=db.get(Conversation,cid);assert 'ai_followup' not in room.capture_context
         room.capture_context={'ai_followup':{'expires':now()-1,'draft':{'description':'EXPIRED'}}}

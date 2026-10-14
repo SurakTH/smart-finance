@@ -122,6 +122,9 @@ def handle(db,c,user_id,text,review_message_id=None,allow_model_dialogue=False):
         pending=db.scalar(select(Job.id).where(Job.workspace_id==c.workspace_id,Job.user_id==user_id,Job.task=='chat',Job.status=='pending',Job.payload['conversation_id'].as_string()==c.id).limit(1))
         if pending:return 'กำลังเตรียมข้อเสนอใหม่ค่ะ ยังไม่บันทึก กรุณารอข้อความทวนให้เสร็จก่อน แล้วพิมพ์ ยืนยัน อีกครั้ง'
     context=dict(c.capture_context or {})
+    partial=context.get('ai_followup',{})
+    if (text=='ยืนยัน' or command and command[1]=='ยืนยัน') and partial.get('expires',0)>now() and partial.get('draft'):
+        return 'ร่างที่กำลังแก้ยังขาดข้อมูลค่ะ ขอให้ครบและทวนร่างใหม่ก่อน จึงจะยืนยันได้ ยังไม่ได้บันทึกข้อมูล'
     if text in ('ทวนอีกที','ทวนหน่อย','ทวนรายการ','สรุปที่จะบันทึก'):
         action=db.scalar(select(ChatAction).where(*scope,ChatAction.status=='pending').with_for_update())
         if not action or action.expires<=now():return 'ไม่มีรายการที่รอยืนยันตอนนี้ค่ะ บอกฉันได้เลยว่าอยากจดอะไร'

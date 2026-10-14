@@ -1,5 +1,5 @@
 """User-reported conversation, false query filters and narrow deterministic reads."""
-import asyncio
+import asyncio,json
 from datetime import date
 import pytest
 from sqlalchemy import select
@@ -27,32 +27,41 @@ def test_exact_reported_conversation_returns_real_lists_and_no_bogus_query(assis
         ('เดือนนี้ละ ใช้ตังเท่าไหร่','2026-10-01','2026-10-31','200.00',None),
         ('เมื่อวานมีไรบ้าง','2026-10-13','2026-10-13','80.00','กาแฟ'),
     ]:
-        # Fully recognized reads don't depend on the provider's schema choices.
+        # The agent now selects the read. Keep every amount/date/filter assertion.
+        def compose(body):
+            data=json.loads(body['messages'][-1]['content']);facts=data['facts']
+            return {'content':facts['expense']+' รายการที่ตรงเงื่อนไข '+facts['count']+' '+', '.join(row['description'] for row in data['items'])}
+        state['responses']=[tool('fetch_finance',dict(resource='transactions',period={'start':start,'end':end},metric='expense')),compose]
         answer=send(prompt);content=answer['content']
         assert start in content and end in content and total in content
         assert 'ค้นคำว่า' not in content and 'อยากให้ฉันดูข้อมูล' not in content
         if item:assert item in content and 'รายการที่ตรงเงื่อนไข 1 รายการ' in content
         assert all('q' not in ref['filters'] for ref in answer['references'])
+    state['responses']=[{'content':'หมายถึงวันอาทิตย์วันที่เท่าไรคะ?'}]
     content=send('วันอาทิตย์ละ')['content']
     assert 'วันอาทิตย์วันที่เท่าไร' in content and '0.00' not in content
+    state['responses']=[tool('fetch_finance',dict(resource='transactions',period={'start':'2026-10-11','end':'2026-10-11'},metric='expense')),compose]
     content=send('ที่ผ่านมา')['content']
     assert '2026-10-11' in content and 'อาหาร' in content and '120.00' in content
-    assert not state['calls']
+    assert len(state['calls'])==11
     with SessionLocal() as db:
         assert not db.scalar(select(ChatAction.id).where(ChatAction.workspace_id==w))
         assert db.get(Conversation,cid).capture_context['verified_scope']['q']==''
 
 
-@pytest.mark.parametrize('prompt',[
-    'เมื่อวานเสียตังค์กับอะไรบ้าง','สัปดาห์ที่แล้วใช้ตังค์อะไรบ้าง',
-    'อาทิตย์ก่อนจ่ายตังไปกับอะไรบ้าง','เดือนนี้ล่ะ ใช้ตังเท่าไร',
+@pytest.mark.parametrize('prompt,period,expected',[
+    ('เมื่อวานเสียตังค์กับอะไรบ้าง','เมื่อวาน','80.00'),
+    ('สัปดาห์ที่แล้วใช้ตังค์อะไรบ้าง','สัปดาห์ที่แล้ว','120.00'),
+    ('อาทิตย์ก่อนจ่ายตังไปกับอะไรบ้าง','สัปดาห์ที่แล้ว','120.00'),
+    ('เดือนนี้ล่ะ ใช้ตังเท่าไร','เดือนนี้','200.00'),
 ])
-def test_colloquial_spending_does_not_become_a_literal_description(assistant,prompt):
+def test_colloquial_spending_does_not_become_a_literal_description(assistant,prompt,period,expected):
     c,w,u,b,cid,wallet,cat,state,post,send=assistant
     post(8000,'ค่าอาหาร','2026-10-13');post(12000,'อาหาร','2026-10-11')
+    state['responses']=[tool('fetch_finance',dict(resource='summary',period=period,metric='expense')),{'content':'รายจ่าย '+expected+' บาทค่ะ'}]
     content=send(prompt)['content']
-    assert 'ค้นคำว่า' not in content and ('80.00' in content or '120.00' in content or '200.00' in content)
-    assert not state['calls']
+    assert 'ค้นคำว่า' not in content and expected in content
+    assert len(state['calls'])==2 and len(c.get(b+'/transactions').json())==2
 
 
 @pytest.mark.parametrize('text',[
@@ -102,13 +111,14 @@ def test_filtered_week_question_still_uses_model_and_real_literal_filter(assista
     assert len(state['calls'])==1 and answer['references'][0]['filters']['q']=='กาแฟ'
 
 
-def test_telegram_uses_same_dates_without_model_or_fake_filters(channel):
+def test_telegram_uses_model_reads_with_same_dates_and_no_fake_filters(channel):
     from app.telegram_chat import deliver_once
     c,w,u,b,wallet,cat,state,tid,capture,process=channel
+    state['responses']=[tool('fetch_finance',dict(resource='summary',period='สัปดาห์ที่แล้ว',metric='expense')),{'content':'รายจ่าย 0 บาทค่ะ'}]
     capture(1,'สัปดาห์ที่แล้วใช้ตังไรบ้าง');process()
     bot=Sender();assert asyncio.run(deliver_once(bot))
     assert '2026-10-05' in bot.sent[0][1] and '2026-10-11' in bot.sent[0][1]
-    assert 'ค้นคำว่า' not in bot.sent[0][1] and not state['calls']
+    assert 'ค้นคำว่า' not in bot.sent[0][1] and len(state['calls'])==2
 
 
 
@@ -118,9 +128,10 @@ def test_short_month_followup_keeps_a_real_previous_coffee_filter(assistant):
     state['responses']=[tool('interpret_request',dict(intent='period',q='กาแฟ',period=dict(mode='yesterday',phrase='เมื่อวาน')))]
     assert '80.00' in send('กาแฟเมื่อวานใช้ไปเท่าไหร่')['content']
     state['calls'].clear()
+    state['responses']=[tool('fetch_finance',dict(resource='summary',period='เดือนนี้',metric='expense',reuse_previous_scope=True)),{'content':'กาแฟรวม 80.00 บาทค่ะ'}]
     answer=send('เดือนนี้ละ ใช้ตังเท่าไหร่')
     assert '80.00' in answer['content'] and '1,000.00' not in answer['content']
-    assert answer['references'][0]['filters']['q']=='กาแฟ' and not state['calls']
+    assert answer['references'][0]['filters']['q']=='กาแฟ' and len(state['calls'])==2
 
 
 def test_legacy_filler_filter_is_not_inherited_after_upgrade(assistant):
@@ -130,6 +141,7 @@ def test_legacy_filler_filter_is_not_inherited_after_upgrade(assistant):
     with SessionLocal.begin() as db:
         room=db.get(Conversation,cid)
         room.capture_context={'verified_scope':dict(kind='period',q='ละ ใช้ตัง',expires=now()+900)}
+    state['responses']=[tool('fetch_finance',dict(resource='summary',period='เดือนนี้',metric='expense',clear_filters=True)),{'content':'รายจ่าย 80.00 บาทค่ะ'}]
     content=send('เดือนนี้ละ ใช้ตังเท่าไหร่')['content']
     assert '80.00' in content and 'ค้นคำว่า' not in content
 
@@ -138,11 +150,12 @@ def test_legacy_filler_filter_is_not_inherited_after_upgrade(assistant):
 @pytest.mark.parametrize('change',['expired','intervening'])
 def test_weekday_clarification_cannot_reuse_old_or_interrupted_context(assistant,change):
     c,w,u,b,cid,wallet,cat,state,post,send=assistant
+    state['responses']=[{'content':'หมายถึงวันอาทิตย์วันที่เท่าไรคะ?'}]
     assert 'วันที่เท่าไร' in send('วันอาทิตย์ละ')['content']
     if change=='expired':
         with SessionLocal.begin() as db:
             room=db.get(Conversation,cid);context=dict(room.capture_context)
-            context['weekday_question']={**context['weekday_question'],'expires':0};room.capture_context=context
+            context['weekday_question']={'day':'อาทิตย์','expires':0};room.capture_context=context
     else:
         state['responses']=[{'content':'สวัสดีค่ะ'}];send('สวัสดี')
     state['responses']=[{'content':'หมายถึงช่วงไหนคะ?'}]

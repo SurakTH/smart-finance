@@ -1,5 +1,19 @@
 # โครงสร้าง AI Chat และผลการปรับปรุง
 
+## Conversation-first agent (14 ตุลาคม 2026)
+
+เส้นทางโมเดลหลักไม่เรียก `assistant_evidence.scope` หรือ `assistant_questions.for_turn` เพื่อตัดสินเจตนาก่อนโมเดล และไม่แทนคำตอบปกติด้วยรายงานจาก keyword scope เริ่มด้วย4tools: fetch_finance, lookup_workspace, prepare_transaction, load_toolkit อ่านตามที่โมเดลเลือก แล้วตรวจ facts/สิทธิ์ตามเดิม เครื่องมือ interpret/semantic/query/summary เก่ายังมี compatibility handler เฉพาะเมื่อมีการเรียก protocol เก่า ไม่อยู่ใน catalog หลัก ไม่มี provider ที่ใช้งานได้ยังใช้ demo/legacy ตาม setting เดิม
+
+ร่างมี `continue_draft` ให้โมเดลเลือกต่อหรือเริ่มงานใหม่อย่างชัดเจน Backend merge เฉพาะร่างค้าง/รอยืนยันที่ยังไม่หมดอายุในห้องและ user เดียวกัน เก็บช่องที่ไม่เปลี่ยน เปลี่ยน kind แล้วล้าง category/destination เก่าที่ไม่ได้ระบุใหม่ ก่อนตรวจชนิดบัญชี/หมวดและ ownership เมื่อกำลังแก้ร่างที่ข้อมูลไม่ครบ พิมพ์ยืนยันจะไม่บันทึกร่างเก่า ข้อมูลร่างส่งให้โมเดลใน user-data role แทน system authority
+
+Image focus เก็บเฉพาะ attachment ID และอายุ15นาที หลังตอบภาพที่ยังไม่มีร่างให้ตรวจ ต่อข้อความคำใหม่ได้โดยไม่ต้องตรงชื่อบัญชี/หมวด รูปต้องมี user message ใน conversation/workspace/user ที่ authorize อยู่ เมื่อมี review ที่ตรวจได้ focus ถูกล้าง; partial draft เก็บ attachment ของเดิมไว้ ไม่มีการเปลี่ยนวิธีแยกผู้ใช้/สมาชิก/ข้อมูลส่วนตัวหรือส่ง keys ให้โมเดล
+
+ขยายขอบเขตงานเป็นไม่เกิน6successful reads/12model requests ภายใต้deadlineเดิม มี cache และหยุดการเรียกซ้ำตามเดิม ไม่มี tool ยืนยันหรือ post ledger โมเดลเสนอ/อ่านได้ การบันทึกยังมาจาก authenticated human confirmation endpoint เท่านั้น ตัวเลขปลอม/streamที่ยังไม่ผ่านตรวจ/phantom review ยังไม่ถูกส่งเป็นผลบันทึก
+
+Tests ตาม contract ใหม่ให้ model stub เลือก reads แทนการคาดว่าต้องข้ามโมเดล แต่เก็บยอด วันที่ ตัวกรอง จำนวน ledger และ tenant/confirmation assertions รวมเทสต่อร่างหลังแก้ทิศทาง รูปที่คำบรรยายไม่ใช่ชื่อหมวด และห้ามใช้รูป/ร่างต่างห้องต่าง user การผ่าน mocked provider ไม่ใช่หลักฐานว่าโมเดลจริงเข้าใจภาษา ต้องทดสอบภาพ→คำบรรยาย→แก้ร่างบนหน้าแชทจริงก่อนสรุปคุณภาพ
+
+ส่วนด้านล่างเป็นประวัติการปรับปรุงและ protocol compatibility ไม่ใช่ catalog ของ agent รุ่นปัจจุบัน
+
 ## Semantic tool feedback (14 ตุลาคม 2026)
 
 หลังทดสอบ Qwen จริงกับ version54fbb55: 5โจทย์ผ่านและ API ต่อบทสนทนาได้แล้ว แต่ natural case ยังเลือกเงื่อนไขไม่ตรง การตรวจ semantic ของ Lab เคยส่งเพียง invalid_arguments โดยไม่มี field path ต่างจาก Pydantic validation จึงทำให้โมเดลแก้ซ้ำผิดจุด เพิ่ม static feedback ของ q/period/metric/resource/reuse_previous_scope และรวมหลายช่องให้แก้ใน model turn เดียว Runtime ใช้ feedback เดียวกันสำหรับ fetch/optional plan และ NeedInfo ที่มี field จริง ไม่ echo arguments หรือ exception text

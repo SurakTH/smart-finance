@@ -93,7 +93,11 @@ class Sandbox:
         self.case=case;self.last_failure=None;self.semantic_used=False;self.room=SimpleNamespace(capture_context={})
         names={'lookup_workspace','query_finance','answer_finance_summary'} if case in ('balance','monthly') else {'lookup_workspace','prepare_transaction'}
         if case=='natural':names={'fetch_finance','understand_request','respond_finance','lookup_workspace'}
-        self.tools=[t for t in catalog({'conversation_answer'} if case=='natural' else set()) if t['function']['name'] in names]
+        from .assistant_tools import all_tools
+        from .assistant_summary import tool as summary_tool
+        # Explicit legacy protocol probes keep their own catalog; the primary
+        # conversational agent exposes only its current read/draft tools.
+        self.tools=[t for t in [*all_tools(),summary_tool()] if t['function']['name'] in names]
     def fetch(self,raw,job):
         from .assistant_data import parse_fetch,remember
         value=parse_fetch(raw,PROMPTS[self.case])

@@ -19,7 +19,7 @@ def assistant(actor,monkeypatch):
     accounts=c.get(b+'/accounts').json();wallet=next(a['id'] for a in accounts if a['kind']=='asset');cat=next(a['id'] for a in accounts if a['kind']=='expense');state={'calls':[],'responses':[]};real=httpx.Client
     def handler(req):
         body=json.loads(req.content);state['calls'].append(body)
-        if 'tools' in body:assert {'query_finance','load_toolkit'}<={t['function']['name'] for t in body['tools']}
+        if 'tools' in body:assert {'fetch_finance','load_toolkit'}<={t['function']['name'] for t in body['tools']}
         else:assert 'tool_choice' not in body  # bounded final text-only synthesis
         answer=state['responses'].pop(0)
         if callable(answer):answer=answer(body)

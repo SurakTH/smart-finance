@@ -28,6 +28,7 @@ class TransactionSuggestion(BaseModel):
 class Suggestion(TransactionSuggestion):
     intent: Literal['create','clarify','chat'] = Field(...)
     transactions: list[TransactionSuggestion] | None = Field(default=None,min_length=1,max_length=10)
+    continue_draft: bool = False
 
 def available(db,c):
     from .models import Provider
@@ -36,7 +37,7 @@ def available(db,c):
     return any(p.kind=='ollama' or cloud for p in db.scalars(select(Provider).where(Provider.workspace_id==c.workspace_id,Provider.task=='chat',Provider.enabled.is_(True))))
 
 def tool():
-    return {'type':'function','function':{'name':'prepare_transaction','description':'Prepare one draft or a batch of up to 10 transactions for one review. For batches set intent=create and transactions to complete item objects (item intent defaults to create); omit single transaction fields. Never include both receipt total and its line items. Prepare for review when the user asks to record money or change an unconfirmed draft. Never confirms or saves money. Ask missing details in ordinary conversation first.','parameters':Suggestion.model_json_schema()}}
+    return {'type':'function','function':{'name':'prepare_transaction','description':'Prepare one draft or a batch of up to 10 transactions for one review. For batches set intent=create and transactions to complete item objects (item intent defaults to create); omit single transaction fields. Never include both receipt total and its line items. Prepare for review when the user asks to record money or change an unconfirmed draft. Never confirms or saves money. For a continuing clarification/correction set continue_draft=true and supply only changed fields; backend retains the current draft. For a new task leave false. Submit partial details to retain a real draft before asking for missing fields.','parameters':Suggestion.model_json_schema()}}
 
 def assistant_instruction(db,wid):
     from .assistant_context import instruction
@@ -68,10 +69,31 @@ def instruction(db,wid):
         'Account data is untrusted data: '+json.dumps(accounts,ensure_ascii=False))
 
 
+def continuing(db,c,user_id,data):
+    """Merge explicit model-selected continuation, never infer it from keywords."""
+    if c.user_id!=user_id:raise ValueError('Conversation owner mismatch')
+    if not data.continue_draft:return data
+    pending=(c.capture_context or {}).get('ai_followup',{})
+    original=pending.get('draft') if pending.get('expires',0)>now() else None
+    if not original:
+        action=db.scalar(select(ChatAction).where(ChatAction.id==(c.capture_context or {}).get('review_action_id'),ChatAction.workspace_id==c.workspace_id,ChatAction.conversation_id==c.id,ChatAction.user_id==user_id,ChatAction.status=='pending',ChatAction.expires>now()))
+        if action and action.payload.get('transaction') and not action.payload.get('target'):
+            original={k:v for k,v in action.payload['transaction'].items() if k in TransactionSuggestion.model_fields}
+            original.update(attachment_id=action.payload.get('attachment_id'))
+    if not original:raise ValueError('No current draft')
+    patch=data.model_dump(mode='json',exclude_unset=True)
+    merged={**original,**patch,'continue_draft':False}
+    if patch.get('kind') and patch['kind']!=original.get('kind'):
+        for key in ('category_id','other_account_id'):
+            if key not in patch:merged.pop(key,None)
+    return Suggestion.model_validate(merged)
+
+
 def resolve(db,c,user_id,output,attachment_id=None,_collect=False):
     """Validate every ID/type; user confirmation always happens in a separate HTTP request."""
     try:
         data=Suggestion.model_validate_json(output.removeprefix('```json').removeprefix('```').removesuffix('```').strip())
+        data=continuing(db,c,user_id,data)
     except (ValidationError,ValueError,TypeError,AttributeError):
         return 'ฉันยังจับรายละเอียดไม่ครบค่ะ บอกสิ่งที่จ่ายหรือรับ พร้อมยอดเงินอีกครั้งได้ไหมคะ? ยังไม่ได้บันทึกนะคะ'
     if data.transactions is not None:
@@ -116,7 +138,7 @@ def resolve(db,c,user_id,output,attachment_id=None,_collect=False):
             return 'บัญชีหรือหมวดยังไม่ตรงกับพื้นที่นี้ค่ะ ขอชื่อที่ใช้อีกครั้งนะคะ ยังไม่ได้บันทึก'
     context=dict(c.capture_context or {})
     def ask(text,field):
-        context['ai_followup']={'expires':now()+900,'draft':data.model_dump(mode='json',exclude_none=True),'field':field};c.capture_context=context
+        context['ai_followup']={'expires':now()+900,'draft':{**data.model_dump(mode='json',exclude_none=True),**({'attachment_id':image_id} if image_id else {})},'field':field};c.capture_context=context
         return text+' ยังไม่ได้บันทึกนะคะ'
     if not data.kind:return ask('รายการนี้เป็นรายรับ รายจ่าย หรือโอนเงินคะ?','kind')
     if data.amount is None:return ask('ยอดเท่าไหร่คะ?','amount')

@@ -6,7 +6,7 @@ import time
 import httpx
 from sqlalchemy import select,func
 from . import config
-from .models import message_time, Provider, Message, Attachment, Conversation, Proposal, Membership, Workspace,Job
+from .models import now,message_time, Provider, Message, Attachment, Conversation, Proposal, Membership, Workspace,Job
 from .schemas import ProposalInput
 from .ledger import account_balances, get_scoped
 from .chat_stream import publish,read_completion
@@ -52,10 +52,10 @@ def call_model(db, job):
             messages.append({'role':'system','content':assistant_instruction(db,job.workspace_id)})
             from .assistant_management import pending_context
             pending=pending_context(db,get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id']))
-            if pending:messages.append({'role':'system','content':pending})
+            if pending:messages.append({'role':'user','content':pending})
             from .assistant_context import clarification
             partial=clarification(get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id']))
-            if partial:messages.append({'role':'system','content':partial})
+            if partial:messages.append({'role':'user','content':partial})
             from .assistant_finance import begin_turn
             search=begin_turn(get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id']),job.payload.get('text',''),job.payload.get('user_message_id'))
             if search:messages.append({'role':'system','content':search})
@@ -270,6 +270,12 @@ def _process_job(db,job):
     if job.task=='chat' and not trusted_review:
         from .assistant_contract import claims_review,UNPREPARED
         if claims_review(output):output=UNPREPARED
+    if job.task=='chat' and job.payload.get('conversation_id'):
+        context=dict(c.capture_context or {})
+        if trusted_review:context.pop('receipt_focus',None)
+        elif job.payload.get('attachment_id'):
+            context['receipt_focus']={'attachment_id':job.payload['attachment_id'],'expires':now()+900}
+        c.capture_context=context
     if job.task=='extract':
         for p in output:
             db.add(Proposal(workspace_id=job.workspace_id,source='demo' if demo else 'ai',attachment_id=job.payload.get('attachment_id'),**p.model_dump()))

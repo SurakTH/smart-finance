@@ -207,7 +207,7 @@ def test_verified_past_spending_is_not_mistaken_for_an_assistant_write_receipt(a
 def test_primary_catalog_prefers_semantics_and_defers_answer_schema_until_facts(assistant):
     from app.assistant_tools import catalog
     names=lambda active:{t['function']['name'] for t in catalog(active)}
-    assert 'understand_request' in names(set()) and 'interpret_request' not in names(set())
+    assert 'fetch_finance' in names(set()) and 'understand_request' not in names(set()) and 'interpret_request' not in names(set())
     assert 'respond_finance' not in names(set()) and 'respond_finance' in names({'conversation_answer'})
     c,w,u,b,cid,wallet,cat,state,post,send=assistant
     state['responses']=[plan(period={'mode':'current_month'},metric='expense'),answer()]

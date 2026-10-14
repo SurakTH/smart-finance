@@ -28,25 +28,16 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         authorize(db,job,room)
     turns=list(messages)
     from . import assistant_evidence as evidence
-    task=evidence.Scope('mutation' if sandbox.case in ('transaction','followup','receipt') else 'query','') if sandbox else evidence.scope(db,room,job.payload.get('text',''))
+    # The model owns intent and topic selection. Legacy keyword scopes are only
+    # used by explicit legacy tools, never to route or replace a model turn.
+    task=evidence.Scope(('mutation' if sandbox.case in ('transaction','followup','receipt') else 'query') if sandbox else 'conversation','')
     job._suppress_preview=True
-    from .assistant_questions import for_turn,remember
-    clear_question=None if sandbox or job.payload.get('attachment_id') else for_turn(db,room,job)
-    def recovered():
-        if not clear_question:return None
-        record(job,'synthesis',status='ok')
-        remember(room,job,clear_question)
-        if clear_question.question:return AssistantReply(clear_question.question)
-        content=evidence.grounded(db,room,job,clear_question.scope(db,room),{})
-        if (room.capture_context or {}).get('verified_scope'):
-            room.capture_context={**room.capture_context,'verified_scope':{**room.capture_context['verified_scope'],'source_user_message_id':job.payload.get('user_message_id'),'read_kind':'period','include_items':clear_question.include_items}}
-        return AssistantReply(content)
-    if clear_question:
-        check_stop(job,True)
-        return recovered()
     def checked(answer):
         record(job,'synthesis',status='ok')
-        return AssistantReply(sandbox.finish(answer.content,getattr(job,'_read_cache',{})) if sandbox else evidence.finish(db,room,job,task,answer.content,getattr(job,'_read_cache',{})))
+        if sandbox:return AssistantReply(sandbox.finish(answer.content,getattr(job,'_read_cache',{})))
+        if getattr(job,'_read_cache',None):return AssistantReply(evidence.finish(db,room,job,task,answer.content,job._read_cache))
+        from .semantic_assistant import general_reply
+        return AssistantReply(general_reply(answer.content,job.payload.get('text','')))
     from .assistant_contract import claims_review,REPAIR,UNPREPARED
     repaired=False;repairs=0;stage='thinking';active=set(getattr(job,'_assistant_toolkits',[]))
     pending=(room.capture_context or {}).get('review_action_id')
@@ -67,7 +58,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         remaining=deadline-time.monotonic()
         if remaining<=0:raise AIRequestError('timeout')
         used=getattr(job,'_assistant_requests',0)
-        if used>=8:raise AIRequestError('turn_limit')
+        if used>=12:raise AIRequestError('turn_limit')
         job._assistant_requests=used+1
         body={'model':p.model,'messages':request_messages(turns),**parameters(p),'stream':True}
         if not final:body.update(tools=sandbox.tools if sandbox else catalog(active),tool_choice='auto',parallel_tool_calls=False)
@@ -88,8 +79,11 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         if getattr(job,'_direct_finance_read',False) and getattr(job,'_direct_evidence',None):
             from .assistant_data import fallback
             return AssistantReply(fallback(job))
-        return AssistantReply(sandbox.finish('',getattr(job,'_read_cache',{})) if sandbox else evidence.grounded(db,room,job,task,getattr(job,'_read_cache',{})))
-    for _ in range(7):
+        cache=getattr(job,'_read_cache',{})
+        from .assistant_balance_reply import fallback as balance_fallback
+        latest_balance=balance_fallback(dict([list(cache.items())[-1]])) if cache else None
+        return AssistantReply(sandbox.finish('',cache) if sandbox else latest_balance or evidence.grounded(db,room,job,task,cache))
+    for _ in range(12):
         try:answer=request()
         except (httpx.HTTPError,ValueError,KeyError,TypeError) as error:
             # A failed language-model continuation does not invalidate a completed
@@ -115,6 +109,13 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             repaired=True;record(job,'review_repair',status='invalid')
             turns.extend([assistant_message(answer),{'role':'system','content':REPAIR}])
             continue
+        if not sandbox and not answer.tool_name and not getattr(job,'_direct_evidence',None) and not getattr(job,'_read_cache',None):
+            from .semantic_assistant import general_reply
+            if general_reply(answer.content,job.payload.get('text',''))==evidence.UNVERIFIED:
+                repairs+=1
+                if repairs>=2:return AssistantReply(evidence.UNVERIFIED)
+                turns.extend([assistant_message(answer),{'role':'system','content':'ตัวเลขการเงินนี้ยังไม่มีหลักฐานจาก tools ถ้าเป็นข้อมูลของผู้ใช้ ให้เลือกเรียก fetch_finance/lookup_workspace ที่ตรงเจตนาเองก่อนตอบ ห้ามเดายอด ไม่ต้องให้ผู้ใช้เปลี่ยนรูปแบบคำพูด หากเป็นข้อมูลจากรูปที่ต้องบันทึกให้ prepare_transaction เพื่อเก็บร่าง'}])
+                continue
         if not answer.tool_name and getattr(job,'_direct_evidence',None) and (getattr(job,'_direct_finance_read',False) or task.error or task.kind in ('query','conversation')):
             from .assistant_data import natural,fallback
             try:content=natural(job,answer.content)
@@ -134,7 +135,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             job.__dict__.pop('_semantic_evidence',None)
         if answer.tool_name=='fetch_finance':
             from .assistant_data import read as fetch,fallback
-            if read_budget[0]>=3:return AssistantReply(fallback(job)) if getattr(job,'_direct_evidence',None) else finish()
+            if read_budget[0]>=6:return AssistantReply(fallback(job)) if getattr(job,'_direct_evidence',None) else finish()
             from .request_interpreter import NeedInfo
             try:result=sandbox.fetch(answer.draft,job) if sandbox else fetch(db,room,job,answer.draft)
             except (ValidationError,ValueError,HTTPException,NeedInfo) as error:
@@ -179,7 +180,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
                     if kit:active.add(kit);job._assistant_toolkits=sorted(active)
                     feedback(answer,dict(intent='mutation',toolkit=kit,message='เตรียมร่างด้วย tools ที่มี รอยืนยันจากผู้ใช้เท่านั้น'))
                     continue
-                if read_budget[0]>=3:return finish()
+                if read_budget[0]>=6:return finish()
                 result=sandbox.semantic_prepare(job,task) if sandbox else prepare(db,room,job,task)
                 from .assistant_data import remember
                 remember(job,dict(job._semantic_evidence));job._direct_finance_read=True
@@ -229,6 +230,8 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             continue
         if answer.tool_name=='answer_finance_summary':
             if not sandbox:authorize(db,job,room)
+            # Legacy tool compatibility only; not advertised to the primary agent.
+            if not sandbox:task=evidence.scope(db,room,job.payload.get('text',''))
             from .assistant_summary import answer as summary_answer
             try:
                 from .assistant_summary import parse
@@ -276,7 +279,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
                         return checked(AssistantReply(value.reply or 'อยากให้ช่วยดูเรื่องไหนคะ?'))
                 record(job,'tool',tool=answer.tool_name,status='ok')
             return answer if answer.tool_name else checked(answer)
-        if read_budget[0]>=3:return finish()
+        if read_budget[0]>=6:return finish()
         cache=getattr(job,'_read_cache',None)
         if cache is None:
             from .assistant_data import identity
@@ -293,7 +296,10 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         if answer.tool_name=='lookup_workspace':
             from .assistant_lookup import read as lookup
             result=sandbox.lookup(answer.draft) if sandbox else lookup(db,room,answer.draft)
-        else:result=sandbox.finance(answer.draft) if sandbox else read(db,room,answer.draft,job.payload.get('user_message_id'))
+        else:
+            # Retired read protocol can still complete old in-flight jobs.
+            if not sandbox:task=evidence.scope(db,room,job.payload.get('text',''))
+            result=sandbox.finance(answer.draft) if sandbox else read(db,room,answer.draft,job.payload.get('user_message_id'))
         if result.get('error'):
             invalid(answer,result)
             if repairs>=2:return AssistantReply('ฉันยังค้นข้อมูลตามเงื่อนไขนี้ไม่สำเร็จค่ะ ช่วยระบุช่วงวันหรือชื่อบัญชีที่ต้องการอีกนิดได้ไหมคะ? ยังไม่ได้เปลี่ยนข้อมูล')

@@ -23,13 +23,11 @@ def all_tools():
 
 
 def catalog(active):
-    names={'prepare_transaction','query_finance','lookup_workspace','understand_request','fetch_finance'}
+    names={'prepare_transaction','lookup_workspace','fetch_finance'}
     if 'conversation_answer' in active:names.add('respond_finance')
     if 'management' in active:names.add('prepare_management_plan')
     if 'corrections' in active:names.add('prepare_correction')
     result=[tool for tool in all_tools() if tool['function']['name'] in names]
-    from .assistant_summary import tool as summary_tool
-    result.append(summary_tool())
     result.append({'type':'function','function':{'name':'load_toolkit','description':'Load additional tools only when needed: management for accounts/categories/budgets/goals/recurring changes; corrections for editing a recorded transaction after searching it. Read-only discovery, never changes financial data.','parameters':Toolkit.model_json_schema()}})
     return result
 

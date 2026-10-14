@@ -188,6 +188,8 @@ def test_natural_answer_repair_preserves_private_assistant_state_too(assistant,s
     first={**fetch(period='สัปดาห์ที่แล้ว',metric='expense'),'reasoning_content':PRIVATE+'-read'}
     bad={**prose('คุณใช้ไป 999999 บาทค่ะ'),'reasoning_content':PRIVATE+'-repair'}
     def strict_repair(body):
+        if sum(m['role']=='system' for m in body['messages'])>1:
+            return httpx.Response(400,json={'error':{'message':'Only one system message at the beginning is supported','param':'messages'}})
         seen_non_system=False
         for message in body['messages']:
             if message['role']=='system' and seen_non_system:
@@ -223,6 +225,7 @@ def test_request_message_order_keeps_authority_and_tool_pairing():
         {'role':'tool','tool_call_id':'call1','content':'untrusted tool output'},
         {'role':'system','content':'backend repair instruction'}]
     ordered=request_messages(messages)
-    assert [m['role'] for m in ordered]==['system','system','user','assistant','tool']
-    assert ordered[2:]==messages[1:4] and messages[-1]['role']=='system'
-    assert ordered[3]['reasoning_content']==PRIVATE
+    assert [m['role'] for m in ordered]==['system','user','assistant','tool']
+    assert ordered[0]['content']=='base\n\nbackend repair instruction'
+    assert ordered[1:]==messages[1:4] and messages[-1]['role']=='system'
+    assert ordered[2]['reasoning_content']==PRIVATE

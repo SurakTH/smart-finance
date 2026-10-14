@@ -35,7 +35,10 @@ def request_messages(messages):
     # Some compatible chat templates reject a system message after user/tool
     # messages. Keep backend instructions first without reordering tool pairs
     # or promoting any user/tool content to system authority.
-    return [m for m in messages if m['role']=='system']+[m for m in messages if m['role']!='system']
+    systems=[m['content'] for m in messages if m['role']=='system']
+    if any(not isinstance(content,str) for content in systems):raise ValueError('Invalid system instruction')
+    prefix=[{'role':'system','content':'\n\n'.join(systems)}] if systems else []
+    return prefix+[m for m in messages if m['role']!='system']
 
 def visible(text):
     return re.sub(r'<think\b[^>]*>.*?(?:</think>|$)','',text,flags=re.S|re.I).strip()

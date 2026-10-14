@@ -229,3 +229,40 @@ def test_request_message_order_keeps_authority_and_tool_pairing():
     assert ordered[0]['content']=='base\n\nbackend repair instruction'
     assert ordered[1:]==messages[1:4] and messages[-1]['role']=='system'
     assert ordered[2]['reasoning_content']==PRIVATE
+
+
+@pytest.mark.parametrize('args,fields',[
+    ({'q':'อาหาร'},['q']),
+    ({'period':'เดือนนี้'},['period']),
+    ({'q':'อาหาร','period':'เดือนนี้'},['q','period']),
+    ({'metric':'income'},['metric']),
+    ({'account':'BOB-PRIVATE'},['account']),
+])
+def test_lab_semantic_feedback_names_all_wrong_fields_without_secret_answers(args,fields):
+    from app.ai_sandbox import Sandbox,TestFailed
+    from app.tool_arguments import feedback
+    sandbox=Sandbox('natural');job=SimpleNamespace(user_id='u',workspace_id='w',payload={'conversation_id':'r'})
+    raw=json.dumps({'resource':'summary','q':'กาแฟ','period':'month to date','metric':'expense',**args})
+    with pytest.raises(TestFailed) as failure:sandbox.fetch(raw,job)
+    problem=sandbox.problem(failure.value)
+    assert [i['field'] for i in problem['issues']]==fields
+    assert '80' not in problem['message'] and 'BOB-PRIVATE' not in json.dumps(problem) and not sandbox.semantic_used
+    if 'q' in fields:assert 'q เป็นการค้นข้อความย่อย' in problem['message']
+    if 'period' in fields:assert 'จนถึงตอนนี้' in problem['message']
+
+
+def test_semantic_feedback_repairs_multiple_fields_in_one_model_turn(lab,monkeypatch):
+    from test_ai_diagnostics import start,run_all,result as lab_result
+    c,w,u,b,cid,pid=lab;calls=[]
+    def handler(req):
+        body=json.loads(req.content);calls.append(body)
+        if len(calls)==1:message=fetch(q='อาหาร',period='เดือนนี้',metric='expense')
+        elif len(calls)==2:
+            info=result(body);assert [i['field'] for i in info['issues']]==['q','period']
+            assert '80' not in info['message'] and 'format' in info['message']
+            message=fetch(q='กาแฟ',period='month to date',metric='expense')
+        else:message=prose('กาแฟใช้ไป 80 บาทค่ะ')
+        return httpx.Response(200,json={'choices':[{'message':message}]})
+    transport(monkeypatch,handler);jid=start(c,b,'natural',pid);run_all()
+    proof=lab_result(c,b,jid)['diagnostics'];assert proof['test']['status']=='passed' and len(calls)==3
+    bad=[e for e in proof['events'] if e.get('status')=='invalid'];assert bad[0]['issues']==[{'field':'q','code':'unsupported_filter'},{'field':'period','code':'unsupported_filter'}]

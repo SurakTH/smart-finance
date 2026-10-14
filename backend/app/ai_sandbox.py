@@ -28,7 +28,11 @@ REASONS={'passed','no_provider','image_disabled','wrong_tool','invalid_arguments
 PROMPTS={'natural':'ตั้งแต่เริ่มเดือนมาจนตอนนี้เหมือนเงินไหลไปกับคาเฟ่ ช่วยไล่ให้หน่อยได้มั้ย','balance':'ตอนนี้ฉันมีเงินเท่าไร?', 'monthly':'เดือนนี้ใช้ไปเท่าไร?', 'transaction':'ช่วยจดกาแฟ 80 บาทจากเงินสด หมวดอาหาร', 'followup':'เงินสด หมวดอาหาร', 'receipt':'ช่วยจดรายการในรูปจากเงินสด หมวดอาหาร'}
 
 class TestFailed(ValueError):
-    def __init__(self,reason):self.reason=reason;super().__init__(reason)
+    def __init__(self,reason,field=None):
+        self.reason=reason
+        fields=field if isinstance(field,list) else [field] if field else []
+        self.issues=[dict(field=f,code='unsupported_filter') for f in fields]
+        super().__init__(reason)
 
 def fixture_image():
     image=Image.new('RGB',(500,190),'white');draw=ImageDraw.Draw(image)
@@ -93,9 +97,11 @@ class Sandbox:
     def fetch(self,raw,job):
         from .assistant_data import parse_fetch,remember
         value=parse_fetch(raw,PROMPTS[self.case])
-        if value.resource not in ('summary','transactions'):raise TestFailed('wrong_tool')
-        if value.account_id or value.category_id or value.cursor or value.compare_period or value.bucket or value.group_by or value.operation!='summary':raise TestFailed('invalid_arguments')
-        args=dict(intent='transactions' if value.resource=='transactions' else 'report',q=value.q,metric=value.metric,period=value.period.model_dump(mode='json') if value.period else ({'mode':'last_days','days':30} if value.resource=='transactions' else {'mode':'month_to_date'}))
+        if value.resource not in ('summary','transactions'):raise TestFailed('wrong_tool','resource')
+        for field in ('account_id','category_id','cursor','compare_period','bucket','group_by'):
+            if getattr(value,field):raise TestFailed('invalid_arguments',field)
+        if value.operation!='summary':raise TestFailed('invalid_arguments','operation')
+        args=dict(intent='transactions' if value.resource=='transactions' else 'report',account=value.account,category=value.category,q=value.q,metric=value.metric,period=value.period.model_dump(mode='json') if value.period else ({'mode':'last_days','days':30} if value.resource=='transactions' else {'mode':'month_to_date'}))
         task,_,_=self.semantic_plan(json.dumps(args))
         result=self.semantic_prepare(job,task);remember(job,dict(job._semantic_evidence))
         return result
@@ -104,15 +110,21 @@ class Sandbox:
         from .assistant_scope import Scope
         value=Plan.model_validate_json(raw)
         if self.case!='natural':raise TestFailed('wrong_tool')
-        if value.intent not in ('report','transactions') or value.account or value.category or value.reuse_previous_scope or value.source_message_id or value.compare_period or value.action:raise TestFailed('invalid_arguments')
+        problems=[]
+        if value.intent not in ('report','transactions'):problems.append('intent')
+        for field in ('account','category','reuse_previous_scope','source_message_id','compare_period','action'):
+            if getattr(value,field):problems.append(field)
         # Literal search over synthetic records, with a distractor. Do not make
         # one exact spelling of coffee an undocumented tool argument contract.
         examples=[dict(description='คาเฟ่ กาแฟตัวอย่าง',amount=8000),dict(description='อาหารตัวอย่าง',amount=92000)]
         matches=[row for row in examples if value.q and value.q.strip().casefold() in row['description'].casefold()]
-        if matches!=examples[:1]:raise TestFailed('invalid_arguments')
-        if not value.period or value.metric not in (None,'expense'):raise TestFailed('invalid_arguments')
-        start,end=bounds(value.period)
-        if (start,end)!=(today().replace(day=1),today()):raise TestFailed('invalid_arguments')
+        if matches!=examples[:1]:problems.append('q')
+        if value.metric not in (None,'expense'):problems.append('metric')
+        try:
+            start,end=bounds(value.period)
+            if (start,end)!=(today().replace(day=1),today()):problems.append('period')
+        except (ValueError,AttributeError):problems.append('period')
+        if problems:raise TestFailed('invalid_arguments',problems)
         return Scope('period','',start=start,end=end,transaction_kind='expense',q=value.q.strip(),include_items=value.intent=='transactions'),None,None
     def semantic_prepare(self,job,task):
         self.semantic_used=True
@@ -128,9 +140,9 @@ class Sandbox:
         try:return query_finance(raw)
         except (ValueError,TypeError) as error:return self.problem(error)
     def problem(self,error):
-        from .tool_arguments import issues
+        from .tool_arguments import feedback
         self.last_failure=error.reason if isinstance(error,TestFailed) else 'invalid_arguments'
-        return dict(error=self.last_failure,issues=issues(error) if isinstance(error,ValidationError) else [])
+        return dict(error=self.last_failure,**feedback(error))
     def validate(self,name,raw):
         try:
             if name!='prepare_transaction' or self.case not in ('transaction','followup','receipt'):raise TestFailed('wrong_tool')

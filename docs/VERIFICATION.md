@@ -1,5 +1,12 @@
 # ผลตรวจสอบ Smart Finance
 
+## Semantic feedback หลังทดสอบ Qwen จริง (14 ตุลาคม 2026)
+
+- หลังติดตั้ง54fbb55 ผ่าน CI/publish/deploy-home ทดสอบ Qwen ที่ผู้ใช้ตั้งไว้จริงด้วยข้อมูลสมมติ: balance/monthly/transaction/followup/receipt ผ่าน (1.7/1.5/4.4/4.6/5.2วินาที) Natural case ยัง fail ที่ tool semantic arguments สองรอบ แต่ API รับทั้งสอง request สำเร็จ ต่างจากก่อนแก้ที่ request รอบ repair ถูกปฏิเสธ ไม่อ่าน/แก้ ledger จริงหรือเปลี่ยน provider settings
+- เพิ่ม feedback เฉพาะ field/code ที่ allowlist สำหรับ semantic errors ของ natural Lab ไม่ใช่เฉพาะ Pydantic type errors รวม q/period/metric และตัวกรองที่ไม่ตรงคำขอในผลเดียว โมเดลได้รับคำอธิบายตาม semantics ของ tools โดยไม่เฉลยยอด/keyword/mode ที่คาดหวัง ไม่ผ่อน expected scope/amount และไม่ให้ผู้ใช้กรอก format ใหม่ Runtime ใช้ feedback เดียวกันสำหรับ fetch และ optional understand_request
+- ตรวจ named account/category จาก fetch ใน Lab ด้วย ไม่ทิ้ง field แล้วเผลอผ่าน q ยังตรวจด้วย fake records+distractor และ period ต้องตรงช่วงที่ผู้ใช้ถาม Diagnostics ไม่เก็บ raw model values หรือชื่อบัญชีจาก error
+- Disposable PostgreSQL **792 passed / 1 Starlette/httpx warning เดิม**, 114.45วินาที เพิ่ม6เคส: precise single/multiple field errors, no hidden amount/secret leakage, one-round multi-field repair ผ่าน production converse และ sanitized diagnostics ชุดที่เกี่ยวข้อง **139 passed** ไม่มี frontend/env/migration/dependency changes ผล native หลังติดตั้ง feedback นี้ต้องตรวจอีกครั้ง
+
 ## แก้ Thinking/tool continuation และบัญชีปนหมวด (14 ตุลาคม 2026)
 
 - พิสูจน์กับโค้ด app ก่อนแก้ commit `04ede69` ในสำเนาแยก: regression 13 กรณีล้มตามคาด (JSON/SSE continuation 6, อ่านยอดแล้ว synthesis HTTP400/422/500 ล้ม 6, balance facts ปนหมวด 1) ใช้ HTTP transport ที่ตรวจ protocol และ PostgreSQL ตัวอย่างจริง ไม่มี API key/บัญชีการเงินจริงของผู้ใช้ ไม่อ้างว่ามี raw upstream error ของปลายทางผู้ใช้

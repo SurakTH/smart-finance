@@ -1,5 +1,11 @@
 # โครงสร้าง AI Chat และผลการปรับปรุง
 
+## Semantic tool feedback (14 ตุลาคม 2026)
+
+หลังทดสอบ Qwen จริงกับ version54fbb55: 5โจทย์ผ่านและ API ต่อบทสนทนาได้แล้ว แต่ natural case ยังเลือกเงื่อนไขไม่ตรง การตรวจ semantic ของ Lab เคยส่งเพียง invalid_arguments โดยไม่มี field path ต่างจาก Pydantic validation จึงทำให้โมเดลแก้ซ้ำผิดจุด เพิ่ม static feedback ของ q/period/metric/resource/reuse_previous_scope และรวมหลายช่องให้แก้ใน model turn เดียว Runtime ใช้ feedback เดียวกันสำหรับ fetch/optional plan และ NeedInfo ที่มี field จริง ไม่ echo arguments หรือ exception text
+
+Lab ตรวจ q ด้วยการค้น fake records ที่มี distractor และตรวจวันที่ตามคำขอเดิม ไม่เฉลยจำนวนเงินหรือบังคับ keyword/mode ลับ ไม่ลด expected total/ไม่เลือกบัญชีคนอื่น การระบุ account/category เป็นชื่อจาก fetch ต้องผ่าน semantic check ด้วย (เดิมบาง field ถูกทิ้งใน adapter) Diagnostics เก็บเฉพาะ field/code ที่ allowlist การส่งต่อถึงโมเดลมีคำอธิบายตาม semantics ของเครื่องมือ ไม่สั่งผู้ใช้พิมพ์ตามรูปแบบ
+
 ## Tool continuation และยอดคงเหลือ (14 ตุลาคม 2026)
 
 `AssistantReply.continuation` เก็บ assistant message เดิมพร้อม `reasoning_content`, `reasoning` หรือ `reasoning_details` ที่ provider ส่งมา เฉพาะในหน่วยความจำของ converse รอบนั้นแล้ว replay กลับ provider ตัวเดิม รวมข้อความ system ของ backend เป็นข้อความเดียวใน prefix ก่อน user/tool เพื่อรองรับ strict chat templates รวมรอบ repair_review โดยไม่เปลี่ยนลำดับ tool pairs หรือยกระดับข้อความผู้ใช้ ทั้ง JSON/SSE ใช้ feedback path เดียวกัน รวมรอบแก้ arguments และแก้คำตอบที่มีตัวเลขผิด ไม่สร้าง assistant message ใหม่ที่ทิ้ง metadata เหล่านี้ Content ที่ไม่มีค่าใช้ empty string; tool call ID/arguments จับคู่กับผลเครื่องมือเดิม Private continuation จำกัด 64 KiB และ stream/turn limits เดิม ยังไม่ persist ลง Message, Conversation, Job diagnostics, usage หรือเผยแพร่ SSE/Telegram; ไม่ส่งต่อ provider สำรองหรือห้องถัดไป ไม่แสดงใน repr ของ AssistantReply

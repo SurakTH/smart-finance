@@ -20,7 +20,20 @@ test('CSV download follows filters across pages and exports correction history',
  const old=transactions[31];await page.getByRole('button',{name:'รายละเอียด กาแฟส่งออก 31',exact:true}).click();const dialog=page.locator('dialog[open]');await dialog.getByRole('button',{name:'แก้ไขรายการ',exact:true}).click();await dialog.getByLabel('แก้จำนวนเงิน',{exact:true}).fill('76.54');await dialog.getByLabel('เหตุผลการเปลี่ยนรายการ',{exact:true}).fill('ตรวจยอดก่อนส่งออก');await dialog.getByRole('button',{name:'ยืนยันแก้ไขรายการ',exact:true}).click();await expect(page.locator('dialog[open]')).toHaveCount(0);await expect(page.locator('.filtered-totals')).toContainText('฿76.54');
  const corrected=await download('ส่งออก CSV');expect(corrected).toContain('76.54');expect(corrected).not.toContain(old.id);
  const balances=await (await page.request.get(base+'/accounts')).json();
- await page.getByRole('button',{name:'ประวัติการแก้ไข',exact:true}).click();await expect(dialog.locator('.revision-card')).toHaveCount(1);await dialog.getByLabel('ประวัติตั้งแต่',{exact:true}).fill(today);await dialog.getByLabel('ประวัติถึง',{exact:true}).fill(today);await expect(dialog.locator('.revision-card')).toHaveCount(1);
+ await page.getByRole('button',{name:'ประวัติการแก้ไข',exact:true}).click();await expect(dialog.locator('.revision-card')).toHaveCount(1);
+ // Date inputs refetch independently. Check each committed filter and its response
+ // before continuing, so a failure identifies the request rather than an empty DOM.
+ async function filterHistory(label:string,params:Record<string,string>){
+  const response=page.waitForResponse(r=>{
+   const url=new URL(r.url());return url.pathname===base+'/transaction-history'&&Object.entries(params).every(([key,value])=>url.searchParams.get(key)===value);
+  });
+  const input=dialog.getByLabel(label,{exact:true});await input.fill(today);await expect(input).toHaveValue(today);
+  const result=await response;expect(result.status(),result.url()).toBe(200);
+  const data=await result.json();expect(data.total,JSON.stringify({filters:params,history:data})).toBe(1);
+  await expect(dialog.locator('.revision-card')).toHaveCount(1);
+ }
+ await filterHistory('ประวัติตั้งแต่',{start:today});
+ await filterHistory('ประวัติถึง',{start:today,end:today});
  const history=await download('ส่งออกประวัติ CSV');expect(history).toContain('ตรวจยอดก่อนส่งออก');expect(history).toContain(old.id);expect(history).toContain('1.31');expect(history).toContain('76.54');expect(history).toContain('+07:00');
  await page.screenshot({path:`../artifacts/exports-history-${info.project.name}.png`,fullPage:true});
  await dialog.getByRole('button',{name:'ปิดประวัติการแก้ไข',exact:true}).click();await page.getByLabel('ค้นหารายการ',{exact:true}).fill('');await page.getByLabel('วันเริ่มต้น',{exact:true}).fill(month+'-02');await page.getByLabel('วันสิ้นสุด',{exact:true}).fill(month+'-02');await expect(page.getByRole('heading',{name:'ไม่พบรายการในช่วงนี้',exact:true})).toBeVisible();const empty=await download('ส่งออก CSV');expect(empty.trim().split(/\r?\n/)).toHaveLength(1);

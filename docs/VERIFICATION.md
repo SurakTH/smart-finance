@@ -1,5 +1,12 @@
 # ผลตรวจสอบ Smart Finance
 
+## CI: ตรวจตัวกรองประวัติบนมือถือให้ชัดเจน (14 ตุลาคม 2026)
+
+- อ่าน archive ของ run `38476372601`: backend/typecheck ผ่าน แต่ browser ผ่าน 59/60 ข้อ ข้อที่ล้มคือ exports/mobile หลังกรอกวันเริ่มและวันสิ้นสุด แล้วพบ revision-card เป็น 0 แทน 1 ไม่ใช่ AI period regression; log ไม่มี HTTP response/ค่าของ input จึงยังระบุสาเหตุเชิงลึกไม่ได้
+- ปรับ exports test ให้รอ response ของตัวกรองแต่ละวัน ตรวจค่า input, HTTP 200, total=1 และ revision-card=1 ก่อนดำเนินต่อ ไม่เพิ่ม retry/timeout ไม่ข้ามเคสหรือผ่อนยอดที่คาดหวัง หากเกิดซ้ำจะแยก transport/filter/data/render failure ได้ชัดขึ้น
+- Chrome Playwright สุดท้าย **60 passed (3.3 นาที)** ทั้ง desktop/mobile บน Compose แยกพอร์ต 18080 พร้อม synthetic demo ledger; exports เฉพาะข้อก่อนปรับก็ผ่าน 2/2 จึงไม่อ้างว่า reproduce สาเหตุเดิมสำเร็จ TypeScript typecheck ผ่าน Backend source ไม่เปลี่ยนจากชุด **754 passed** ไม่มี migration/env หรือ production UI change
+- รอบ local ก่อนสุดท้ายชน login throttle หลังรันทดสอบซ้ำใน environment เดิม จึงรีเซ็ต Redis ของชุดทดสอบก่อนตรวจทั้งชุดใหม่ ไม่มีการเปลี่ยน production login limits ผล Chrome ในเครื่องไม่ใช่การรับรองผล Chromium/Linux บน GitHub; ให้ Actions ตรวจ source commit อีกครั้งก่อน publish/deploy
+
 ## แก้ period.mode และคำถามวันที่ธรรมดา (14 ตุลาคม 2026)
 
 - ข้อผิดพลาดที่รายงานคือ model-native arguments `period.mode` ไม่ตรงenumซ้ำสองครั้ง ขณะที่error feedbackเดิมไม่ให้วิธีแก้ที่ชัด ไม่ใช่หลักฐานว่าโมเดลอ่านยอดผิด เพิ่ม `assistant_calendar` และเปลี่ยน advertised schema ของ fetch/optional plan ให้ส่งคำวันที่เป็นstringหรือflat start/end object ไม่บังคับโมเดลสร้างnested enum object Userยังพูดตามธรรมชาติ ไม่เพิ่มcommand formatหรือเปลี่ยน user-intent routingเดิม
@@ -9,7 +16,7 @@
 - Date-only followup “เมื่อวานละ” ใช้scoped filtersก่อนหน้าได้เมื่อsourceเป็นuser messageก่อนหน้าในห้องเดิม/ยังไม่หมดอายุ15นาที/เป็นperiod read ไม่มีเรื่องอื่นคั่น ไม่override explicitfiltersหรือclear_filters ไม่inheritจากห้อง/คนอื่น Permission/private room/membership recheck/final fencesและmanual confirmationไม่เปลี่ยน
 - AI Lab natural ใช้calendar parser/recoveryเดียวกันแต่ sourceมีเฉพาะsynthetic prompt และfixture fake เพิ่มคำคาเฟ่ในชื่อกาแฟตัวอย่าง พร้อมอาหารอีก920บาทเป็นdistractor จึงรองรับliteral searchทั้งกาแฟ/คาเฟ่โดยไม่บังคับexact qลับ และยังfailเมื่อค้นอาหาร/ทุกตัวอย่าง/ไม่กรองหรือผิดsubject ไม่อ่านเงินจริง ไม่ผ่อนเกณฑ์จำนวนเงิน calendar argsที่ยังผิดรายงานinvalid_argumentsแทนanswer_mismatchที่ไม่ตรงสาเหตุ
 - Final disposable PostgreSQL suite **754 passed / 1 warning Starlette/httpx เดิม**, 107.56วินาที เพิ่ม74testsจากฐาน680 รวมชุดคำถามผู้ใช้ทั้งสี่แบบ จงใจให้providerส่งmodeที่ไม่มีในenumแล้วตรวจวันที่/ยอดจริง/ไม่มีwrite, internal repairhelp, ชื่อช่วงหลายรูปแบบ, literal date/yearless/Buddhist dates, bounds/conflicts/unknown authority/nested inputs, scoped adjacent followupsและexpired/interrupted contexts, foreign-user accountหลังcalendar recovery, Telegram และAI Lab coffee/cafe/distractorsแยกrealdata
-- Docker API/worker/migrate buildผ่าน **bd75eceadfb0** ไม่มีfrontend/env/migration changes ไม่รันbrowserซ้ำในเครื่องรอบนี้เพราะfrontendไม่เปลี่ยน CIยังรัน60desktop/mobile testsเดิม ผลmodel/Telegramในtestsเป็นtransportจำลอง ยังไม่ได้เรียกQwenปลายทางจริง ไม่อ้างความแม่นยำภาษาทุกสำนวนหรือผลserverdeployก่อนActionsผ่าน
+- Docker API/worker/migrate buildผ่าน **bd75eceadfb0** ไม่มีproduction frontend/env/migration changes ผลmodel/Telegramในtestsเป็นtransportจำลอง ยังไม่ได้เรียกQwenปลายทางจริง ไม่อ้างความแม่นยำภาษาทุกสำนวนหรือผลserverdeployก่อนActionsผ่าน
 
 ## แก้ GitHub Actions browser regression (14 ตุลาคม 2026)
 

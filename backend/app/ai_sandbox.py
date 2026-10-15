@@ -19,8 +19,12 @@ from .assistant_lookup import Lookup
 from .assistant_finance import Read
 from .chat_dialogue import Suggestion
 from .ai_diagnostics import record
-from .reporting import today
 from .assistant_limits import REQUESTS
+
+def today():
+    # Synthetic expectations and tool date bounds must share one clock.
+    from .reporting import today as report_today
+    return report_today()
 
 CASH='11111111-1111-4111-8111-111111111111'
 FOOD='22222222-2222-4222-8222-222222222222'

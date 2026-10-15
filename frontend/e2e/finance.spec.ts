@@ -19,7 +19,10 @@ test("login, dashboard, manually confirmed inbox, private chat and responsive la
       ),
     )
     .toBe(true);
-  await page
+  if ((page.viewportSize()?.width || 1440) <= 900) {
+    await page.getByRole("link",{name:"ทั้งหมด",exact:true}).click();
+    await page.locator(".service-card").filter({has:page.getByRole("heading",{name:"AI Inbox",exact:true})}).click();
+  } else await page
     .getByRole("link", { name: /AI Inbox/ })
     .first()
     .click();

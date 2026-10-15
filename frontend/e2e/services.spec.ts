@@ -10,7 +10,7 @@ test('all services, focused account/category creation and mobile access',async({
   await page.locator('.bottom-nav').getByRole('link',{name:'ทั้งหมด',exact:true}).click();
  }else await page.locator('.sidebar').getByRole('link',{name:'บริการทั้งหมด',exact:true}).click();
  await expect(page.getByRole('heading',{name:'บริการทั้งหมด',exact:true})).toBeVisible();
- await expect(page.locator('.service-card')).toHaveCount(15);
+ await expect(page.locator('.service-card')).toHaveCount(16);
  await page.getByLabel('ค้นหาบริการ').fill('CSV');
  await page.locator('.service-card').filter({has:page.getByRole('heading',{name:'ส่งออกข้อมูล',exact:true})}).click();
  await expect(page.getByRole('button',{name:'ส่งออก CSV',exact:true})).toBeVisible();
@@ -44,7 +44,7 @@ test('all services, focused account/category creation and mobile access',async({
  await page.locator('.service-card').filter({has:page.getByRole('heading',{name:'เชื่อม Telegram',exact:true})}).click();
  await expect(page.locator('#telegram-settings')).toBeInViewport();
  await page.goto('/services');
- await expect(page.locator('.service-card')).toHaveCount(15);
+ await expect(page.locator('.service-card')).toHaveCount(16);
  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
  await page.screenshot({path:`../artifacts/services-${info.project.name}.png`,fullPage:true});
  await page.goto('/categories');

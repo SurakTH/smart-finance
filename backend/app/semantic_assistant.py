@@ -10,8 +10,13 @@ from pydantic import BaseModel,ConfigDict,Field,field_validator
 from sqlalchemy import select
 from .models import Account,now
 from .assistant_scope import Scope
-from .reporting import month_bounds,today
+from .reporting import month_bounds
 from .request_interpreter import NeedInfo,source
+
+def today():
+    # Use the same Bangkok clock as calendar hints and report validation.
+    from .reporting import today as report_today
+    return report_today()
 
 class Window(BaseModel):
     model_config=ConfigDict(extra='forbid')

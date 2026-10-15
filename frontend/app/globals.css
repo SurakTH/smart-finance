@@ -205,3 +205,682 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding: 28px
 .ai-lab-controls label { min-width:0; }.ai-lab-controls select { width:100%; }
 .ai-inspection-list { display:grid; gap:12px; margin:20px 0; }.ai-inspection-row { display:flex; gap:12px; flex-wrap:wrap; align-items:start; padding:18px; border:1px solid var(--border); border-radius:16px; }.ai-inspection-row>div { flex:1; min-width:0; overflow-wrap:anywhere; }.ai-inspection-row p { margin:6px 0; }.ai-test-badge { display:inline-block; padding:3px 9px; margin-left:8px; border-radius:20px; font-size:12px; background:#edf0ed; }.ai-test-badge.passed { background:#dcefe3; color:#245d3c; }.ai-test-badge.failed { background:#fbe9e6; color:#934136; }.ai-trace-steps { flex-basis:100%; display:grid; gap:12px; padding-left:24px; }.ai-trace-steps li { padding:10px; background:#f6f8f5; border-radius:10px; }.ai-trace-steps span,.ai-trace-steps small { display:block; color:#63756a; overflow-wrap:anywhere; font-size:13px; }
 @media(max-width:700px){.ai-lab-controls { grid-template-columns:1fr; }.ai-inspection-row { padding:14px; }.ai-lab-tabs button { flex:1; justify-content:center; padding:10px; }}
+
+/* Everyday views: compact controls, readable summaries, progressive detail. */
+.nav-group>span {
+  display:block;
+  padding:14px 12px 5px;
+  color:#52685d;
+  font-size:12px;
+  font-weight:600}
+
+.sidebar {
+  padding-top:22px}
+.workspace-label {
+  margin:22px 0 10px}
+.sidebar nav {
+  gap:4px;
+  flex:1}
+.nav-item {
+  padding:10px 12px;
+  color:#52685d}
+.nav-group {
+  flex-shrink:0}
+.local-badge {
+  font-size:11px;
+  padding:10px 4px}
+.profile-name {
+  font-size:12px}
+
+.finance-shell .page-heading .eyebrow {
+  display:none}
+.finance-shell .page-heading {
+  margin-bottom:20px}
+.finance-shell .content {
+  padding-top:26px}
+.page-heading .muted {
+  color:#52685d}
+
+.dashboard-at-glance {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:16px;
+  margin-bottom:18px}
+.dashboard-at-glance>a {
+  display:grid;
+  gap:5px;
+  padding:18px 22px;
+  border:1px solid var(--border);
+  border-radius:18px;
+  background:#fff}
+.dashboard-at-glance>a:first-child {
+  background:#e8f0e8}
+.dashboard-at-glance span {
+  font-size:14px;
+  color:#52685d}
+.dashboard-at-glance strong {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-size:25px}
+.dashboard-at-glance>a:last-child strong {
+  font-size:19px}
+.dashboard-at-glance small {
+  color:#52685d;
+  font-size:13px}
+
+.overview-hero {
+  grid-template-columns:minmax(0,1.5fr) minmax(230px,1fr);
+  gap:18px}
+.expense-spotlight {
+  padding:20px 24px 16px}
+.expense-spotlight h2 {
+  font-size:40px;
+  margin:8px 0}
+.spending-curve {
+  margin-top:16px}
+.spending-curve svg {
+  max-height:145px}
+.monthly-flow {
+  height:100%;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  padding:24px}
+.comparison-note {
+  font-size:13px!important;
+  color:#6d5a4b!important}
+.overview-v2 .report-toolbar {
+  margin-bottom:18px}
+.overview-v2 .report-toolbar h2 {
+  font-size:21px}
+
+.transaction-history-toolbar {
+  justify-content:flex-end;
+  margin-bottom:10px}
+.transaction-history-toolbar>span {
+  display:none}
+.transaction-history-toolbar button {
+  font-size:13px;
+  padding:7px 12px;
+  min-height:36px}
+.transaction-controls {
+  padding:14px 16px 0;
+  margin-bottom:14px}
+.explorer-top {
+  gap:8px;
+  margin-bottom:12px}
+.explorer-search {
+  margin-bottom:12px}
+.explorer-date {
+  margin:14px 0}
+.transaction-export-bar {
+  margin:14px 0;
+  padding:10px 0}
+.kind-tabs {
+  margin-top:10px}
+.filtered-totals {
+  padding:0 8px 16px}
+.filtered-totals strong {
+  font-size:26px;
+  margin-top:2px}
+.filtered-totals p small {
+  font-size:12px;
+  color:#52685d}
+.explorer-results {
+  padding:16px 20px}
+.ledger-day-heading {
+  margin-bottom:6px}
+.ledger-row {
+  padding:13px 0}
+.transaction-description small {
+  font-size:13px;
+  color:#52685d}
+
+.insights-page {
+  min-width:0}
+.insight-controls {
+  padding:16px 20px;
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius:18px;
+  margin-bottom:18px}
+.insight-presets {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex-wrap:wrap}
+.insight-presets button,.insight-tabs button {
+  padding:9px 15px;
+  min-height:44px;
+  border-radius:11px;
+  color:#52685d;
+  white-space:nowrap;
+  font-size:15px}
+.insight-presets button[aria-pressed=true],.insight-tabs button[aria-pressed=true] {
+  background:#26755f;
+  color:white}
+.insight-presets .insight-filter {
+  display:flex;
+  align-items:center;
+  gap:7px;
+  margin-left:auto;
+  border:1px solid var(--border)}
+.insight-date-fields {
+  display:flex;
+  align-items:end;
+  gap:12px;
+  flex-wrap:wrap}
+.insight-date-fields label {
+  flex:1;
+  min-width:140px;
+  margin:14px 0}
+.insight-date-fields button {
+  padding:12px;
+  color:#26755f}
+.insight-scope {
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:7px;
+  margin-top:10px;
+  color:#52685d;
+  font-size:13px}
+.insight-scope>span {
+  margin-left:auto;
+  font-size:12px}
+.insight-metrics {
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:12px}
+.insight-metrics>a,.insight-metrics>div {
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius:18px;
+  padding:20px;
+  min-width:0}
+.insight-metrics span {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  font-size:14px;
+  gap:6px}
+.insight-metrics strong {
+  font-size:29px;
+  letter-spacing:-.7px;
+  overflow-wrap:anywhere;
+  line-height:1.5}
+.insight-metrics small,.insight-metrics .insight-change {
+  font-size:12px;
+  line-height:1.6}
+.insight-metrics small {
+  color:#52685d}
+.insight-compare-note {
+  color:#52685d;
+  font-size:13px;
+  margin:12px 2px 20px}
+.insight-tabs {
+  display:flex;
+  gap:6px;
+  overflow-x:auto;
+  padding:5px;
+  background:#eaf0e8;
+  border-radius:14px;
+  margin-bottom:20px;
+  max-width:100%}
+.insight-tabs button {
+  flex:1}
+.insight-story {
+  display:grid;
+  grid-template-columns:1.5fr 1fr;
+  gap:24px;
+  border-radius:20px;
+  padding:28px;
+  background:#e8f0e8;
+  margin-bottom:20px}
+.insight-story h2 {
+  font-size:25px;
+  margin:8px 0;
+  overflow-wrap:anywhere}
+.insight-story p {
+  color:#426452}
+.insight-story-icon {
+  color:#26755f}
+.insight-story a {
+  display:inline-flex;
+  gap:8px;
+  align-items:center;
+  margin-top:14px;
+  font-size:15px;
+  color:#215d49;
+  font-weight:600}
+.insight-facts {
+  border-left:1px solid #cddace;
+  padding-left:24px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  gap:10px}
+.insight-facts strong {
+  color:#244a39}
+.insight-columns {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:20px}
+.insight-columns>.panel {
+  height:fit-content}
+.insight-ranking {
+  display:grid;
+  margin-top:12px}
+.insight-ranking>a {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:14px 0;
+  border-bottom:1px solid var(--border);
+  min-width:0}
+.insight-ranking>a:last-child {
+  border-bottom:0}
+.rank-number {
+  font-size:13px;
+  color:#52685d;
+  width:20px;
+  flex-shrink:0}
+.insight-ranking>a>div {
+  min-width:0;
+  flex:1}
+.insight-ranking strong {
+  font-size:16px;
+  font-weight:500;
+  overflow-wrap:anywhere}
+.insight-ranking small {
+  display:block;
+  color:#52685d;
+  font-size:12px;
+  margin-top:3px}
+.insight-ranking b {
+  font-weight:500;
+  font-size:16px;
+  white-space:nowrap}
+.insight-ranking svg {
+  flex-shrink:0}
+.insight-track {
+  background:#edf1eb;
+  height:6px;
+  border-radius:6px;
+  margin-top:8px;
+  overflow:hidden}
+.insight-track>span {
+  display:block;
+  height:100%;
+  background:#7aa88d;
+  border-radius:inherit;
+  max-width:100%}
+.insight-largest>a {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:15px 0;
+  border-bottom:1px solid var(--border)}
+.insight-largest>a>span {
+  flex:1;
+  min-width:0}
+.insight-largest strong {
+  font-size:16px;
+  overflow-wrap:anywhere;
+  font-weight:500}
+.insight-largest small {
+  display:block;
+  color:#52685d;
+  font-size:13px}
+.insight-largest b {
+  white-space:nowrap;
+  font-size:16px;
+  font-weight:500}
+.insight-largest svg {
+  flex-shrink:0}
+.insight-category-changes {
+  margin-top:24px}
+.insight-category-changes>div {
+  display:flex;
+  justify-content:space-between;
+  gap:20px;
+  border-bottom:1px solid var(--border);
+  padding:14px 0;
+  font-size:15px}
+.insight-category-changes .insight-change {
+  text-align:right}
+.insight-months {
+  display:grid;
+  gap:22px;
+  margin-top:22px}
+.insight-months strong {
+  font-size:14px;
+  font-weight:500}
+.insight-bar-row {
+  display:grid;
+  grid-template-columns:1fr;
+  gap:5px;
+  margin-top:8px;
+  font-size:13px;
+  color:#26755f}
+.insight-bar-row i {
+  height:10px;
+  background:#7aa88d;
+  border-radius:5px;
+  min-width:2px}
+.insight-bar-row.spending {
+  color:#a14f39}
+.insight-bar-row.spending i {
+  background:#ce957d}
+.insight-weekdays {
+  margin-top:24px;
+  display:grid;
+  gap:20px}
+.insight-weekdays>div {
+  display:grid;
+  grid-template-columns:70px 1fr auto;
+  align-items:center;
+  gap:12px;
+  font-size:14px}
+.insight-weekdays .insight-track {
+  margin:0}
+.insight-weekdays strong {
+  font-size:14px;
+  font-weight:500}
+.insight-largest+a {
+  margin-top:10px}
+.insight-columns h3 {
+  font-size:18px}
+
+.chat-welcome {
+  margin:24px 0 auto;
+  padding:18px 0}
+.chat-welcome .ai-orb {
+  margin-bottom:18px;
+  width:55px;
+  height:55px}
+.chat-welcome .eyebrow {
+  font-size:12px;
+  letter-spacing:.2px;
+  color:#52685d}
+.chat-welcome p.muted {
+  font-size:16px;
+  color:#52685d}
+.chat-suggestions {
+  margin-top:24px}
+.chat-suggestions span {
+  font-size:13px;
+  color:#52685d}
+.chat-topbar strong span {
+  font-size:12px}
+.composer-meta {
+  font-size:12px;
+  color:#52685d}
+.message-author {
+  font-size:14px}
+.chat-action-help summary {
+  font-size:14px}
+.profile-name small {
+  font-size:11px}
+
+@media(max-width:1100px){
+  .insight-metrics {
+  grid-template-columns:repeat(2,minmax(0,1fr))}
+.insight-columns {
+  gap:14px}
+}
+
+@media(max-width:900px){
+  .overview-hero {
+  grid-template-columns:1.4fr 1fr}
+.overview-side {
+  display:block}
+.insight-story {
+  grid-template-columns:1fr}
+.insight-facts {
+  border-left:0;
+  border-top:1px solid #cddace;
+  padding:16px 0 0;
+  gap:5px}
+.insight-columns {
+  grid-template-columns:1fr}
+}
+
+@media(max-width:600px){
+  .finance-shell .content {
+  padding-top:18px}
+.finance-shell .page-heading {
+  margin-bottom:14px}
+.page-heading .muted {
+  font-size:13px}
+.page-heading>button {
+  font-size:14px;
+  min-height:44px}
+.dashboard-at-glance {
+  gap:10px;
+  margin-bottom:14px}
+.dashboard-at-glance>a {
+  padding:14px}
+.dashboard-at-glance strong {
+  font-size:23px}
+.dashboard-at-glance>a:last-child strong {
+  font-size:16px;
+  line-height:1.5}
+.dashboard-at-glance span {
+  font-size:12px}
+.dashboard-at-glance small {
+  font-size:11px}
+.overview-hero {
+  grid-template-columns:1fr;
+  gap:12px}
+.overview-side {
+  display:block}
+.monthly-flow {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:6px 16px;
+  padding:16px 20px}
+.monthly-flow>span:first-child {
+  grid-column:1;
+  grid-row:1}
+.monthly-flow>div:not(.flow-separator) {
+  grid-column:1;
+  grid-row:2}
+.monthly-flow>.flow-separator {
+  display:none}
+.monthly-flow>span:nth-of-type(2) {
+  grid-column:2;
+  grid-row:1}
+.monthly-flow>h3 {
+  grid-column:2;
+  grid-row:2}
+.monthly-flow>small {
+  grid-column:1/-1;
+  font-size:12px}
+.monthly-flow h3 {
+  font-size:22px}
+.expense-spotlight h2 {
+  font-size:36px}
+.spending-curve svg {
+  max-height:115px}
+.expense-spotlight {
+  padding:18px 20px 12px}
+.overview-v2 .report-toolbar {
+  gap:10px}
+.overview-v2 .report-toolbar h2 {
+  display:none}
+.transaction-controls {
+  padding:10px 12px 0}
+.explorer-top {
+  flex-direction:row;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:6px}
+.preset-tabs {
+  overflow-x:auto;
+  max-width:100%;
+  flex:1;
+  min-width:0}
+.preset-tabs button {
+  padding:9px 10px;
+  font-size:13px}
+.filter-toggle {
+  padding:8px;
+  font-size:13px;
+  min-height:44px}
+.explorer-search {
+  margin:8px 0}
+.explorer-search input {
+  font-size:14px;
+  min-height:44px}
+.kind-tabs {
+  margin:6px -2px 0;
+  gap:14px;
+  overflow-x:auto}
+.kind-tabs button {
+  padding:10px 2px;
+  font-size:13px}
+.filtered-totals {
+  gap:12px;
+  flex-wrap:wrap;
+  padding:0 3px 12px}
+.filtered-totals>div {
+  flex:1}
+.filtered-totals strong {
+  font-size:23px}
+.filtered-totals p {
+  font-size:12px;
+  margin:0;
+  width:100%;
+  text-align:left}
+.filtered-totals p small {
+  display:none}
+.explorer-results {
+  padding:12px 16px}
+.ledger-day-heading h3 {
+  font-size:14px}
+.ledger-row .transaction-description strong {
+  font-size:16px}
+.ledger-row .transaction-description small {
+  font-size:12px}
+.ledger-amount strong {
+  font-size:16px}
+.insight-controls {
+  padding:12px 14px}
+.insight-presets {
+  gap:3px}
+.insight-presets button {
+  font-size:13px;
+  padding:8px 10px}
+.insight-presets .insight-filter {
+  margin-left:0}
+.insight-scope>span {
+  margin-left:0;
+  font-size:11px}
+.insight-metrics {
+  gap:10px}
+.insight-metrics>a,.insight-metrics>div {
+  padding:14px;
+  border-radius:16px;
+  gap:6px}
+.insight-metrics strong {
+  font-size:25px}
+.insight-metrics span {
+  font-size:13px}
+.insight-metrics small,.insight-metrics .insight-change {
+  font-size:11px}
+.insight-compare-note {
+  font-size:12px}
+.insight-tabs {
+  gap:2px;
+  margin-bottom:14px}
+.insight-tabs button {
+  padding:8px 10px;
+  font-size:13px}
+.insight-story {
+  padding:20px;
+  gap:16px}
+.insight-story h2 {
+  font-size:23px}
+.insight-story p {
+  font-size:15px}
+.insight-ranking>a {
+  gap:8px}
+.insight-ranking strong,.insight-largest strong {
+  font-size:15px}
+.insight-ranking b,.insight-largest b {
+  font-size:15px}
+.insight-ranking small {
+  font-size:11px}
+.insight-weekdays>div {
+  grid-template-columns:60px 1fr auto;
+  gap:10px}
+.insight-category-changes>div {
+  font-size:13px;
+  gap:12px}
+.insight-largest small {
+  font-size:12px}
+.insights-page .panel-heading {
+  flex-wrap:wrap}
+.insights-page .panel-heading a {
+  font-size:14px}
+.chat-welcome {
+  margin:4px 0 auto;
+  padding:16px 0 8px}
+.chat-welcome h1 {
+  font-size:29px;
+  margin-bottom:10px}
+.chat-welcome .ai-orb {
+  margin-bottom:12px;
+  width:48px;
+  height:48px}
+.chat-welcome p.muted {
+  font-size:14px}
+.chat-suggestions {
+  margin-top:18px;
+  gap:8px}
+.chat-suggestions button {
+  padding:12px;
+  gap:5px}
+.chat-suggestions strong {
+  font-size:14px}
+.chat-suggestions span {
+  font-size:12px}
+.chat-topbar strong span {
+  font-size:11px}
+.composer-meta {
+  font-size:11px}
+.composer-meta details summary {
+  font-size:11px}
+.message-author {
+  font-size:14px}
+}
+
+
+.insight-more {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  color:#26755f;
+  min-height:44px;
+  margin-top:8px;
+  font-size:14px}
+
+@media(max-width:600px){
+  .insight-presets .insight-filter{
+  font-size:0;
+  width:40px;
+  min-height:44px;
+  padding:10px;
+  justify-content:center}
+.insight-presets .insight-filter svg{
+  width:18px;
+  height:18px}
+.transaction-history-toolbar{
+  flex-direction:row;
+  align-items:center}
+}

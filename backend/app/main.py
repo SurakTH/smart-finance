@@ -15,7 +15,7 @@ from .security import current_user, workspace_member, owner, digest, verify, dum
 from .schemas import Login, Named, AccountInput, TransactionInput, ChatInput, CaptureInput, ConversationInput, ProposalInput, BudgetInput, RevisionInput, CorrectionInput, GoalCreate, GoalEdit, GoalArchive, GoalAllocation, RecurringCreate, RecurringEdit, RecurringPause, InviteEmail, InviteToken, InvitePreview, InviteRegister, MemberRole
 from .ledger import initialize_workspace, post, get_scoped, account_balances
 
-from .reporting import transaction_report, monthly_report, active_entry
+from .reporting import transaction_report, monthly_report, active_entry, insights_report
 
 app = FastAPI(title='Smart Finance', version='0.1.0', docs_url='/docs')
 
@@ -273,6 +273,10 @@ def dashboard(wid: str, db: DBSession = Depends(get_db, scope='function'), month
 @app.get('/workspaces/{wid}/transaction-report', dependencies=[Depends(workspace_member)])
 def report_transactions(wid: str, start: date | None = None, end: date | None = None, kind: str | None = None, account_id: str | None = None, category_id: str | None = None, q: str = Query('',max_length=100), page: int = Query(1,ge=1), page_size: int = Query(30,ge=1,le=100), db: DBSession = Depends(get_db, scope='function')):
     return transaction_report(db,wid,start,end,kind,account_id,category_id,q,page,page_size)
+
+@app.get('/workspaces/{wid}/insights', dependencies=[Depends(workspace_member)])
+def insights(wid: str, start: date, end: date, account_id: str | None = None, category_id: str | None = None, db: DBSession = Depends(get_db, scope='function')):
+    return insights_report(db,wid,start,end,account_id,category_id)
 
 @app.get('/workspaces/{wid}/proposals', dependencies=[Depends(workspace_member)])
 def proposals(wid: str, db: DBSession = Depends(get_db, scope='function')):

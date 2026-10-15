@@ -80,3 +80,31 @@ def monthly_report(db,wid,month):
     previous=period_summary(db,wid,previous_end.replace(day=1),previous_end)
     balances=account_balances(db,wid)
     return dict(current,month=month,previous=previous,balances=balances,net_worth=sum(a['balance'] for a in balances if a['kind']=='asset')-sum(a['balance'] for a in balances if a['kind']=='liability'),recent=transaction_report(db,wid,start,end,page_size=5)['items'])
+
+def insights_report(db, wid, start, end, account_id=None, category_id=None):
+    """Bounded aggregate report; no pagination sample or model-generated figures."""
+    days = (end-start).days+1
+    if not 1 <= days <= 366 or start.toordinal() <= days:
+        raise HTTPException(422, 'เลือกช่วงวันเรียงตามลำดับ ไม่เกิน 366 วัน และมีช่วงก่อนหน้าให้เทียบ')
+    conditions = transaction_conditions(db,wid,start,end,account_id=account_id,category_id=category_id)
+    current = period_summary(db,wid,start,end,account_id,category_id)
+    previous_end = start-timedelta(days=1)
+    previous = period_summary(db,wid,start-timedelta(days=days),previous_end,account_id,category_id)
+    expense_count = db.scalar(select(func.count(Entry.id)).where(*conditions,Entry.kind=='expense'))
+    largest = db.scalars(select(Entry).where(*conditions,Entry.kind=='expense').order_by(Entry.amount.desc(),Entry.occurred_on.desc(),Entry.id).limit(5)).all()
+    weekdays = [{'weekday':i,'expense':0,'days':0} for i in range(7)]
+    monthly = {}
+    for i in range(days):
+        day=start+timedelta(days=i)
+        weekdays[day.weekday()]['days']+=1
+        monthly.setdefault(day.strftime('%Y-%m'),{'month':day.strftime('%Y-%m'),'income':0,'expense':0})
+    for row in current['daily']:
+        day=date.fromisoformat(row['day'])
+        weekdays[day.weekday()]['expense']+=row['expense']
+        monthly[row['day'][:7]]['income']+=row['income']
+        monthly[row['day'][:7]]['expense']+=row['expense']
+    return dict(current,previous=previous,days=days,expense_count=expense_count,
+        average_daily=round(current['expense']/days),
+        average_transaction=round(current['expense']/expense_count) if expense_count else 0,
+        active_days=sum(row['expense']>0 for row in current['daily']),
+        weekdays=weekdays,monthly=list(monthly.values()),largest=entry_details(db,wid,largest))

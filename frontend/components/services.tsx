@@ -10,13 +10,14 @@ export function ServicesHub({accounts,pending,owner,onAdd}:{accounts:ManagedAcco
  const [query,setQuery]=useState('');
  const services=[
   {group:'ดูแลการเงิน',title:'ภาพรวมรายเดือน',detail:'ดูรายรับ รายจ่าย และแนวโน้ม แยกตามเดือนที่เลือก',href:'/',icon:LayoutDashboard,tone:'sage',meta:'รายงานและกราฟ'},
+  {group:'ดูแลการเงิน',title:'วิเคราะห์',detail:'สรุปง่าย ๆ เปรียบเทียบช่วงวัน ดูหมวด บัญชี และแนวโน้ม',href:'/insights',icon:ChartPie,tone:'sage',meta:'ค่าเฉลี่ย · อันดับ · เปรียบเทียบ'},
   {group:'ดูแลการเงิน',title:'รายการเงิน',detail:'ค้นหา เลือกช่วงวัน และกรองรายการจากทุกบัญชี',href:'/transactions',icon:ArrowLeftRight,tone:'sand',meta:'รายรับ · รายจ่าย · โอน · จ่ายบัตร'},
   {group:'ดูแลการเงิน',title:'บัญชี',detail:'ดูเงินคงเหลือ กระเป๋าเงิน และยอดบัตรเครดิต',href:'/accounts',icon:Wallet,tone:'sage',meta:`${accounts.filter(a=>['asset','liability'].includes(a.kind)).length} บัญชี`},
   {group:'ดูแลการเงิน',title:'หมวดหมู่',detail:'จัดหมวดรายรับและรายจ่ายให้รู้ว่าเงินไปกับอะไร',href:'/categories',icon:Tags,tone:'rose',meta:`${accounts.filter(a=>['income','expense'].includes(a.kind)).length} หมวดหมู่`},
   {group:'ดูแลการเงิน',title:'งบประมาณ',detail:'ตั้งวงเงินรายเดือน ดูเงินที่เหลือ และหมวดที่ใกล้เต็มงบ',href:'/budgets',icon:ChartPie,tone:'sage',meta:'วงเงินรายหมวด · ยอดใช้จริง'},
   {group:'ดูแลการเงิน',title:'เป้าหมายออม',detail:'ตั้งเป้า จัดสรรเงินในแผน และติดตามความคืบหน้า',href:'/goals',icon:Target,tone:'sage',meta:'แผนออม · ประวัติการจัดสรร'},
   {group:'ดูแลการเงิน',title:'รายการประจำ',detail:'ตั้งรอบรายรับรายจ่าย แล้วตรวจสอบใน Inbox ก่อนลงบัญชี',href:'/recurring',icon:Repeat2,tone:'sand',meta:'รายวัน · รายสัปดาห์ · รายเดือน'},
-  {group:'ดูแลการเงิน',title:'ส่งออกข้อมูล',detail:'เลือกช่วงวันและตัวกรอง แล้วดาวน์โหลดรายการเงินเป็น CSV',href:'/transactions',icon:Download,tone:'sand',meta:'CSV · Excel · ประวัติแก้ไข'},
+  {group:'ดูแลการเงิน',title:'ส่งออกข้อมูล',detail:'เลือกช่วงวันและตัวกรอง แล้วดาวน์โหลดรายการเงินเป็น CSV',href:'/transactions?export=1',icon:Download,tone:'sand',meta:'CSV · Excel · ประวัติแก้ไข'},
   {group:'ผู้ช่วยของคุณ',title:'แชท AI',detail:'ถามยอดใช้จ่าย ดูรายการย้อนหลัง หรือส่งรูปสลิป',href:'/assistant',icon:Sparkles,tone:'sage',meta:'สนทนาส่วนตัว · แนบรูปได้'},
   {group:'ผู้ช่วยของคุณ',title:'AI Inbox',detail:'ส่งข้อความหรือรูป แล้วตรวจข้อเสนอก่อนบันทึก',href:'/inbox',icon:Inbox,tone:'sand',meta:pending?`${pending} ข้อเสนอรอตรวจสอบ`:'ยังไม่มีข้อเสนอรอตรวจสอบ'},
   {group:'จัดการพื้นที่ของคุณ',title:'สมาชิกและคำเชิญ',detail:'ดูสมาชิก ชวนคนที่ไว้ใจ และจัดการสิทธิ์ในพื้นที่',href:'/members',icon:Users,tone:'sage',meta:'เจ้าของพื้นที่ · สมาชิก'},

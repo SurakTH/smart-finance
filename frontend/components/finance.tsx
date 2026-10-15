@@ -6,6 +6,7 @@ import {WorkspaceManager} from "./workspaces";
 import {PwaSettings} from "./pwa";
 import {clearVault} from "../public/offline-store.js";
 import {AssistantHistory} from "./assistant-history";
+import {InsightsPage} from "./insights";
 import {AISettingsPage} from "./ai-settings";
 import {AccountSettings} from "./account-settings";
 import {
@@ -106,6 +107,7 @@ const nav = [
   { path: "/transactions", label: "รายการเงิน", icon: ArrowLeftRight },
   { path: "/assistant", label: "ผู้ช่วย AI", icon: Sparkles },
   { path: "/inbox", label: "AI Inbox", icon: Inbox },
+  { path: "/insights", label: "วิเคราะห์", icon: ChartNoAxesCombined },
   { path: "/services", label: "บริการทั้งหมด", icon: Grid2X2 },
   { path: "/budgets", label: "งบประมาณ", icon: ChartPie },
   { path: "/goals", label: "เป้าหมายออม", icon: Target },
@@ -587,20 +589,7 @@ export default function Finance() {
           </select>
         </label>
         <nav aria-label="เมนูหลัก">
-          {nav.map((n) => (
-            <Link
-              key={n.path}
-              href={n.path}
-              aria-current={path===n.path?"page":undefined}
-              className={((path === n.path || (n.path==="/settings"&&path==="/ai-settings")) ? "nav-item active" : "nav-item")+(n.path==="/accounts"?" nav-management-start":"")}
-            >
-              <n.icon size={19} />
-              {n.label}
-              {n.path === "/inbox" && pending.length > 0 && (
-                <span className="count">{pending.length}</span>
-              )}
-            </Link>
-          ))}
+          {[{label:'ใช้ทุกวัน',paths:['/','/transactions','/insights','/assistant','/inbox']},{label:'วางแผนและจัดการ',paths:['/budgets','/goals','/recurring','/accounts','/categories']},{label:'พื้นที่ของคุณ',paths:['/services','/workspaces','/members','/settings']}].map(group=><div className="nav-group" key={group.label}><span>{group.label}</span>{group.paths.map(href=>{const n=nav.find(n=>n.path===href)!;return <Link key={n.path} href={n.path} aria-current={(path===n.path||(n.path==='/settings'&&path==='/ai-settings'))?'page':undefined} className={'nav-item'+((path===n.path||(n.path==='/settings'&&path==='/ai-settings'))?' active':'')}><n.icon size={19}/>{n.label}{n.path==='/inbox'&&pending.length>0&&<span className="count">{pending.length}</span>}</Link>;})}</div>)}
         </nav>
         <div className="sidebar-bottom">
           <div className="local-badge">
@@ -669,6 +658,8 @@ export default function Finance() {
                   ? "รู้ว่าเงินอยู่ที่ไหน และใช้ไปกับอะไร"
                   : path === "/assistant"
                     ? "คุยเรื่องเงิน ตรวจสอบข้อมูล และตัดสินใจด้วยตัวคุณเอง"
+                    : path === "/insights"
+                      ? "ดูว่าเงินไปกับอะไร เปรียบเทียบ และมองแนวโน้มได้ง่าย ๆ"
                     : path === "/services"
                       ? "ทุกบริการของคุณ เลือกใช้งานได้จากที่เดียว"
                     : path === "/accounts"
@@ -688,7 +679,7 @@ export default function Finance() {
                       : "ข้อมูลจริงจาก workspace ที่คุณเลือก"}
               </p>
             </div>
-            {!["/budgets","/goals","/recurring","/members","/workspaces"].includes(path) && <Button onClick={() => {
+            {!["/insights","/budgets","/goals","/recurring","/members","/workspaces"].includes(path) && <Button onClick={() => {
               if(["/accounts","/categories"].includes(path)) {document.getElementById("management-create")?.scrollIntoView({block:"center"});document.querySelector<HTMLInputElement>("#management-create input")?.focus({preventScroll:true});}
               else setEditing("new");
             }} disabled={!wid}>
@@ -699,6 +690,7 @@ export default function Finance() {
           {path === "/workspaces" && <WorkspaceManager onChanged={loadWorkspaces} onSelect={id=>{try{sessionStorage.setItem('sf-workspace',id);}catch{}setWid(id);}}/>}
           {!wid&&path!=="/workspaces"&&<section className="panel report-empty"><h2>ยังไม่มีพื้นที่ที่กำลังใช้งาน</h2><p>สร้างพื้นที่ใหม่ หรือกู้คืนพื้นที่จากคลังได้ ข้อมูลบัญชีผู้ใช้ของคุณยังอยู่</p><Link href="/workspaces">ไปจัดการพื้นที่ทำงาน <ArrowUpRight size={16}/></Link></section>}
           {path === "/" && wid && <DashboardView summary={summary?.month===month?summary:null} month={month} onMonthChange={setMonth} />}
+          {path === "/insights" && wid && <InsightsPage key={wid} wid={wid} accounts={accounts} refreshKey={ledgerVersion}/>}
           {path === "/transactions" && wid && <TransactionsExplorer key={wid} wid={wid} accounts={accounts} refreshKey={ledgerVersion} onChanged={() => { setLedgerVersion(v => v + 1); refresh(); }} />}
           {path === "/budgets" && wid && (summary ? <BudgetsPage key={wid+month} wid={wid} accounts={accounts} month={month} onMonthChange={setMonth}/> : <div className="report-loading" role="status">กำลังเปิดงบประมาณ…</div>)}
           {path === "/members" && wid && <MembersPage key={wid} wid={wid} owner={workspaces.find(w=>w.id===wid)?.role==="owner"} onChanged={loadWorkspaces}/>}
@@ -891,8 +883,8 @@ export default function Finance() {
                       {m.role==='assistant'&&<ChatEvidence wid={wid} items={m.references}/>}
                       {m.role === "assistant" && m.content.includes("AI Inbox") && <Link className="inbox-result" href="/inbox">เปิด AI Inbox เพื่อตรวจสอบ <ArrowUpRight size={16} /></Link>}
                     </div>) : liveDraft ? null : <div className="chat-welcome">
-                      <div className="ai-orb"><Sparkles size={32} /></div><p className="eyebrow">YOUR PERSONAL FINANCE COMPANION</p><h1>วันนี้ อยากคุย<br className="mobile-break" />เรื่องอะไร?</h1><p className="muted">มองภาพรวมเงินของคุณ หรือส่งสลิป<br />ให้ช่วยเตรียมรายการและยืนยันที่นี่</p>
-                      <div className="chat-suggestions">{[{icon: Wallet, text: "ตอนนี้ฉันมีเงินเท่าไร?", detail: "ดูยอดสะสมจากบัญชีของคุณ"}, {icon: Paperclip, text: "อยากบันทึกจากสลิป", detail: "แนบรูป บอกนิดหน่อย แล้วทวนในแชท"}].map((prompt) => <button key={prompt.text} onClick={() => { if (chatInput.current) { chatInput.current.value = prompt.text; setChatText(prompt.text); chatInput.current.focus(); } }}><prompt.icon size={22} /><strong>{prompt.text}</strong><span>{prompt.detail}</span><ArrowUpRight size={16} /></button>)}</div>
+                      <div className="ai-orb"><Sparkles size={32} /></div><p className="eyebrow">ผู้ช่วยการเงินของคุณ</p><h1>วันนี้ อยากคุย<br className="mobile-break" />เรื่องอะไร?</h1><p className="muted">มองภาพรวมเงินของคุณ หรือส่งสลิป<br />ให้ช่วยเตรียมรายการและยืนยันที่นี่</p>
+                      <div className="chat-suggestions">{[{icon: Wallet, text: "ตอนนี้ฉันมีเงินเท่าไร?", detail: "ดูยอดสะสมจากบัญชีของคุณ"}, {icon: Paperclip, text: "อยากบันทึกจากสลิป", detail: "แนบรูป แล้วตรวจร่างก่อนยืนยัน"}, {icon: ChartNoAxesCombined, text: "เดือนนี้ใช้กับอะไรเยอะสุด?", detail: "ให้ช่วยอ่านและอธิบายข้อมูล"}, {icon: ArrowLeftRight, text: "เทียบรายจ่ายกับเดือนก่อนให้หน่อย", detail: "ดูว่าอะไรเพิ่มขึ้นหรือลดลง"}].map((prompt) => <button key={prompt.text} onClick={() => { if (chatInput.current) { chatInput.current.value = prompt.text; setChatText(prompt.text); chatInput.current.focus(); } }}><prompt.icon size={22} /><strong>{prompt.text}</strong><span>{prompt.detail}</span><ArrowUpRight size={16} /></button>)}</div>
                     </div>}
                     {liveDraft?.text&&<div className="message assistant live-answer" aria-label="คำตอบที่กำลังทยอยแสดง"><span className="message-author"><Sparkles size={17}/> Finance AI <small>กำลังตอบ · ยังไม่สมบูรณ์</small></span><ChatMarkdown text={liveDraft.text}/></div>}
                     {streamNotice&&<p className="stream-notice" role="status">{streamNotice}</p>}
@@ -1025,7 +1017,7 @@ export default function Finance() {
         </div>
       </main>
       {!isChat && <nav className="bottom-nav" aria-label="เมนูหลักบนมือถือ">
-        {[nav[0], nav[1], nav[2], nav[3], nav[4]].map((item) => <Link key={item.path} href={item.path} aria-current={(path === item.path || (item.path==="/services" && ["/accounts","/categories","/budgets","/goals","/recurring","/members","/workspaces","/settings","/ai-settings"].includes(path))) ? "page" : undefined} className={(path === item.path || (item.path==="/services" && ["/accounts","/categories","/budgets","/goals","/recurring","/members","/workspaces","/settings","/ai-settings"].includes(path))) ? "active" : ""}><item.icon size={22} /><span>{item.path === "/services" ? "ทั้งหมด" : item.path === "/transactions" ? "รายการ" : item.path === "/assistant" ? "แชท AI" : item.label}</span>{item.path === "/inbox" && pending.length > 0 && <i>{pending.length}</i>}</Link>)}
+        {['/','/transactions','/assistant','/insights','/services'].map(href=>nav.find(n=>n.path===href)!).map((item) => <Link key={item.path} href={item.path} aria-current={(path === item.path || (item.path==="/services" && ["/accounts","/categories","/budgets","/goals","/recurring","/members","/workspaces","/settings","/ai-settings","/inbox"].includes(path))) ? "page" : undefined} className={(path === item.path || (item.path==="/services" && ["/accounts","/categories","/budgets","/goals","/recurring","/members","/workspaces","/settings","/ai-settings","/inbox"].includes(path))) ? "active" : ""}><item.icon size={22} /><span>{item.path === "/services" ? "ทั้งหมด" : item.path === "/transactions" ? "รายการ" : item.path === "/assistant" ? "แชท AI" : item.label}</span>{item.path === "/inbox" && pending.length > 0 && <i>{pending.length}</i>}</Link>)}
       </nav>}
       {editing && (
         <TransactionDialog

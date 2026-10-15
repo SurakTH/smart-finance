@@ -20,6 +20,7 @@ test('monthly picker, category drilldown, inclusive dates and search', async ({p
  await page.getByRole('button',{name:'ตัวกรอง',exact:true}).click();
  await expect(page.getByLabel('กรองหมวดหมู่')).not.toHaveValue('');
  await page.getByRole('button',{name:'ล้างตัวกรอง',exact:true}).click();
+ await page.getByRole('button',{name:'เลือกวัน',exact:true}).click();
  await page.getByLabel('วันเริ่มต้น').fill('2026-09-01');
  await page.getByLabel('วันสิ้นสุด').fill('2026-09-30');
  await expect(page.getByRole('button',{name:'เลือกวัน',exact:true})).toHaveAttribute('aria-pressed','true');

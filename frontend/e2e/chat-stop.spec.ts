@@ -21,7 +21,7 @@ test('stop before first token, discard late output, preserve stopping state and 
  await page.locator('.chat-composer-dock').screenshot({path:`../artifacts/chat-stop-${info.project.name}.png`});
  status='cancelled';stopping=false;await emit({kind:'cancelled',job_id:'stop-test'});
  await expect(page.locator('.message.assistant')).toContainText('หยุดคำตอบแล้ว');await expect(button).toHaveCount(0);
- await page.getByPlaceholder('คุยเรื่องเงิน หรือบอกสิ่งที่อยากจด…').fill('คุยใหม่ได้เลย');await expect(page.getByRole('button',{name:'ส่งข้อความ',exact:true})).toBeEnabled();
+ await page.getByRole('textbox',{name:'ข้อความถึง AI',exact:true}).fill('คุยใหม่ได้เลย');await expect(page.getByRole('button',{name:'ส่งข้อความ',exact:true})).toBeEnabled();
  await emit({kind:'start',job_id:'next'});await emit({kind:'delta',job_id:'next',text:'คำตอบรอบใหม่'});await expect(page.locator('.live-answer')).toContainText('คำตอบรอบใหม่');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
 });

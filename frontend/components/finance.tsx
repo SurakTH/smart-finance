@@ -1,4 +1,5 @@
 "use client";
+import {imageInputError,transferredFiles} from "../lib/chat-images";
 import {ChatEvidence,type Evidence} from "./chat-evidence";
 import {ChatMarkdown} from "./chat-markdown";
 import {useChatStream} from "./use-chat-stream";
@@ -16,6 +17,8 @@ import {
   useCallback,
   useRef,
   type FormEvent,
+  type ClipboardEvent,
+  type DragEvent,
 } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -49,6 +52,10 @@ import {
   Repeat2,
   Users,
   Pencil,
+  Copy,
+  Check,
+  Ghost,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { ChatHistory } from "./chat-history";
@@ -226,13 +233,42 @@ export default function Finance() {
     [linkCode, setLinkCode] = useState("");
   const [chatFile, setChatFile] = useState<File | null>(null);
   const [chatPreview, setChatPreview] = useState("");
+  const [chatUploadError,setChatUploadError]=useState("");
+  const [draggingImage,setDraggingImage]=useState(false),[showLatest,setShowLatest]=useState(false),[copiedMessage,setCopiedMessage]=useState("");
+  const imageDragDepth=useRef(0),copyTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
+  useEffect(()=>()=>{if(copyTimer.current)clearTimeout(copyTimer.current);},[]);
+  function attachChatFiles(files:File[]) {
+    if(!files.length)return false;
+    const problem=busy?'กำลังส่งข้อความอยู่ รอสักครู่แล้วแนบรูปอีกครั้งค่ะ':imageInputError(files);
+    if(problem){setChatUploadError(problem);return false;}
+    setChatUploadError('');setChatFile(files[0]);return true;
+  }
+  function pasteChatImage(event:ClipboardEvent<HTMLFormElement>) {
+    const files=transferredFiles(event.clipboardData);
+    if(!files.length)return; // Plain text keeps native selection, undo and paste behavior.
+    event.preventDefault();
+    if(!attachChatFiles(files))return;
+    const text=event.clipboardData.getData('text/plain'),input=chatInput.current;
+    if(input&&text){const start=input.selectionStart,end=input.selectionEnd;input.value=(input.value.slice(0,start)+text+input.value.slice(end)).slice(0,4000);setChatText(input.value);input.style.height='auto';input.style.height=Math.min(input.scrollHeight,144)+'px';input.setSelectionRange(Math.min(start+text.length,4000),Math.min(start+text.length,4000));}
+    input?.focus();
+  }
+  function dropChatImage(event:DragEvent<HTMLElement>) {
+    if(!event.dataTransfer.types.includes('Files'))return;
+    event.preventDefault();imageDragDepth.current=0;setDraggingImage(false);
+    if(attachChatFiles(transferredFiles(event.dataTransfer)))chatInput.current?.focus();
+  }
+  async function copyAnswer(message:Message) {
+    try {await navigator.clipboard.writeText(message.content.replace(/\n\nรหัสทางเลือก:\nยืนยัน [A-F0-9]{8}\n$/,''));setCopiedMessage(message.id);if(copyTimer.current)clearTimeout(copyTimer.current);copyTimer.current=setTimeout(()=>setCopiedMessage(''),2000);}
+    catch {setChatUploadError('คัดลอกไม่สำเร็จ ลองเลือกข้อความแล้วคัดลอกด้วยตัวเองค่ะ');}
+  }
+
   useEffect(() => {
     if (!chatFile) { setChatPreview(""); return; }
     const url = URL.createObjectURL(chatFile);
     setChatPreview(url);
     return () => URL.revokeObjectURL(url);
   }, [chatFile]);
-  useEffect(() => { setChatFile(null); }, [cid, wid, path]);
+  useEffect(() => { setChatFile(null);setChatUploadError("");setDraggingImage(false);imageDragDepth.current=0;setShowLatest(false);setCopiedMessage(""); }, [cid, wid, path]);
   selectedCid.current=cid;messageRows.current=messages;
   useLayoutEffect(()=>{const anchor=olderAnchor.current;if(!anchor)return;olderAnchor.current=null;if(anchor.context!==wid+cid+focusMessage)return;const element=document.getElementById('chat-message-'+anchor.id),el=chatScroll.current;if(element&&el)el.scrollTop+=element.getBoundingClientRect().top-anchor.offset;},[messages,wid,cid,focusMessage]);
   const latestMessage = messages.at(-1)?.id;
@@ -411,7 +447,7 @@ export default function Finance() {
     });
   }
   async function newChat() {
-    setFocusMessage("");setRenaming(false);
+    setFocusMessage("");setRenaming(false);setChatText("");if(chatInput.current){chatInput.current.value="";chatInput.current.style.height="";}
     await run(async () => {
       const c = await api<Conversation>(base + "/conversations", {
         title: "บทสนทนา " + new Date().toLocaleDateString("th-TH"),
@@ -851,34 +887,36 @@ export default function Finance() {
               {historyOpen && compact && <button className="history-scrim" aria-label="ปิดประวัติการสนทนา" onClick={() => { setHistoryOpen(false); historyToggle.current?.focus(); }} />}
               <aside id="chat-history" className="chat-history" aria-label="ประวัติการสนทนา" role={compact ? "dialog" : undefined} aria-modal={compact ? true : undefined} onKeyDown={(e) => {
                 if (!compact || e.key !== "Tab") return;
-                const items = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),select')).filter((el) => el.getClientRects().length);
+                const items = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),summary,[tabindex="0"]')).filter((el) => el.getClientRects().length);
                 const first = items[0], last = items.at(-1);
                 if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
                 else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
               }}>
                 <div className="history-brand"><span className="brand-mark"><Sparkles size={21} /></span><strong>Finance AI</strong><button ref={historyClose} className="icon-button" aria-label="ปิดประวัติ" onClick={() => { setHistoryOpen(false); historyToggle.current?.focus(); }}><X size={20} /></button></div>
                 <Link href="/" className="back-finance"><ArrowLeft size={17} /> กลับหน้าการเงิน</Link>
+                <div className="chat-mode-picker"><span>สำหรับบทสนทนาใหม่</span><div role="group" aria-label="ประเภทแชทใหม่"><button type="button" aria-pressed={!temporary} onClick={()=>setTemporary(false)}><MessageSquare size={16}/>เก็บประวัติ</button><button type="button" aria-pressed={temporary} onClick={()=>setTemporary(true)}><Ghost size={16}/>ชั่วคราว</button></div><p>{temporary?'ไม่อยู่ในประวัติ · หมดอายุใน 24 ชม.':'เก็บไว้ในประวัติ สำหรับคุยต่อ'}</p></div>
                 <Button className="new-chat" disabled={busy} onClick={newChat}><Plus size={19} /> บทสนทนาใหม่</Button>
-                <label className="temporary-switch"><input type="checkbox" checked={temporary} onChange={e=>setTemporary(e.target.checked)}/>ห้องใหม่เป็นแชทชั่วคราว<small>ไม่อยู่ในประวัติ · หมดอายุใน 24 ชม.</small></label><ChatHistory key={wid} wid={wid} selected={cid} revision={JSON.stringify(conversations.map(c=>[c.id,c.title]))+latestMessage} onSelect={c=>{setTemporaryRoom(null);setRenaming(false);setMessages([]);setFocusMessage(c.message_id||'');setCid(c.id);if(compact)setHistoryOpen(false);}}/>
-                <div className="history-settings"><AssistantHistory key={wid} wid={wid}/>
+                <ChatHistory key={wid} wid={wid} selected={cid} revision={JSON.stringify(conversations.map(c=>[c.id,c.title]))+latestMessage} onSelect={c=>{setTemporaryRoom(null);setRenaming(false);setMessages([]);setFocusMessage(c.message_id||'');setCid(c.id);if(compact)setHistoryOpen(false);}}/>
+                <div className="history-settings"><div className="history-utilities"><AssistantHistory key={wid} wid={wid}/><Link href="/ai-settings" className="icon-button" aria-label="ตั้งค่า AI และความเป็นส่วนตัว" title="ตั้งค่า AI"><Settings size={18}/></Link></div>
                   <label>Workspace<select aria-label="เลือก workspace ในแชท" value={wid} onChange={(e) => { selectWorkspace(e.target.value); if (compact) setHistoryOpen(false); }}>{workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
-                  {cid&&!selectedRoom?.temporary&&<button className="rename-chat" onClick={()=>{setRoomTitle(selectedRoom?.title||'');setRenaming(true);if(compact)setHistoryOpen(false);}}><Pencil size={16}/>เปลี่ยนชื่อบทสนทนา</button>}
+                  <div className="history-room-tools">{cid&&!selectedRoom?.temporary&&<button title="เปลี่ยนชื่อบทสนทนา" className="rename-chat" onClick={()=>{setRoomTitle(selectedRoom?.title||'');setRenaming(true);if(compact)setHistoryOpen(false);}}><Pencil size={16}/>เปลี่ยนชื่อบทสนทนา</button>}
                   {cid && <button className="delete-chat" onClick={() => run(async () => { await api(base + "/conversations/" + cid, undefined, "DELETE"); setCid(""); setMessages([]); await refresh(); })}><Trash2 size={16} /> ลบบทสนทนานี้</button>}
-                  <Link href="/settings" className="back-finance"><Settings size={17} /> ตั้งค่า AI และความเป็นส่วนตัว</Link>
+                  </div>
                 </div>
               </aside>
-              <section className="chat">
+              <section className={"chat"+(draggingImage?" image-dragging":"")} onDragEnter={e=>{if(e.dataTransfer.types.includes('Files')){e.preventDefault();imageDragDepth.current++;setDraggingImage(true);}}} onDragOver={e=>{if(e.dataTransfer.types.includes('Files')){e.preventDefault();e.dataTransfer.dropEffect='copy';}}} onDragLeave={e=>{if(e.dataTransfer.types.includes('Files')){imageDragDepth.current=Math.max(0,imageDragDepth.current-1);if(!imageDragDepth.current)setDraggingImage(false);}}} onDrop={dropChatImage}>
+                {draggingImage&&<div className="chat-drop-overlay" role="status"><Paperclip size={30}/><strong>วางรูปที่นี่</strong><span>ดูตัวอย่างก่อนส่ง · ครั้งละ 1 รูป</span></div>}
                 <header className="chat-topbar">
                   <div><Link href="/" className="icon-button chat-back" aria-label="กลับหน้าการเงิน"><ArrowLeft size={21} /></Link><button ref={historyToggle} className="icon-button" aria-label="เปิดประวัติการสนทนา" aria-expanded={historyOpen} aria-controls="chat-history" onClick={() => setHistoryOpen(!historyOpen)}><Menu size={22} /></button><strong>Finance AI<span>{workspaces.find(w=>w.id===wid)?.name || 'ผู้ช่วยการเงินของคุณ'}</span></strong></div>
-                  <div><span className="privacy-pill"><ShieldCheck size={15} />AI ตามลำดับ</span><button className="icon-button" aria-label="เริ่มบทสนทนาใหม่" disabled={busy} onClick={newChat}><Plus size={23} /></button></div>
+                  <div><span className={"privacy-pill"+((selectedRoom?.temporary||(!cid&&temporary))?" is-temporary":"")}>{(selectedRoom?.temporary||(!cid&&temporary))?<><Ghost size={15}/>ชั่วคราว</>:<><MessageSquare size={15}/>เก็บประวัติ</>}</span><button className="icon-button" aria-label="เริ่มบทสนทนาใหม่" disabled={busy} onClick={newChat}><Plus size={23} /></button></div>
                 </header>
                 {renaming&&<form className="chat-rename-form" onSubmit={e=>{e.preventDefault();run(async()=>{await api(base+'/conversations/'+cid+'/rename',{title:roomTitle.trim()});setRenaming(false);await refresh();});}}><label>ชื่อบทสนทนา<input aria-label="ชื่อบทสนทนา" value={roomTitle} onChange={e=>setRoomTitle(e.target.value)} maxLength={100} required autoFocus disabled={busy}/></label><Button type="submit" size="sm" disabled={busy||!roomTitle.trim()}>บันทึกชื่อ</Button><button className="icon-button" aria-label="ยกเลิกเปลี่ยนชื่อแชท" type="button" disabled={busy} onClick={()=>setRenaming(false)}><X size={18}/></button></form>}
                 {focusMessage&&<div className="chat-focus-banner"><span>ส่วนของบทสนทนาที่ตรงคำค้น</span><button onClick={()=>setFocusMessage('')}>ดูข้อความล่าสุด</button></div>}
-                {selectedRoom?.temporary&&<div className="temporary-banner" role="status"><span>แชทชั่วคราว · หมดอายุใน 24 ชม. แล้วระบบทยอยล้าง รูปที่เข้า Inbox จะยังอยู่</span><button disabled={busy} onClick={()=>run(async()=>{await api(base+'/conversations/'+cid,undefined,'DELETE');setCid('');setMessages([]);setTemporaryRoom(null);await refresh();})}>จบและล้างแชท</button></div>}<div className="messages" ref={chatScroll} onWheel={e=>{if(e.deltaY<0)followBottom.current=false;}} onTouchMove={()=>{followBottom.current=false;}} onScroll={()=>{const el=chatScroll.current;if(el){followBottom.current=el.scrollHeight-el.scrollTop-el.clientHeight<=24;if(el.scrollTop<64)loadOlder();}}} role="log" aria-label="ข้อความในบทสนทนา" aria-live="polite">
-                  <div className="message-stream">
+                {selectedRoom?.temporary&&<div className="temporary-banner" role="status"><span>แชทชั่วคราว · หมดอายุใน 24 ชม. แล้วระบบทยอยล้าง รูปที่เข้า Inbox จะยังอยู่</span><button disabled={busy} onClick={()=>run(async()=>{await api(base+'/conversations/'+cid,undefined,'DELETE');setCid('');setMessages([]);setTemporaryRoom(null);await refresh();})}>จบและล้างแชท</button></div>}<div className="messages" ref={chatScroll} onWheel={e=>{if(e.deltaY<0)followBottom.current=false;}} onTouchMove={()=>{followBottom.current=false;}} onScroll={()=>{const el=chatScroll.current;if(el){followBottom.current=el.scrollHeight-el.scrollTop-el.clientHeight<=24;setShowLatest(el.scrollHeight-el.scrollTop-el.clientHeight>180);if(el.scrollTop<64)loadOlder();}}} role="log" aria-label="ข้อความในบทสนทนา" aria-live="polite">
+                  <div className={"message-stream"+(!messages.length&&!liveDraft?" welcome-stream":"")}>
                     {hasOlder&&!focusMessage&&<button className="load-older-chat" disabled={loadingOlder} onClick={loadOlder}>{loadingOlder?'กำลังโหลดข้อความเก่า…':'โหลดข้อความก่อนหน้า'}</button>}
                     {messages.length ? messages.map((m) => <div id={"chat-message-"+m.id} className={"message " + m.role+(focusMessage===m.id?" search-focus":"")} key={m.id}>
-                      <span className="message-author">{m.role === "user" ? "คุณ" : <><Sparkles size={17} /> Finance AI</>}</span>
+                      <span className="message-author">{m.role === "user" ? "คุณ" : <><Sparkles size={17} /> Finance AI{m.content&&<button className="copy-chat-answer" type="button" aria-label={copiedMessage===m.id?"คัดลอกคำตอบแล้ว":"คัดลอกคำตอบ"} title="คัดลอกคำตอบ" onClick={()=>void copyAnswer(m)}>{copiedMessage===m.id?<><Check size={15}/><span>คัดลอกแล้ว</span></>:<Copy size={15}/>}</button>}</>}</span>
                       {m.attachment_id && <a href={"/api" + base + "/attachments/" + m.attachment_id} target="_blank" rel="noreferrer"><img className="chat-image" src={"/api" + base + "/attachments/" + m.attachment_id} alt="รูปที่แนบในบทสนทนา" loading="lazy" onLoad={() => { const el = chatScroll.current; if (el && followBottom.current && !focusMessage) el.scrollTop = el.scrollHeight; }} /></a>}
                       {m.content && <ChatMarkdown text={m.role==='assistant'?m.content.replace(/\n\nรหัสทางเลือก:\nยืนยัน [A-F0-9]{8}\n$/,''):m.content}/>}
                       {m.role==='assistant'&&<ChatEvidence wid={wid} items={m.references}/>}
@@ -893,14 +931,16 @@ export default function Finance() {
                   </div>
                 </div>
                 <div className="chat-composer-dock">
+                {showLatest&&<button type="button" className="chat-jump-latest" onClick={()=>{followBottom.current=true;setFocusMessage('');setShowLatest(false);chatScroll.current?.scrollTo({top:chatScroll.current.scrollHeight,behavior:'smooth'});}}><ChevronDown size={17}/>ข้อความล่าสุด</button>}
+                {chatUploadError&&<div className="chat-upload-error" role="alert"><span>{chatUploadError}</span><button type="button" aria-label="ปิดข้อความแนบรูป" onClick={()=>setChatUploadError('')}><X size={16}/></button></div>}
                 <details className="chat-action-help"><summary>ให้ผู้ช่วยจัดการอะไรได้บ้าง?</summary><p>คุยทั่วไป จดจากข้อความหรือรูป ค้นหาแล้วแก้รายการ วิเคราะห์รายเดือนและเสนอปรับงบ สร้าง/เปลี่ยนชื่อบัญชีและหมวด ตั้งงบ สร้างเป้าออม หรือตั้งรายการประจำ สั่งเป็นชุดได้ ฉันจะทวนทั้งชุดก่อนให้พิมพ์ ยืนยัน ดูงานที่ทำแล้วได้ในเมนูแชท → ประวัติงานผู้ช่วย</p><p>เช่น “กาแฟ 75 จากเงินสด” หรือ “รับเงินเดือน 30,000” ถ้าขาดอะไร ฉันจะถามเพิ่ม แล้วทวนให้ตรวจ พิมพ์แค่ ยืนยัน เพื่อบันทึก หรือ ยกเลิก ถ้าไม่เอาค่ะ</p><button type="button" onClick={()=>{if(chatInput.current){chatInput.current.value="กาแฟ 75 จากเงินสด";setChatText("กาแฟ 75 จากเงินสด");chatInput.current.style.height="auto";chatInput.current.focus();}}}>ใส่ตัวอย่างคำขอบันทึก</button><p>ยังไม่ยืนยันก็แก้ยอดได้ เช่น “จริง ๆ 90 บาท” ถ้าบันทึกไปแล้ว บอก “ค่ากาแฟเมื่อวานที่ลง 90 จริง ๆ 75” ได้เมื่อเชื่อมโมเดล ถ้าเจอหลายรายการฉันจะถามให้เลือกก่อน หรือใช้ “แก้รายการล่าสุดเป็น 90 บาท” / คำขอแก้จากหน้ารายการ</p><p>จดหลายรายการจากข้อความหรือรูปเดียวได้สูงสุด 10 รายการต่อชุด แล้วพิมพ์ ยืนยัน ครั้งเดียว เช่น “จดกาแฟ 75 กับข้าว 80 จากเงินสด” แก้ก่อนบันทึกด้วย “แก้ยอดรายการที่ 2 เป็น 90 บาท” หรือ “ลบรายการที่ 2” ระบบจะเตือนถ้าคล้ายรายการที่ลงแล้ว กรุณาตรวจสอบก่อนยืนยัน</p><small>ข้อเสนอรอยืนยันได้ 15 นาทีในห้องนี้ ถ้าหาข้อความทวนไม่เจอ พิมพ์ ทวนอีกที แนบรูปพร้อมคำอธิบายได้ เมื่อโมเดลแชทรองรับภาพ ฉันจะทวนให้ยืนยันในห้องนี้</small></details>
                 {chatPreview && <div className="chat-attachment-preview">
                   <img src={chatPreview} alt="ตัวอย่างรูปก่อนส่ง" />
-                  <div><strong>{chatFile?.name}</strong><p className="small muted">พร้อมอ่านสลิป · ยังไม่ส่งจนกว่าจะกดส่งข้อความ</p></div>
-                  <Button variant="ghost" type="button" aria-label="นำรูปออก" onClick={() => setChatFile(null)}><X size={20} /></Button>
+                  <div><strong>{chatFile?.name}</strong><p className="small muted">{chatFile?`${(chatFile.size/1024/1024).toFixed(2)} MB · `:""}แนบไว้ในเครื่อง ยังไม่ส่งจนกว่าจะกดส่ง</p></div>
+                  <Button variant="ghost" type="button" aria-label="นำรูปออก" disabled={busy} onClick={() => {setChatFile(null);setChatUploadError("");}}><X size={20} /></Button>
                 </div>}
                 {chatJob?.status==='failed'&&chatJob.message&&<p role="alert" className="error">{chatJob.message}</p>}
-                <form onSubmit={send} className="composer">
+                <form onSubmit={send} onPaste={pasteChatImage} className="composer" aria-label="เขียนข้อความและแนบรูป">
                   <label className="chat-attach-button" title="แนบรูปสลิป">
                     <Paperclip size={22} />
                     <span className="sr-only">แนบรูปสลิปในแชท</span>
@@ -908,10 +948,7 @@ export default function Finance() {
                       const file = e.target.files?.[0];
                       e.target.value = "";
                       if (!file) return;
-                      if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 8 * 1024 * 1024) {
-                        setError("เลือกไฟล์ JPG, PNG หรือ WebP ขนาดไม่เกิน 8 MB"); return;
-                      }
-                      setError(""); setChatFile(file);
+                      attachChatFiles([file]);
                     }} />
                   </label>
                   <label className="sr-only" htmlFor="chat-text">
@@ -922,23 +959,25 @@ export default function Finance() {
                     rows={1}
                     onInput={(e) => { setChatText(e.currentTarget.value); e.currentTarget.style.height = "auto"; e.currentTarget.style.height = Math.min(e.currentTarget.scrollHeight, 144) + "px"; }}
                     onKeyDown={(e) => {
+                      if(e.key==="Escape"&&chatFile&&!busy){e.preventDefault();setChatFile(null);setChatUploadError("");return;}
                       if (!compact && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); }
                     }}
                     id="chat-text"
                     name="text"
-                    placeholder={chatFile ? "เพิ่มข้อความประกอบรูป (ไม่บังคับ)…" : "คุยเรื่องเงิน หรือบอกสิ่งที่อยากจด…"}
+                    placeholder={chatFile ? "เพิ่มข้อความประกอบรูป (ไม่บังคับ)…" : "ถามเรื่องเงิน หรือวางรูปสลิปที่นี่…"}
                     required={!chatFile}
                     maxLength={4000}
                   />
                   {activeJob&&<Button type="button" className="chat-stop" variant="outline" aria-label="หยุด AI" disabled={stopping} onClick={()=>void stopAI()}><Square size={17}/><span>{stopping?"กำลังหยุด…":"หยุด"}</span></Button>}
                   <Button
-                    disabled={busy || (chatPending && (!!chatFile || !isReviewCommand(chatText)))}
+                    disabled={busy || (!chatText.trim()&&!chatFile) || (chatPending && (!!chatFile || !isReviewCommand(chatText)))}
                     aria-label="ส่งข้อความ"
                   >
                     <Send size={18} />
                   </Button>
                 </form>
 
+                  <p className="chat-input-hint">{compact?"แนบหรือวางรูปได้ · ครั้งละ 1 รูป":"วางรูปด้วย ⌘V / Ctrl+V หรือลากมาที่นี่ · Enter ส่ง · Shift+Enter ขึ้นบรรทัดใหม่"}</p>
                   <div className="composer-meta"><span><ShieldCheck size={13} />ใช้ AI ตามการตั้งค่าของ workspace นี้</span><details><summary>เกี่ยวกับรูปและข้อมูล</summary><p>รูปสลิปจะเข้า AI Inbox ของ workspace สมาชิกจะเห็นข้อเสนอและรูปหลักฐานเมื่ออ่านเสร็จ คุณต้องตรวจสอบและยืนยันเองทุกครั้ง AI อาจให้ข้อมูลผิดพลาด ประวัติเก็บบนเซิร์ฟเวอร์ของคุณ โหมดสาธิตยังอ่านยอดจากรูปไม่ได้</p></details></div>
                 </div>
               </section>

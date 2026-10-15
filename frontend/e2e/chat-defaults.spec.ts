@@ -13,7 +13,8 @@ test('chat follows the selected workspace across navigation and reload without a
  await expect(page.locator('option[value="private"],option[value="standard"]')).toHaveCount(0);
  await page.getByRole('button',{name:'บทสนทนาใหม่',exact:true}).click();
  await expect(page.locator('.chat-topbar strong')).toContainText(a.name);
- await expect(page.locator('.privacy-pill')).toContainText('AI ตามลำดับ');
+ await expect(page.locator('.privacy-pill')).toContainText('เก็บประวัติ');
+ await expect(page.locator('.composer-meta')).toContainText('ใช้ AI ตามการตั้งค่าของ workspace นี้');
  async function send(text:string){const input=page.getByLabel('ข้อความถึง AI',{exact:true});await input.fill(text);await page.getByRole('button',{name:'ส่งข้อความ',exact:true}).click();await expect(input).toHaveValue('');}
  await send('กาแฟ 75 จากเงินสด');await expect(page.locator('.message.assistant').last()).toContainText('กรุณาตรวจสอบ');
  expect((await(await page.request.get(`/api/workspaces/${a.id}/conversations`)).json()).length).toBe(1);

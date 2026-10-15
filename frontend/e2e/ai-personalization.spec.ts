@@ -19,7 +19,7 @@ test('personal memory, one-field clarification, ledger evidence and AI budget se
  await page.getByRole('button',{name:'รีเฟรชยอด',exact:true}).click();await expect(page.locator('.ai-usage-list')).toContainText('เข้า 120 / ออก 150 tokens');await expect(page.locator('.ai-usage-list')).toContainText('ประมาณการ 1 คำขอ');
  await page.locator('#ai-usage').scrollIntoViewIfNeeded();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);await page.screenshot({path:`../artifacts/ai-usage-${info.project.name}.png`});
  const room=await(await page.request.post(base+'/conversations',{headers,data:{title:'เลขาทดลอง'}})).json();await page.goto('/assistant?conversation='+room.id);
- const input=page.getByPlaceholder('คุยเรื่องเงิน หรือบอกสิ่งที่อยากจด…');
+ const input=page.getByRole('textbox',{name:'ข้อความถึง AI',exact:true});
  async function send(text:string){await input.fill(text);await page.getByRole('button',{name:'ส่งข้อความ',exact:true}).click();}
  await send('ซื้อกาแฟ');await expect(page.locator('.message.assistant').last()).toContainText('ยอดเท่าไหร่');await send('80');
  await expect(page.locator('.message.assistant').last()).toContainText('กรุณาตรวจสอบ');await expect(page.locator('.message.assistant').last()).toContainText('ธนาคารหลัก');await expect(page.locator('.message.assistant').last()).toContainText('เดินทาง');

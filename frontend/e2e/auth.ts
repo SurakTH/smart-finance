@@ -28,7 +28,12 @@ export async function signIn(page:Page,forceLogin=false){
  await page.getByLabel('อีเมล',{exact:true}).fill(credentials.email);
  await page.getByLabel('รหัสผ่าน',{exact:true}).fill(credentials.password);
  await page.getByRole('button',{name:'เข้าสู่ระบบ',exact:true}).click();
- await expect(page.getByRole('heading',{name:'การเงินของคุณ',exact:true})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'การเงินของคุณ',exact:true})).toBeVisible().catch(async error=>{
+  // Playwright captures the page on failure; never retain a password in that snapshot.
+  const password=page.getByLabel('รหัสผ่าน',{exact:true});
+  if(await password.isVisible())await password.fill('');
+  throw error;
+ });
  cookies=await page.context().cookies();
  await openDemo(page);
 }

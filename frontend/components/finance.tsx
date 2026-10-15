@@ -589,9 +589,10 @@ export default function Finance() {
           </select>
         </label>
         <nav aria-label="เมนูหลัก">
-          {[{label:'ใช้ทุกวัน',paths:['/','/transactions','/insights','/assistant','/inbox']},{label:'วางแผนและจัดการ',paths:['/budgets','/goals','/recurring','/accounts','/categories']},{label:'พื้นที่ของคุณ',paths:['/services','/workspaces','/members','/settings']}].map(group=><div className="nav-group" key={group.label}><span>{group.label}</span>{group.paths.map(href=>{const n=nav.find(n=>n.path===href)!;return <Link key={n.path} href={n.path} aria-current={(path===n.path||(n.path==='/settings'&&path==='/ai-settings'))?'page':undefined} className={'nav-item'+((path===n.path||(n.path==='/settings'&&path==='/ai-settings'))?' active':'')}><n.icon size={19}/>{n.label}{n.path==='/inbox'&&pending.length>0&&<span className="count">{pending.length}</span>}</Link>;})}</div>)}
+          {[{label:'ใช้ทุกวัน',paths:['/','/transactions','/insights','/assistant','/inbox']},{label:'วางแผนและจัดการ',paths:['/budgets','/goals','/recurring','/accounts','/categories']},{label:'พื้นที่ของคุณ',paths:['/workspaces','/members','/settings']}].map(group=><div className="nav-group" key={group.label}><span>{group.label}</span>{group.paths.map(href=>{const n=nav.find(n=>n.path===href)!;return <Link key={n.path} href={n.path} aria-current={(path===n.path||(n.path==='/settings'&&path==='/ai-settings'))?'page':undefined} className={'nav-item'+((path===n.path||(n.path==='/settings'&&path==='/ai-settings'))?' active':'')}><n.icon size={19}/>{n.label}{n.path==='/inbox'&&pending.length>0&&<span className="count">{pending.length}</span>}</Link>;})}</div>)}
         </nav>
         <div className="sidebar-bottom">
+          <Link href="/services" aria-current={path==="/services"?"page":undefined} className={"nav-item pinned-services"+(path==="/services"?" active":"")}><Grid2X2 size={19}/>บริการทั้งหมด</Link>
           <div className="local-badge">
             <ShieldCheck size={16} /> ข้อมูลอยู่บนเซิร์ฟเวอร์ของคุณ
           </div>

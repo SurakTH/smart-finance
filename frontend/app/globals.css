@@ -884,3 +884,6 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding: 28px
   flex-direction:row;
   align-items:center}
 }
+
+/* Keep the service directory accessible while the menu list scrolls. */
+.pinned-services {margin-top:12px; min-height:46px; font-weight:600;}

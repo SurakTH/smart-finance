@@ -9,6 +9,14 @@ test("finance navigation and a dedicated full-height AI chat", async ({ page }, 
     await expect(page.getByRole("navigation", { name: "เมนูหลักบนมือถือ" })).toBeVisible();
     await expect(page.locator(".sidebar")).toBeHidden();
   }
+  if (!compact) {
+    const services=page.locator('.sidebar-bottom').getByRole('link',{name:'บริการทั้งหมด',exact:true});
+    await expect(services).toBeInViewport();
+    const before=await services.boundingBox();
+    await page.locator('.sidebar nav').evaluate(node=>{node.scrollTop=node.scrollHeight;});
+    await expect(services).toBeInViewport();
+    expect((await services.boundingBox())!.y).toBe(before!.y);
+  }
   await page.getByRole("link", { name: /^(ผู้ช่วย AI|แชท AI)$/ }).click();
   await expect(page.getByRole("heading", { name: /วันนี้ อยากคุย/ })).toBeVisible();
   await expect(page.locator(".page-heading")).toHaveCount(0);

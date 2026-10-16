@@ -14,6 +14,7 @@ test('AI lab explicitly starts synthetic tests and displays sanitized diagnostic
  });
  const label=(page.viewportSize()?.width||1440)<=900?'เลือก workspace บนมือถือ':'เลือก workspace';await page.reload();await page.getByLabel(label,{exact:true}).selectOption(wid);
  await page.goto('/settings');await page.getByRole('link',{name:'เปิดศูนย์ตั้งค่า AI'}).click();
+ await page.getByRole('tab',{name:'ห้องทดสอบ',exact:true}).click();
  const lab=page.getByRole('region',{name:'ทดสอบและวิเคราะห์ AI'});await expect(lab).toBeVisible();expect(starts).toBe(0);
  await expect.poll(()=>lab.getByLabel('โจทย์ทดสอบ AI').locator('option').evaluateAll(options=>options.map(option=>(option as HTMLOptionElement).value))).toEqual(['natural','balance','monthly','transaction','followup','receipt']);
  for(const scenario of ['natural','receipt']){

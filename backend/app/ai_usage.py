@@ -69,7 +69,7 @@ def reserve(db,job,p,body):
             return sum(len(str(k).encode())+estimate(v) for k,v in value.items())
         if isinstance(value,list):return sum(estimate(v)+8 for v in value)
         return len(str(value).encode())+8
-    i=estimate(body);o=p.max_tokens;charge=cost(i,o,price) if price and (o or p.kind=='ollama') else None
+    i=estimate(body);o=body.get('max_completion_tokens',body.get('max_tokens',p.max_tokens));charge=cost(i,o,price) if price and (o or p.kind=='ollama') else None
     month=today().strftime('%Y-%m')
     used=db.scalar(select(func.coalesce(func.sum(AIUsage.cost),0)).where(AIUsage.workspace_id==job.workspace_id,AIUsage.month==month))
     if options['monthly_limit'] and p.kind!='ollama':

@@ -56,10 +56,10 @@ def test_common_capture_uses_real_model_instead_of_regex_when_configured(actor,m
 
 
 def test_image_asks_then_uses_caption_followup_and_keeps_evidence(actor,monkeypatch):
-    c,w,u,b,cid=setup(actor);provider(w,reasoning_effort='high');calls=[]
+    c,w,u,b,cid=setup(actor);provider(w,reasoning_effort='high',temperature=70);calls=[]
     def handler(req):
         body=json.loads(req.content);calls.append(body)
-        assert body['reasoning_effort']=='high' and 'temperature' not in body
+        assert body['reasoning_effort']=='high' and body['temperature']==.7
         images=[m for m in body['messages'] if isinstance(m.get('content'),list)]
         if len(calls)==1:return reply('เห็นยอดในสลิปแล้วค่ะ ใช้บัญชีไหนคะ?')
         if len(calls)==2:
@@ -117,13 +117,13 @@ def test_tool_arguments_and_reasoning_never_stream_and_partial_tools_never_commi
 
 @pytest.mark.parametrize('kind,effort,expected',[
  ('openai','high',{'reasoning_effort':'high','max_completion_tokens':1500}),
- ('gemini','low',{'reasoning_effort':'low','max_tokens':1500}),
- ('openrouter','none',{'reasoning':{'effort':'none','exclude':False},'max_tokens':1500}),
- ('compatible','medium',{'reasoning_effort':'medium','max_tokens':1500}),
- ('ollama','none',{'reasoning_effort':'none','max_tokens':1500}),
+ ('gemini','low',{'reasoning_effort':'low','max_tokens':1500,'temperature':.5}),
+ ('openrouter','none',{'reasoning':{'effort':'none','exclude':False},'max_tokens':1500,'temperature':.5}),
+ ('compatible','medium',{'reasoning_effort':'medium','max_tokens':1500,'temperature':.5}),
+ ('ollama','none',{'reasoning_effort':'none','max_tokens':1500,'temperature':.5}),
  ('groq','high',{'reasoning_effort':'high','max_completion_tokens':1500,'include_reasoning':False}),
 ])
-def test_thinking_adapter_maps_selected_setting_without_temperature(kind,effort,expected):
+def test_thinking_adapter_maps_selected_setting_and_supported_temperature(kind,effort,expected):
     assert parameters(SimpleNamespace(kind=kind,model='openai/gpt-oss-20b',reasoning_effort=effort,max_tokens=1500,temperature=50))==expected
 
 

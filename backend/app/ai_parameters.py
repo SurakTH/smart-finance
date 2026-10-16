@@ -11,11 +11,17 @@ def validate(kind,model,effort):
     if kind=='groq' and (effort in ('minimal','xhigh') or (effort=='none' and 'gpt-oss' in lower)):
         raise HTTPException(422,'โมเดล Groq นี้รองรับ Thinking น้อย/ปานกลาง/มาก หรือค่าเริ่มต้น')
 
+def temperature_available(p):
+    # Native OpenAI reasoning models and Groq reasoning requests keep their
+    # previous sampling defaults. Custom/Ollama/OpenRouter/Gemini can combine
+    # sampling with reasoning; the configured API remains the authority.
+    return not (p.kind=='openai' and (getattr(p,'reasoning_effort','default')!='default' or re.match(r'^(?:o\d|gpt-[56])',p.model,re.I))) and not (p.kind=='groq' and getattr(p,'reasoning_effort','default')!='default')
+
 def parameters(p):
     effort=getattr(p,'reasoning_effort','default')
     if effort=='default':
         body={('max_completion_tokens' if p.kind in ('openai','groq') else 'max_tokens'):p.max_tokens} if p.max_tokens else {}
-        if not (p.kind=='openai' and re.match(r'^(?:o\d|gpt-[56])',p.model)):
+        if temperature_available(p):
             body['temperature']=p.temperature/100
         return body
     validate(p.kind,p.model,effort)
@@ -26,7 +32,8 @@ def parameters(p):
     else:body['reasoning_effort']=effort
     if p.kind in ('openai','groq'):
         body={**({'max_completion_tokens':p.max_tokens} if p.max_tokens else {}),**{k:v for k,v in body.items() if k!='max_tokens'}}
-    # Reasoning models may reject temperature; let the model's sampling defaults apply.
+    if temperature_available(p):body['temperature']=p.temperature/100
+    # Groq reasoning requests retain their provider-specific sampling defaults.
     if p.kind=='groq':
         body['include_reasoning']=False if 'gpt-oss' in p.model.lower() else None
         if body['include_reasoning'] is None:

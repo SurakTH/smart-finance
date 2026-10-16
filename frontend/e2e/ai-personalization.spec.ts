@@ -6,12 +6,13 @@ test('personal memory, one-field clarification, ledger evidence and AI budget se
  const accounts=await(await page.request.get(base+'/accounts')).json(),travel=accounts.find((a:any)=>a.name==='เดินทาง');
  const bank=await(await page.request.post(base+'/accounts',{headers,data:{name:'ธนาคารหลัก',kind:'asset'}})).json();
  const provider=await(await page.request.post(base+'/providers',{headers,data:{name:'โมเดลสำรอง',kind:'compatible',model:'test-model',task:'chat',endpoint:'https://example.invalid/v1',enabled:false}})).json();
- await page.evaluate(wid=>sessionStorage.setItem('sf-workspace',wid),ws.id);await page.goto('/ai-settings');
+ await page.evaluate(wid=>sessionStorage.setItem('sf-workspace',wid),ws.id);await page.goto('/ai-settings?section=memory');
  await page.getByLabel('บัญชีเริ่มต้นexpense',{exact:true}).selectOption(bank.id);
  await page.getByRole('button',{name:'เพิ่มกฎ',exact:true}).click();await page.getByLabel('คำจับคู่ 1',{exact:true}).fill('กาแฟ');await page.getByLabel('หมวดที่แนะนำ 1',{exact:true}).selectOption(travel.id);
  await page.getByRole('button',{name:'บันทึกความชอบ',exact:true}).click();await expect(page.getByText('บันทึกความชอบส่วนตัวแล้ว',{exact:true})).toBeVisible();
  await page.reload();await expect(page.getByLabel('บัญชีเริ่มต้นexpense',{exact:true})).toHaveValue(bank.id);await expect(page.getByLabel('คำจับคู่ 1',{exact:true})).toHaveValue('กาแฟ');
  await page.locator('#ai-memory').scrollIntoViewIfNeeded();await page.screenshot({path:`../artifacts/ai-memory-${info.project.name}.png`});
+ await page.getByRole('tab',{name:'การใช้งานและงบ',exact:true}).click();
  await page.getByLabel('วงเงิน AI',{exact:true}).fill('10');await page.getByLabel('test-model input',{exact:true}).fill('1');await page.getByLabel('test-model output',{exact:true}).fill('2');
  await page.getByRole('button',{name:'บันทึกราคาและวงเงิน',exact:true}).click();await expect(page.getByText('บันทึกราคาและงบ AI แล้ว',{exact:true})).toBeVisible();
  const usage=await(await page.request.get(base+'/ai/usage')).json();expect(usage.policy.monthly_limit).toBe(10000000);expect(usage.policy.prices[provider.id]).toEqual({input:1000000,output:2000000});

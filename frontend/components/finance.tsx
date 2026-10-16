@@ -7,6 +7,7 @@ import {WorkspaceManager} from "./workspaces";
 import {PwaSettings} from "./pwa";
 import {clearVault} from "../public/offline-store.js";
 import {AssistantHistory} from "./assistant-history";
+import {AIInbox} from "./ai-inbox";
 import {InsightsPage} from "./insights";
 import {AISettingsPage} from "./ai-settings";
 import {AccountSettings} from "./account-settings";
@@ -89,7 +90,7 @@ type Proposal = {
 };
 type Conversation = { id: string; title: string; privacy: string; temporary?:boolean };
 type Message = { references?:Evidence[]|null; id: string; role: string; content: string; attachment_id?: string | null };
-type Job = { id: string; status: string; error: string | null; conversation_id?:string|null; stopping?:boolean; message?:string|null };
+type Job = { task?:string; id: string; status: string; error: string | null; conversation_id?:string|null; stopping?:boolean; message?:string|null };
 function isReviewCommand(text:string) {
   return /^(?:(?:ยืนยัน|ยกเลิก)(?:\s+[a-fA-F0-9]{8})?|ทวนอีกที|ทวนหน่อย|ทวนรายการ|สรุปที่จะบันทึก|ยกเลิกการกรอก|เริ่มใหม่)$/.test(text.trim());
 }
@@ -229,7 +230,6 @@ export default function Finance() {
     [editing, setEditing] = useState<Proposal | "new" | null>(null);
   const [ledgerVersion, setLedgerVersion] = useState(0);
   const [month, setMonth] = useState(today().slice(0, 7)),
-    [capturePrivacy, setCapturePrivacy] = useState("private"),
     [linkCode, setLinkCode] = useState("");
   const [chatFile, setChatFile] = useState<File | null>(null);
   const [chatPreview, setChatPreview] = useState("");
@@ -508,33 +508,17 @@ export default function Finance() {
       await refresh();
     });
   }
-  async function capture(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const form = e.currentTarget;
-    const text = String(new FormData(form).get("text"));
-    await run(async () => {
-      await api(base + "/capture", { text, privacy: capturePrivacy });
-      form.reset();
-      setNotice("ส่งเข้าคิวแล้ว ตรวจสอบรายการก่อนยืนยัน");
-      await refresh();
+  async function captureInbox(text:string,file:File|null) {
+    let success=false;
+    await run(async()=>{
+      if(file){
+        const form=new FormData();form.append("file",file);form.append("text",text);
+        const result=await api<{queued:boolean;reused:boolean}>(base+"/attachments",form);
+        setNotice(result.reused?"รูปนี้อยู่ในคิวหรือมีร่างแล้ว ไม่เรียก AI ซ้ำ ตรวจรายการด้านล่างได้เลย":result.queued?"ส่งรูปและรายละเอียดแล้ว กำลังเตรียมร่างให้ตรวจ":"รูปนี้เคยตรวจสอบแล้ว ไม่สร้างรายการซ้ำ");
+      }else{await api(base+"/capture",{text});setNotice("ส่งเข้าคิวแล้ว ตรวจร่างด้านล่างก่อนยืนยัน");}
+      success=true;await refresh();
     });
-  }
-  async function upload(file: File) {
-    await run(async () => {
-      const form = new FormData();
-      form.append("file", file);
-      form.append("privacy", capturePrivacy);
-      const result = await api<{ duplicate: boolean }>(
-        base + "/attachments",
-        form,
-      );
-      setNotice(
-        result.duplicate
-          ? "พบรูปนี้ใน workspace แล้ว ไม่สร้างรายการซ้ำ"
-          : "รับรูปแล้ว เข้าคิวอ่านสลิปตามโหมดที่เลือก",
-      );
-      await refresh();
-    });
+    return success;
   }
   async function logout() {
     await run(async () => {
@@ -716,7 +700,7 @@ export default function Finance() {
                       : "ข้อมูลจริงจาก workspace ที่คุณเลือก"}
               </p>
             </div>
-            {!["/insights","/budgets","/goals","/recurring","/members","/workspaces"].includes(path) && <Button onClick={() => {
+            {!["/ai-settings","/insights","/budgets","/goals","/recurring","/members","/workspaces"].includes(path) && <Button onClick={() => {
               if(["/accounts","/categories"].includes(path)) {document.getElementById("management-create")?.scrollIntoView({block:"center"});document.querySelector<HTMLInputElement>("#management-create input")?.focus({preventScroll:true});}
               else setEditing("new");
             }} disabled={!wid}>
@@ -739,149 +723,7 @@ export default function Finance() {
             await run(async()=>{await api(base+"/accounts",data); await refresh();setNotice(path==="/categories"?"เพิ่มหมวดหมู่เรียบร้อยแล้ว":"เพิ่มบัญชีเรียบร้อยแล้ว");success=true;});
             return success;
           }}/> : <div className="report-loading" role="status">กำลังเปิดข้อมูลของคุณ…</div>)}
-          {path === "/inbox" && wid && (
-            <>
-              <div className="toolbar">
-                <label className="capture-mode">
-                  การประมวลผลข้อความและสลิป
-                  <select
-                    value={capturePrivacy}
-                    onChange={(e) => setCapturePrivacy(e.target.value)}
-                  >
-                    <option value="private">Private · Local AI เท่านั้น</option>
-                    <option value="standard">Standard · อนุญาต Cloud AI</option>
-                  </select>
-                </label>
-              </div>
-              {capturePrivacy === "standard" && (
-                <p className="notice">
-                  ข้อความและรูปสลิปจะส่งไปยัง Cloud provider ที่ตั้งค่าไว้
-                  หากเซิร์ฟเวอร์อนุญาต
-                </p>
-              )}
-              <div className="capture-grid">
-                <section className="panel">
-                  <h3>เล่าให้ฟังว่าใช้เงินกับอะไร</h3>
-                  <form onSubmit={capture}>
-                    <label className="sr-only" htmlFor="capture">
-                      ข้อความรายการเงิน
-                    </label>
-                    <textarea
-                      id="capture"
-                      name="text"
-                      placeholder="เช่น ข้าว 75 น้ำ 25"
-                      required
-                      maxLength={4000}
-                    />
-                    <div className="flex justify-between items-center gap-3">
-                      <span className="muted small">
-                        {capturePrivacy === "private"
-                          ? "Local-only"
-                          : "Cloud allowed"}{" "}
-                        · ใช้ demo parser หากยังไม่มีโมเดล
-                      </span>
-                      <Button disabled={busy}>
-                        <Sparkles size={16} />
-                        สร้างข้อเสนอ
-                      </Button>
-                    </div>
-                  </form>
-                </section>
-                <section className="panel upload">
-                  <Paperclip size={24} />
-                  <h3>อัปโหลดสลิป</h3>
-                  <p className="muted small">
-                    JPEG / PNG / WebP ไม่เกิน 8 MB
-                    <br />
-                    {capturePrivacy === "private"
-                      ? "อ่านแบบ local-only"
-                      : "อนุญาตส่งรูปไป Cloud AI"}{" "}
-                    · ไม่ตรวจยืนยันว่าสลิปแท้
-                  </p>
-                  <label className="file-button">
-                    เลือกรูปภาพ
-                    <input
-                      aria-label="อัปโหลดสลิป"
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      disabled={busy}
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) upload(f);
-                        e.target.value = "";
-                      }}
-                    />
-                  </label>
-                </section>
-              </div>
-              {jobs.some((j) => j.status === "pending") && (
-                <p className="notice" role="status">
-                  กำลังประมวลผลใน worker… หน้านี้จะอัปเดตอัตโนมัติ
-                </p>
-              )}
-              {jobs.some((j) => j.status === "failed") && (
-                <p className="error">
-                  มีงานอ่านข้อมูลไม่สำเร็จ คุณสามารถกรอกรายการเองได้
-                </p>
-              )}
-              <section className="panel">
-                <div className="panel-heading">
-                  <h3>
-                    รอตรวจสอบ <span className="muted">{pending.length}</span>
-                  </h3>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => run(refresh)}
-                  >
-                    รีเฟรช
-                  </Button>
-                </div>
-                {pending.length >= 100 && <p className="notice small">แสดงรายการรอตรวจสอบสูงสุด 100 รายการ เมื่อตรวจสอบแล้วให้รีเฟรชเพื่อดูรายการถัดไป</p>}
-                {pending.length ? (
-                  pending.map((p) => (
-                    <div className="proposal" key={p.id}>
-                      <div>
-                        <span className="tag">
-                          {p.source === "recurring" ? "รายการประจำ · รอยืนยัน" : p.source === "demo"
-                            ? "สาธิต · กรุณาตรวจสอบ"
-                            : "ข้อเสนอ · ยังไม่บันทึก"}
-                        </span>
-                        <h3>{p.description}</h3>
-                        <p className="muted small">
-                          {kinds[p.kind]} ·{" "}
-                          {p.amount ? money(p.amount) : "ยังไม่ทราบจำนวนเงิน"}{p.occurred_on ? " · รอบวันที่ " + p.occurred_on : ""}
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={busy}
-                          onClick={() =>
-                            run(async () => {
-                              await api(
-                                base + "/proposals/" + p.id + "/reject",
-                                {},
-                              );
-                              await refresh();
-                            })
-                          }
-                        >
-                          ยกเลิก
-                        </Button>
-                        <Button size="sm" onClick={() => setEditing(p)}>
-                          ตรวจสอบ
-                        </Button>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <Empty text="ไม่มีรายการรอยืนยัน ยอดเงินจะเปลี่ยนเมื่อคุณกดยืนยันเท่านั้น" />
-                )}
-              </section>
-            </>
-          )}
+          {path === "/inbox" && wid && <AIInbox key={wid} base={base} drafts={pending} jobs={jobs} busy={busy} onSubmit={captureInbox} onReview={p=>setEditing(p as Proposal)} onReject={id=>run(async()=>{await api(base+"/proposals/"+id+"/reject",{});await refresh();})} onRefresh={()=>run(refresh)} onManual={()=>setEditing("new")}/>}
           {isChat && wid && (
             <div className={"chat-layout" + (historyOpen ? " history-open" : "")}>
               {historyOpen && compact && <button className="history-scrim" aria-label="ปิดประวัติการสนทนา" onClick={() => { setHistoryOpen(false); historyToggle.current?.focus(); }} />}

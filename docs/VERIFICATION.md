@@ -671,3 +671,11 @@ Browser เพิ่มทดสอบค้นหาบริการ/empty/re
 - TypeScript และ production build ผ่าน backend `aee3ea5ea32e`, web `63d78e0ab2d8`; local Compose healthy HTTP root 200; migration head `ai_evidence_epoch` สำเร็จ ไม่มีการ deploy Ubuntu ของผู้ใช้
 - Backup ก่อน migration `finance-20261011T171000Z.dump`; หลัง migration `finance-20261011T171657Z.dump` และ disposable restore ผ่าน row counts/configuration snapshots รวม `workspaces.ai_epoch` และ journals สมดุล
 - Network model tests ใช้ HTTP mocks ไม่ได้เรียก Gemma/Ollama ของผู้ใช้จริง ขอบเขตภาษา/รายงานที่ยังตีความไม่ได้ต้องถามเพิ่ม ไม่รับรองความแม่นยำของโมเดลทุกคำถาม Tests count เป็น regression evidence ไม่ใช่ model-quality score
+
+## 16 ตุลาคม 2026 — AI Inbox และศูนย์ตั้งค่า AI
+
+- Local PostgreSQL/backend suite: **869 passed**, 1 upstream Starlette/httpx deprecation warning. Includes receipt captions, failed-read retry/deduplication, workspace routing/privacy, supported Thinking + Temperature, and output-budget request bodies.
+- Complete desktop/mobile browser suite: **86 passed (3.0m)**. Includes Inbox image/text/paste, model numeric clearing and 32,000-token persistence, five settings panels, retained unsaved fields, owner/member scope, explicit save-and-test success/failure and all existing finance/browser regressions.
+- Frontend typecheck and Git whitespace check passed. Desktop/mobile UI inspected; the mobile AI settings example with one model is 1,306px tall at a 390×844 viewport, with no horizontal document overflow.
+- No new schema migration: shared reusable provider connections are still stage 2. Current connection records and encrypted keys remain per model/task; probe results are labelled as session-only.
+- These are local and mocked-provider checks. This batch has not yet been verified with the user's live model API or on the Ubuntu production server. GitHub CI, publishing and deployment must be checked separately after push.

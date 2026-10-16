@@ -28,7 +28,8 @@ class ChatInput(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
 
 class CaptureInput(ChatInput):
-    privacy: Literal['private','standard'] = 'private'
+    # Omitted follows current workspace routes; explicit legacy clients remain supported.
+    privacy: Literal['private','standard'] | None = None
 
 class ChatRetentionInput(BaseModel):
     retention_days: Literal[0,7,30,90]

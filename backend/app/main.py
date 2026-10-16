@@ -337,11 +337,14 @@ def enqueue(db,wid,user_id,task,payload):
     return job
 
 @app.post('/workspaces/{wid}/attachments')
-async def upload(wid: str, file: UploadFile = File(...), privacy: Literal['private','standard'] = Form('private'), member: Membership = Depends(workspace_member), db: DBSession = Depends(get_db, scope='function')):
+async def upload(wid: str, file: UploadFile = File(...), privacy: Literal['private','standard'] | None = Form(None), text: str = Form('',max_length=4000), member: Membership = Depends(workspace_member), db: DBSession = Depends(get_db, scope='function')):
     data = await file.read(8*1024*1024+1)
     image, duplicate = store_image(db,wid,data)
-    job = None if duplicate else enqueue(db,wid,member.user_id,'extract',{'attachment_id':image.id,'privacy':privacy})
-    return {'id':image.id,'duplicate':duplicate,'job_id':job.id if job else None}
+    # store_image holds the workspace lock: repeated clicks cannot enqueue two reads.
+    reviewed = db.scalar(select(Proposal.id).where(Proposal.workspace_id==wid,Proposal.attachment_id==image.id).limit(1))
+    pending = next((j for j in db.scalars(select(Job).where(Job.workspace_id==wid,Job.task=='extract',Job.status=='pending')) if j.payload.get('attachment_id')==image.id),None)
+    job = None if reviewed else pending or enqueue(db,wid,member.user_id,'extract',{'attachment_id':image.id,'privacy':privacy,'text':text.strip()})
+    return {'id':image.id,'duplicate':duplicate,'queued':bool(job),'reused':bool(reviewed or pending),'job_id':job.id if job else None}
 
 @app.get('/workspaces/{wid}/attachments/{aid}')
 def attachment(wid: str, aid: str, member: Membership = Depends(workspace_member), db: DBSession = Depends(get_db, scope='function')):

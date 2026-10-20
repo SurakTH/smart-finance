@@ -122,7 +122,9 @@ def call_model(db, job):
         try:
             url,headers,extensions=target(p)
             target_stage='key_invalid'
-            key = config.cipher().decrypt(p.encrypted_key.encode()).decode() if p.encrypted_key else ''
+            from .ai_connections import credential
+            encrypted=credential(p)
+            key = config.cipher().decrypt(encrypted.encode()).decode() if encrypted else ''
             if key:headers['Authorization']='Bearer '+key
         except Exception:
             job._last_ai_error=target_stage

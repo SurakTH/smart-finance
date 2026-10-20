@@ -96,6 +96,8 @@ def cleanup_once():
         cleanup_mail(db)
         from .ai_diagnostics import cleanup as cleanup_diagnostics
         cleanup_diagnostics(db)
+        from .statement_imports import cleanup as cleanup_imports
+        cleanup_imports(db)
         return cleanup(db)
 
 if __name__=='__main__':

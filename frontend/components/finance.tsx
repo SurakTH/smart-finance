@@ -8,6 +8,7 @@ import {PwaSettings} from "./pwa";
 import {clearVault} from "../public/offline-store.js";
 import {AssistantHistory} from "./assistant-history";
 import {AIInbox} from "./ai-inbox";
+import {StatementImportPage} from "./statement-import";
 import {InsightsPage} from "./insights";
 import {AISettingsPage} from "./ai-settings";
 import {AccountSettings} from "./account-settings";
@@ -112,6 +113,7 @@ const kinds: Record<string, string> = {
 };
 const nav = [
   { path: "/", label: "ภาพรวม", icon: LayoutDashboard },
+  { path: "/imports", label: "นำเข้า statement", icon: ArrowLeftRight },
   { path: "/transactions", label: "รายการเงิน", icon: ArrowLeftRight },
   { path: "/assistant", label: "ผู้ช่วย AI", icon: Sparkles },
   { path: "/inbox", label: "AI Inbox", icon: Inbox },
@@ -700,7 +702,7 @@ export default function Finance() {
                       : "ข้อมูลจริงจาก workspace ที่คุณเลือก"}
               </p>
             </div>
-            {!["/ai-settings","/insights","/budgets","/goals","/recurring","/members","/workspaces"].includes(path) && <Button onClick={() => {
+            {!["/imports","/ai-settings","/insights","/budgets","/goals","/recurring","/members","/workspaces"].includes(path) && <Button onClick={() => {
               if(["/accounts","/categories"].includes(path)) {document.getElementById("management-create")?.scrollIntoView({block:"center"});document.querySelector<HTMLInputElement>("#management-create input")?.focus({preventScroll:true});}
               else setEditing("new");
             }} disabled={!wid}>
@@ -711,6 +713,7 @@ export default function Finance() {
           {path === "/workspaces" && <WorkspaceManager onChanged={loadWorkspaces} onSelect={id=>{try{sessionStorage.setItem('sf-workspace',id);}catch{}setWid(id);}}/>}
           {!wid&&path!=="/workspaces"&&<section className="panel report-empty"><h2>ยังไม่มีพื้นที่ที่กำลังใช้งาน</h2><p>สร้างพื้นที่ใหม่ หรือกู้คืนพื้นที่จากคลังได้ ข้อมูลบัญชีผู้ใช้ของคุณยังอยู่</p><Link href="/workspaces">ไปจัดการพื้นที่ทำงาน <ArrowUpRight size={16}/></Link></section>}
           {path === "/" && wid && <DashboardView summary={summary?.month===month?summary:null} month={month} onMonthChange={setMonth} />}
+          {path === "/imports" && wid && <StatementImportPage key={wid} wid={wid} accounts={accounts} onChanged={refresh}/>}
           {path === "/insights" && wid && <InsightsPage key={wid} wid={wid} accounts={accounts} refreshKey={ledgerVersion}/>}
           {path === "/transactions" && wid && <TransactionsExplorer key={wid} wid={wid} accounts={accounts} refreshKey={ledgerVersion} onChanged={() => { setLedgerVersion(v => v + 1); refresh(); }} />}
           {path === "/budgets" && wid && (summary ? <BudgetsPage key={wid+month} wid={wid} accounts={accounts} month={month} onMonthChange={setMonth}/> : <div className="report-loading" role="status">กำลังเปิดงบประมาณ…</div>)}
@@ -899,7 +902,7 @@ export default function Finance() {
         </div>
       </main>
       {!isChat && <nav className="bottom-nav" aria-label="เมนูหลักบนมือถือ">
-        {['/','/transactions','/assistant','/insights','/services'].map(href=>nav.find(n=>n.path===href)!).map((item) => <Link key={item.path} href={item.path} aria-current={(path === item.path || (item.path==="/services" && ["/accounts","/categories","/budgets","/goals","/recurring","/members","/workspaces","/settings","/ai-settings","/inbox"].includes(path))) ? "page" : undefined} className={(path === item.path || (item.path==="/services" && ["/accounts","/categories","/budgets","/goals","/recurring","/members","/workspaces","/settings","/ai-settings","/inbox"].includes(path))) ? "active" : ""}><item.icon size={22} /><span>{item.path === "/services" ? "ทั้งหมด" : item.path === "/transactions" ? "รายการ" : item.path === "/assistant" ? "แชท AI" : item.label}</span>{item.path === "/inbox" && pending.length > 0 && <i>{pending.length}</i>}</Link>)}
+        {['/','/transactions','/assistant','/insights','/services'].map(href=>nav.find(n=>n.path===href)!).map((item) => <Link key={item.path} href={item.path} aria-current={(path === item.path || (item.path==="/services" && ["/imports","/accounts","/categories","/budgets","/goals","/recurring","/members","/workspaces","/settings","/ai-settings","/inbox"].includes(path))) ? "page" : undefined} className={(path === item.path || (item.path==="/services" && ["/imports","/accounts","/categories","/budgets","/goals","/recurring","/members","/workspaces","/settings","/ai-settings","/inbox"].includes(path))) ? "active" : ""}><item.icon size={22} /><span>{item.path === "/services" ? "ทั้งหมด" : item.path === "/transactions" ? "รายการ" : item.path === "/assistant" ? "แชท AI" : item.label}</span>{item.path === "/inbox" && pending.length > 0 && <i>{pending.length}</i>}</Link>)}
       </nav>}
       {editing && (
         <TransactionDialog

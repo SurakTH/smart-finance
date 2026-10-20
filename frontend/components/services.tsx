@@ -9,6 +9,7 @@ const money=(n:number)=>new Intl.NumberFormat('th-TH',{style:'currency',currency
 export function ServicesHub({accounts,pending,owner,onAdd}:{accounts:ManagedAccount[];pending:number;owner:boolean;onAdd:()=>void}){
  const [query,setQuery]=useState('');
  const services=[
+  {group:'ดูแลการเงิน',title:'นำเข้า statement',detail:'นำเข้า CSV เลือกคอลัมน์ ตรวจซ้ำ และยืนยันทั้งชุดก่อนบันทึก',href:'/imports',icon:Download,tone:'sage',meta:'CSV · ไม่ใช้ token AI'},
   {group:'ดูแลการเงิน',title:'ภาพรวมรายเดือน',detail:'ดูรายรับ รายจ่าย และแนวโน้ม แยกตามเดือนที่เลือก',href:'/',icon:LayoutDashboard,tone:'sage',meta:'รายงานและกราฟ'},
   {group:'ดูแลการเงิน',title:'วิเคราะห์',detail:'สรุปง่าย ๆ เปรียบเทียบช่วงวัน ดูหมวด บัญชี และแนวโน้ม',href:'/insights',icon:ChartPie,tone:'sage',meta:'ค่าเฉลี่ย · อันดับ · เปรียบเทียบ'},
   {group:'ดูแลการเงิน',title:'รายการเงิน',detail:'ค้นหา เลือกช่วงวัน และกรองรายการจากทุกบัญชี',href:'/transactions',icon:ArrowLeftRight,tone:'sand',meta:'รายรับ · รายจ่าย · โอน · จ่ายบัตร'},

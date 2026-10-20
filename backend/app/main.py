@@ -25,7 +25,7 @@ from fastapi.responses import JSONResponse
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(request,exc):
-    if '/providers' in request.url.path:
+    if '/providers' in request.url.path or '/ai/connections' in request.url.path:
         return JSONResponse(status_code=422,content={'detail':'กรุณาตรวจข้อมูลผู้ให้บริการ URL ชื่อโมเดล และค่าการตอบกลับ'})
     if request.url.path in ('/auth/password','/auth/forgot-password','/auth/reset-password','/auth/verify-email','/auth/register','/auth/register-invite','/invitations/preview','/invitations/accept'):
         return JSONResponse(status_code=422,content={'detail':'กรุณาตรวจรหัสผ่านใหม่ 12–200 ตัวอักษรและการยืนยัน' if request.url.path=='/auth/password' else 'กรุณาตรวจข้อมูลที่กรอกและรหัสผ่าน 12–200 ตัวอักษร'})
@@ -719,3 +719,6 @@ def assistant_changes(wid: str, page: int = Query(1,ge=1,le=10000), db: DBSessio
 
 from .ai_diagnostics import router as diagnostics_router
 app.include_router(diagnostics_router)
+
+from .statement_imports import router as statement_imports_router
+app.include_router(statement_imports_router)

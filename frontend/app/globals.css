@@ -1359,3 +1359,29 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding: 28px
 @media(max-width:700px){.ai-hub-hero{padding:18px;gap:12px}.ai-hub-hero h2{font-size:22px}.ai-hub-hero .eyebrow{font-size:9px}.ai-hub-hero p{font-size:13px}.ai-hub-summary{display:grid;font-size:12px;gap:8px}.ai-hub-tabs button{padding:11px 12px;flex:none;font-size:13px}.ai-provider-compact .ai-provider-actions{flex-wrap:nowrap;align-items:center;gap:4px}.ai-provider-compact .ai-provider-actions>div{gap:0;flex-wrap:nowrap;flex:initial}.ai-provider-compact .ai-provider-actions button{padding:0 9px;font-size:12px;min-width:34px}.ai-provider-compact .ai-provider-actions>div:last-child{justify-content:flex-end;margin-left:auto}.ai-provider-compact .ai-provider-top{align-items:flex-start}.ai-provider-compact .ai-enable{margin-left:47px!important}.ai-route-status{margin-left:auto}.ai-provider-title{min-width:0!important}.ai-connections article{padding:15px}.ai-connections article>div:last-of-type{width:100%}.model-editor-footer>button:last-child{flex-basis:100%}.ai-task-picker button{font-size:13px;padding:8px 11px}}
 .ai-hub-hero{padding:15px 20px;gap:13px}.ai-hub-hero .ai-hero-icon{width:42px;height:42px;border-radius:13px}.ai-hub-hero .eyebrow{display:none}.ai-hub-hero h2{font-size:21px;margin:0 0 4px}.ai-hub-hero p{font-size:13px;line-height:1.6}.ai-settings-page{gap:18px}.content:has(.ai-settings-page) .page-heading{margin-bottom:20px}
 @media(max-width:700px){.ai-hub-hero{padding:14px 16px}.ai-hub-hero h2{font-size:19px}.ai-hub-hero .ai-secure{font-size:11px}.ai-hub-hero>div:nth-child(2){min-width:150px}.ai-settings-page{gap:16px}}
+
+/* CSV import and reusable AI connections */
+.statement-import {display:grid;gap:1.2rem;min-width:0}
+.import-intro {display:flex;gap:1rem;align-items:flex-start;padding:.5rem 0}
+.import-intro h2 {margin:0 0 .4rem}.import-intro p {color:var(--muted);margin:0}
+.import-file {display:grid;gap:.5rem;margin:1rem 0;padding:1.2rem;border:1px dashed #b1c7b9;border-radius:16px}
+.import-example {margin:1rem 0}.import-example pre {overflow:auto;padding:1rem;background:#f3f6f0;border-radius:12px;font-size:.85rem}
+.import-warning {display:flex;gap:.5rem;align-items:flex-start;color:#806326;background:#faf5e8;padding:1rem;border-radius:12px}
+.import-table-wrap {overflow:auto;margin:1rem 0;border:1px solid #dce5da;border-radius:12px}
+.import-table {width:100%;border-collapse:collapse;min-width:660px;text-align:left}
+.import-table th,.import-table td {padding:.8rem;border-bottom:1px solid #e3e9df;vertical-align:top}
+.import-table td strong,.import-table td small,.import-table td span {display:block;max-width:340px;overflow-wrap:anywhere}
+.import-table td small {color:#768375;margin-bottom:.3rem}.import-table input[type=checkbox] {width:20px;height:20px}
+.import-table select {min-width:150px;max-width:220px}.import-invalid {background:#fff5f1}
+.import-duplicate {display:flex;gap:.4rem;font-size:.82rem;margin-top:.5rem;color:#806326}
+.import-confirm {background:#edf3ec;padding:1rem;border-radius:14px;margin-top:1rem}.import-confirm button {margin:.3rem .5rem .3rem 0}
+.import-success {display:grid;justify-items:start;gap:.8rem}.import-success a {display:flex;gap:.5rem;align-items:center}
+.connection-form {padding:1rem;margin:1rem 0;border:1px solid #dce5da;border-radius:14px;display:grid;gap:.8rem}
+@media(max-width:640px){.import-intro {gap:.6rem}.import-intro h2{font-size:1.2rem}.statement-import .panel {padding:1rem}.import-table td{padding:.65rem}.shared-connections .ai-section-heading{align-items:stretch;flex-direction:column}}
+
+@media(max-width:640px){
+ .import-table-wrap{border:0}.import-table{display:block;min-width:0}.import-table thead{display:none}.import-table tbody{display:block}
+ .import-table tr{display:grid;grid-template-columns:28px minmax(0,1fr);gap:.3rem .5rem;padding:.8rem 0;border-bottom:1px solid #dce5da}
+ .import-table td{display:block;grid-column:2;padding:.2rem 0;border:0;min-width:0}.import-table td:first-child{grid-column:1;grid-row:1/4}
+ .import-table td strong,.import-table td small,.import-table td span{max-width:none}.import-table select{width:100%;max-width:none}
+}

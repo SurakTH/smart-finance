@@ -15,7 +15,7 @@ flowchart LR
   Bot --> Redis
 ```
 
-Only FastAPI's authenticated transaction and proposal-confirm routes can post through the ledger service. AI modules have no posting tools. AI text/JSON/images are untrusted data. Pydantic constrains extracted fields; extra output fields cannot create accounts, select financial accounts, grant permissions or trigger actions. Human confirmation supplies transaction fields and resolves workspace-local account IDs anew.
+Authenticated transaction, proposal/chat-action confirmation and statement-import confirmation routes post through the ledger service after validating workspace access and explicit user confirmation. AI modules have no posting tools. AI text/JSON/images are untrusted data. Pydantic constrains extracted fields; extra output fields cannot create accounts, select financial accounts, grant permissions or trigger actions. Human confirmation supplies transaction fields and resolves workspace-local account IDs anew.
 
 ```mermaid
 erDiagram
@@ -33,6 +33,10 @@ erDiagram
   users ||--o{ conversations : owns
   conversations ||--o{ messages : stores
   workspaces ||--o{ providers : configures
+  workspaces ||--o{ ai_connections : owns
+  ai_connections ||--o{ providers : authenticates
+  workspaces ||--o{ statement_imports : previews
+  entries ||--o{ statement_rows : imported_as
   workspaces ||--o{ jobs : queues
   users ||--o{ sessions : authenticates
   users ||--o{ telegram_links : links
@@ -85,3 +89,9 @@ Workspace authorization for GET/HEAD/OPTIONS checks the committed workspace, arc
 ### Synthetic AI lab and diagnostics
 
 Owner-scoped `/workspaces/{wid}/ai/tests` enqueues `ai_test`; the worker calls the configured chat providers but substitutes fixed synthetic tool results and validates draft arguments without invoking any ledger/action resolver. No real chat/finance context is supplied. Usage remains accounted and cloud/budget policy applies. Per-job metadata is a whitelist (up to 40 events), persisted separately from scrubbed payloads with 30-day expiry; indexed workspace/time reads return at most 50 recent jobs. Owner-only diagnostics endpoints never expose content, arguments, endpoints or encrypted keys. Worker cleanup clears expired metadata in bounded batches. The lab detects known structural and fixture-answer failures; it does not certify general model quality.
+
+## CSV ingestion and reusable AI connections (20 October 2026)
+
+`statement_imports` stores a user-owned normalized preview for one asset account. Raw CSV bytes are not retained. Explicit confirmation revalidates categories and duplicate markers under the existing workspace write lock, posts the selected entries atomically and records `statement_rows` with scoped fingerprints and entry foreign keys. Replays return the saved result; changed selections after confirmation conflict. Unconfirmed previews expire after 24 hours and are removed by worker cleanup. Confirmed previews and row markers remain as import audit data. This flow never calls AI.
+
+`ai_connections` owns one workspace endpoint and encrypted credential. Linked Provider rows retain model/task parameters, IDs, routing and usage references; their legacy credential field is empty. Every runtime/probe/lab request resolves the key from the linked workspace connection. Endpoint/kind mirrors are updated atomically for linked profiles when a connection changes. Key-only changes also advance the workspace AI epoch. The composite FK prevents connections across workspaces. Old per-model API payloads remain supported; migration keeps old connections separate to avoid merging different credentials at the same URL.

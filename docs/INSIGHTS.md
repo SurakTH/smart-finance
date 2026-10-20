@@ -14,3 +14,7 @@ Both date boundaries are inclusive. Windows are limited to 366 calendar days. Th
 No provider calls, credentials, migration, new server environment variables, or ledger writes are involved. Reports deliberately do not cache across users or workspaces. Mobile navigation promotes analysis; Inbox remains available from the services hub and the desktop menu.
 
 Design references: [YNAB spending and income/expense reports](https://www.ynab.com/blog/ynab-reports-and-data), [Actual Budget reports](https://actualbudget.org/docs/reports/). The interface adopts progressive detail and drilldown, without reproducing their UI or requiring budget terminology.
+
+## วันนี้
+
+ปุ่ม **วันนี้** เลือกวันเริ่มและสิ้นสุดเป็นวันเดียวกันตามเขตเวลา `Asia/Bangkok` เปรียบเทียบกับเมื่อวาน (หนึ่งวันเท่ากัน) และยังใช้ตัวกรองบัญชี/หมวดหรือเปิดรายการต้นทางได้ ตัวเลขมาจากฐานข้อมูลโดยไม่เรียก AI

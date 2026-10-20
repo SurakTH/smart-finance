@@ -182,7 +182,9 @@ def evaluate(db,job,p,case,deadline,budget):
     try:url,headers,extensions=target(p)
     except Exception:raise AIRequestError('dns') from None
     try:
-        if p.encrypted_key:headers['Authorization']='Bearer '+config.cipher().decrypt(p.encrypted_key.encode()).decode()
+        from .ai_connections import credential
+        encrypted=credential(p)
+        if encrypted:headers['Authorization']='Bearer '+config.cipher().decrypt(encrypted.encode()).decode()
     except Exception:raise AIRequestError('key_invalid') from None
     sandbox=Sandbox(case)
     before=getattr(job,'_assistant_requests',0)

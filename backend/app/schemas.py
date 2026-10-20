@@ -45,6 +45,7 @@ class ProposalInput(BaseModel):
     kind: Literal['income','expense'] = 'expense'
 
 class ProviderInput(BaseModel):
+    connection_id: str | None = Field(default=None,max_length=36)
     kind: Literal['gemini','openrouter','groq','openai','compatible','ollama']
     model: str = Field(min_length=1, max_length=100, pattern=r'^[a-zA-Z0-9_./:@-]+$')
     task: Literal['chat','extract']

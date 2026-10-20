@@ -679,3 +679,13 @@ Browser เพิ่มทดสอบค้นหาบริการ/empty/re
 - Frontend typecheck and Git whitespace check passed. Desktop/mobile UI inspected; the mobile AI settings example with one model is 1,306px tall at a 390×844 viewport, with no horizontal document overflow.
 - No new schema migration: shared reusable provider connections are still stage 2. Current connection records and encrypted keys remain per model/task; probe results are labelled as session-only.
 - These are local and mocked-provider checks. This batch has not yet been verified with the user's live model API or on the Ubuntu production server. GitHub CI, publishing and deployment must be checked separately after push.
+
+## 20 ตุลาคม 2026 — CSV import, Today insights and shared AI connections
+
+- Complete PostgreSQL/backend suite: **884 passed** (one upstream Starlette/httpx deprecation warning). New coverage includes CSV preview vs posting, atomic rollback, duplicate replay, simultaneous confirmations, bank references, user/workspace scope, expiry cleanup and SQLite/PostgreSQL credential migration roundtrips.
+- After the final shared-key epoch invalidation and duplicate-recovery wording changes, the affected backend/configuration/insights/migration tests were re-run: **68 passed**.
+- Complete desktop/mobile browser suite on the final UI: **92 passed (3.8m)**. Covers CSV field mapping, Thai Buddhist dates, review/confirm, repeat upload, Bangkok Today date bounds, reusable chat/extract connection profiles and all existing browser regressions. The service directory expectation now includes the new import service (17 total), with its `/imports` link explicitly checked.
+- TypeScript, Next production build, Git whitespace check and deployment helper tests (**5 passed**) passed. Desktop and mobile CSV previews were visually inspected; mobile shows each row as a card without document overflow.
+- Backup/restore was exercised with local application writers paused. A disposable restored database matched row counts and snapshots, including encrypted `ai_connections`, Provider connection references, import previews and imported row markers; restored journals balanced. Local writers were restarted afterward.
+- New migration: `connections_and_imports`. Existing encrypted credentials are moved without decrypting or automatically merging connections; model IDs and routing/usage references are retained.
+- CSV parsing uses no AI calls. Provider transport checks use mock responses and synthetic data. These results do not certify every real bank CSV or every live model API. No Git push, GitHub CI run or Ubuntu production deployment is included in this local verification.

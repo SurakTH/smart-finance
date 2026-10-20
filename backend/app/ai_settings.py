@@ -73,7 +73,8 @@ def target(p):
     return str(url.copy_with(host=ips[0])),{'Host':url.netloc.decode()},{'sni_hostname':url.host} if url.scheme=='https' else {}
 
 def serialize(p):
-    return {**{k:getattr(p,k) for k in ('id','kind','model','task','priority','name','endpoint','enabled','timeout_seconds','retries','max_tokens','temperature','reasoning_effort','supports_images')},'has_key':bool(p.encrypted_key)}
+    from .ai_connections import credential
+    return {**{k:getattr(p,k) for k in ('id','connection_id','kind','model','task','priority','name','endpoint','enabled','timeout_seconds','retries','max_tokens','temperature','reasoning_effort','supports_images')},'has_key':bool(credential(p))}
 
 def lock(db,wid):
     db.scalar(select(Workspace).where(Workspace.id==wid).with_for_update())
@@ -98,7 +99,7 @@ def providers(wid:str,db:Session=Depends(get_db,scope='function')):
 def apply(p,data,creating=False):
     from .ai_parameters import validate
     validate(data.kind,data.model,data.reasoning_effort)
-    values=data.model_dump(exclude={'api_key','clear_key'})
+    values=data.model_dump(exclude={'api_key','clear_key','connection_id'})
     if data.kind=='compatible':values['endpoint']=custom_endpoint(data.endpoint or config.COMPATIBLE_URL)
     elif data.kind=='ollama':
         values['endpoint']=custom_endpoint(data.endpoint) if data.endpoint else ''
@@ -117,14 +118,20 @@ def create_provider(wid:str,data:ProviderInput,db:Session=Depends(get_db,scope='
     lock(db,wid)
     count=len(db.scalars(select(Provider.id).where(Provider.workspace_id==wid)).all())
     if count>=30:raise HTTPException(422,'เพิ่มได้สูงสุด 30 โมเดลต่อพื้นที่')
-    p=Provider(workspace_id=wid,encrypted_key='');apply(p,data,True);db.add(p);db.flush()
+    p=Provider(workspace_id=wid,encrypted_key='')
+    from .ai_connections import attach
+    if not attach(db,wid,p,data):apply(p,data,True)
+    db.add(p);db.flush()
     return serialize(p)
 
 @router.put('/providers/{pid}')
 def edit_provider(wid:str,pid:str,data:ProviderInput,db:Session=Depends(get_db,scope='function')):
     lock(db,wid);p=get_scoped(db,Provider,wid,pid)
     changed=p.kind!=data.kind or p.model!=data.model or (p.endpoint or '')!=(data.endpoint or '')
-    apply(p,data)
+    from .ai_connections import attach
+    if not attach(db,wid,p,data):
+        p.connection_id=None;p.connection=None
+        apply(p,data)
     if changed:
         from .models import AIUsagePolicy
         policy=db.get(AIUsagePolicy,wid)
@@ -158,7 +165,9 @@ def probe(db,wid,pid,models=False):
     try:
         url,headers,extensions=target(p)
         stage='key_invalid'
-        key=config.cipher().decrypt(p.encrypted_key.encode()).decode() if p.encrypted_key else ''
+        from .ai_connections import credential
+        encrypted=credential(p)
+        key=config.cipher().decrypt(encrypted.encode()).decode() if encrypted else ''
         if key:headers['Authorization']='Bearer '+key
         stage='request'
         with httpx.Client(timeout=httpx.Timeout(p.timeout_seconds,connect=5),trust_env=False,follow_redirects=False) as client:
@@ -209,3 +218,6 @@ def test_provider(wid:str,pid:str,db:Session=Depends(get_db,scope='function')):
 @router.post('/providers/{pid}/models')
 def list_models(wid:str,pid:str,db:Session=Depends(get_db,scope='function')):
     return probe(db,wid,pid,True)
+
+from .ai_connections import install
+install(router)

@@ -1,7 +1,7 @@
 import time
 import uuid
 from sqlalchemy import Index, String, Integer, BigInteger, Text, ForeignKey, ForeignKeyConstraint, UniqueConstraint, CheckConstraint, LargeBinary, JSON
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
 def uid(): return str(uuid.uuid4())
@@ -171,8 +171,44 @@ class AISettings(Base):
     demo_fallback: Mapped[bool] = mapped_column(default=True)
     max_attempted_providers: Mapped[int] = mapped_column(Integer, default=3)
 
+class AIConnection(Base):
+    __tablename__ = 'ai_connections'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey('workspaces.id'), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    kind: Mapped[str] = mapped_column(String(20))
+    endpoint: Mapped[str] = mapped_column(String(500), default='')
+    encrypted_key: Mapped[str] = mapped_column(Text, default='')
+    __table_args__ = (UniqueConstraint('id','workspace_id'),)
+
+class StatementImport(Base):
+    __tablename__ = 'statement_imports'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey('workspaces.id'), index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey('users.id'))
+    account_id: Mapped[str] = mapped_column(String(36))
+    rows: Mapped[list] = mapped_column(JSON)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now)
+    confirmed_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    __table_args__ = (ForeignKeyConstraint(['account_id','workspace_id'],['accounts.id','accounts.workspace_id']),)
+
+class StatementRow(Base):
+    __tablename__ = 'statement_rows'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey('workspaces.id'), index=True)
+    account_id: Mapped[str] = mapped_column(String(36))
+    digest: Mapped[str] = mapped_column(String(64))
+    entry_id: Mapped[str] = mapped_column(String(36))
+    __table_args__ = (UniqueConstraint('workspace_id','account_id','digest'),
+        ForeignKeyConstraint(['account_id','workspace_id'],['accounts.id','accounts.workspace_id']),
+        ForeignKeyConstraint(['entry_id','workspace_id'],['entries.id','entries.workspace_id']))
+
 class Provider(Base):
     __tablename__ = 'providers'
+    connection_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    connection: Mapped[AIConnection | None] = relationship(lazy='joined')
+    __table_args__ = (ForeignKeyConstraint(['connection_id','workspace_id'], ['ai_connections.id','ai_connections.workspace_id']),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     workspace_id: Mapped[str] = mapped_column(ForeignKey('workspaces.id'), index=True)
     kind: Mapped[str] = mapped_column(String(20))

@@ -689,3 +689,9 @@ Browser เพิ่มทดสอบค้นหาบริการ/empty/re
 - Backup/restore was exercised with local application writers paused. A disposable restored database matched row counts and snapshots, including encrypted `ai_connections`, Provider connection references, import previews and imported row markers; restored journals balanced. Local writers were restarted afterward.
 - New migration: `connections_and_imports`. Existing encrypted credentials are moved without decrypting or automatically merging connections; model IDs and routing/usage references are retained.
 - CSV parsing uses no AI calls. Provider transport checks use mock responses and synthetic data. These results do not certify every real bank CSV or every live model API. No Git push, GitHub CI run or Ubuntu production deployment is included in this local verification.
+
+## 21 ตุลาคม 2026 — ลบผู้ให้บริการ AI พร้อมโมเดลที่ผูกอยู่
+
+- PostgreSQL affected backend/configuration/security/workspace/diagnostics suite: **99 passed**, one upstream Starlette/httpx deprecation warning. Includes owner-only deletion previews, explicit linked-model confirmation, stale-plan rejection, scoped removal, preserved chat/usage history, price cleanup and AI epoch invalidation.
+- Desktop/mobile affected browser suite: **16 passed (22.9s)**. Includes cancel without removal, deleting a used connection with Chat/Extract profiles, keeping other connections, refreshing a stale plan and the existing settings/CSV flows.
+- After compacting the final confirmation header on mobile, the deletion browser scenarios were re-run: **4 passed (5.8s)**. The final mobile dialog was visually inspected. Frontend typecheck, production build and Git whitespace checks passed. No schema migration or environment change. Verification uses a disposable local demo account and synthetic providers; no real provider configuration was deleted and no production deployment is included.

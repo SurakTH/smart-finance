@@ -106,3 +106,68 @@ def test_linked_runtime_uses_rotated_key_and_existing_fallback(setup,monkeypatch
     while run_once():pass
     assert calls==['Bearer rotated-key']
     assert c.get(b+'/proposals').json()[0]['amount']==8000
+
+
+def test_reviewed_connection_removal_deletes_only_linked_profiles_and_preserves_history(setup):
+    from app.models import AIUsage,AIUsagePolicy,Conversation,Message
+    c,w,u,b=setup
+    conns=[c.post(b+'/ai/connections',json=dict(name=name,kind='ollama')).json() for name in ('remove','keep')]
+    profiles=[]
+    for conn,task in [(conns[0],'chat'),(conns[0],'extract'),(conns[1],'chat')]:
+        r=c.post(b+'/providers',json=dict(connection_id=conn['id'],kind='ollama',model='model-'+task,task=task))
+        assert r.status_code==200,r.text
+        profiles.append(r.json())
+    with SessionLocal.begin() as db:
+        room=Conversation(workspace_id=w,user_id=u.id,title='keep history');db.add(room);db.flush()
+        message=Message(workspace_id=w,conversation_id=room.id,role='assistant',content='retained synthetic reply');db.add(message)
+        usage=AIUsage(workspace_id=w,provider_id=profiles[0]['id'],model='model-chat',task='chat',month='2026-10',input_tokens=10,output_tokens=5,cost=1,status='done');db.add(usage)
+        db.add(AIUsagePolicy(workspace_id=w,monthly_limit=100,prices={p['id']:{'input':1,'output':2} for p in profiles}));db.flush()
+        mid=message.id;usage_id=usage.id;before_epoch=db.get(Workspace,w).ai_epoch
+    path=b+'/ai/connections/'+conns[0]['id']
+    plan=c.get(path+'/deletion-preview');assert plan.status_code==200
+    assert {p['id'] for p in plan.json()['models']}=={p['id'] for p in profiles[:2]}
+    assert set(plan.json())=={'id','name','models'} and 'encrypted_key' not in plan.text
+    assert c.delete(path).status_code==409
+    body={'expected_model_ids':[p['id'] for p in plan.json()['models']]}
+    assert c.request('DELETE',path,json=body).json()=={'ok':True,'deleted_models':2}
+    assert [p['id'] for p in c.get(b+'/providers').json()]==[profiles[2]['id']]
+    with SessionLocal() as db:
+        assert db.get(AIConnection,conns[0]['id']) is None
+        assert db.get(AIConnection,conns[1]['id']) is not None
+        assert db.get(Message,mid).content=='retained synthetic reply'
+        assert db.get(AIUsage,usage_id).cost==1
+        assert set(db.get(AIUsagePolicy,w).prices)=={profiles[2]['id']}
+        assert db.get(Workspace,w).ai_epoch>before_epoch
+
+
+def test_connection_deletion_rejects_stale_plan_including_previously_unused_connection(setup):
+    c,w,u,b=setup
+    conn=c.post(b+'/ai/connections',json=dict(name='test',kind='ollama')).json()
+    path=b+'/ai/connections/'+conn['id']
+    plan=c.get(path+'/deletion-preview').json();assert plan['models']==[]
+    profile=c.post(b+'/providers',json=dict(connection_id=conn['id'],kind='ollama',model='new-model',task='chat')).json()
+    assert c.request('DELETE',path,json={'expected_model_ids':[]}).status_code==409
+    assert c.get(path+'/deletion-preview').json()['models'][0]['id']==profile['id']
+    assert c.request('DELETE',path,json={'expected_model_ids':[profile['id'],profile['id']]}).status_code==422
+    assert c.request('DELETE',path,json={'expected_model_ids':[str(uuid.uuid4())]}).status_code==409
+    assert len(c.get(b+'/providers').json())==1
+
+
+def test_connection_deletion_owner_and_tenant_checks(setup):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c,w,u,b=setup
+    conn=c.post(b+'/ai/connections',json=dict(name='owned',kind='ollama')).json()
+    path=b+'/ai/connections/'+conn['id']
+    with SessionLocal.begin() as db:
+        other=create_user(db,uuid.uuid4().hex+'@test.local','secure-test-password')
+        foreign=db.scalar(select(Membership.workspace_id).where(Membership.user_id==other.id))
+        db.add(Membership(user_id=other.id,workspace_id=w,role='member'))
+    with TestClient(app,base_url='https://testserver',headers={'X-SF-Request':'1'}) as client:
+        assert client.post('/auth/login',json={'email':other.email,'password':'secure-test-password'}).status_code==200
+        assert client.get(path+'/deletion-preview').status_code==403
+        assert client.request('DELETE',path,json={'expected_model_ids':[]}).status_code==403
+        foreign_path=f'/workspaces/{foreign}/ai/connections/{conn["id"]}'
+        assert client.get(foreign_path+'/deletion-preview').status_code==404
+        assert client.request('DELETE',foreign_path,json={'expected_model_ids':[]}).status_code==404
+    assert c.get(path+'/deletion-preview').status_code==200

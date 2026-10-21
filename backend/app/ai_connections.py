@@ -1,5 +1,6 @@
 """Owner-managed, workspace-scoped reusable AI credentials."""
 from fastapi import Depends, HTTPException
+from uuid import UUID
 from pydantic import BaseModel, Field
 from sqlalchemy import select,update
 from sqlalchemy.orm import Session
@@ -15,6 +16,12 @@ class ConnectionInput(BaseModel):
     endpoint: str = Field(default='',max_length=500)
     api_key: str = Field(default='',max_length=500)
     clear_key: bool = False
+
+
+class ConnectionDeletion(BaseModel):
+    # Explicitly name the linked models the owner reviewed. New/moved profiles
+    # invalidate the plan instead of silently expanding the destructive action.
+    expected_model_ids: list[UUID] = Field(max_length=30)
 
 
 def credential(p):
@@ -90,10 +97,32 @@ def install(router):
         lock(db,wid)
         return save(db,wid,data,get_scoped(db,AIConnection,wid,cid))
 
+    def linked_models(db,wid,cid):
+        return db.scalars(select(Provider).where(Provider.workspace_id==wid,Provider.connection_id==cid).order_by(Provider.task,Provider.priority,Provider.id)).all()
+
+    @router.get('/ai/connections/{cid}/deletion-preview')
+    def deletion_preview(wid:str,cid:str,db:Session=Depends(get_db,scope='function')):
+        c=get_scoped(db,AIConnection,wid,cid)
+        return {'id':c.id,'name':c.name,'models':[
+            {key:getattr(p,key) for key in ('id','name','model','task')} for p in linked_models(db,wid,cid)]}
+
     @router.delete('/ai/connections/{cid}')
-    def remove(wid:str,cid:str,db:Session=Depends(get_db,scope='function')):
+    def remove(wid:str,cid:str,data:ConnectionDeletion|None=None,db:Session=Depends(get_db,scope='function')):
         lock(db,wid);c=get_scoped(db,AIConnection,wid,cid)
-        if db.scalar(select(Provider.id).where(Provider.workspace_id==wid,Provider.connection_id==cid).limit(1)):raise HTTPException(409,'ยังมีโมเดลใช้การเชื่อมต่อนี้ ย้ายหรือลบโมเดลก่อน')
+        profiles=linked_models(db,wid,cid)
+        ids={p.id for p in profiles}
+        if data is None:
+            # Keep old API clients safe: ordinary DELETE cannot remove models.
+            if ids:raise HTTPException(409,'มีโมเดลใช้ผู้ให้บริการนี้ กรุณาตรวจรายการและยืนยันลบพร้อมโมเดล')
+        else:
+            expected=[str(pid) for pid in data.expected_model_ids]
+            if len(expected)!=len(set(expected)):raise HTTPException(422,'รายการโมเดลซ้ำ')
+            if set(expected)!=ids:raise HTTPException(409,'รายการโมเดลเปลี่ยนแล้ว กรุณาโหลดรายการที่จะลบใหม่')
+        from .models import AIUsagePolicy
+        policy=db.get(AIUsagePolicy,wid)
+        if policy:policy.prices={key:value for key,value in policy.prices.items() if key not in ids}
+        for p in profiles:db.delete(p)
+        db.flush()
         db.delete(c)
         db.execute(update(Workspace).where(Workspace.id==wid).values(ai_epoch=Workspace.ai_epoch+1))
-        return {'ok':True}
+        return {'ok':True,'deleted_models':len(ids)}

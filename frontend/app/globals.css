@@ -1385,3 +1385,13 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding: 28px
  .import-table td{display:block;grid-column:2;padding:.2rem 0;border:0;min-width:0}.import-table td:first-child{grid-column:1;grid-row:1/4}
  .import-table td strong,.import-table td small,.import-table td span{max-width:none}.import-table select{width:100%;max-width:none}
 }
+
+.connection-delete-link{color:#a53e35}.connection-delete-button{background:#a43c32;color:#fff}.connection-delete-button:hover{background:#873129}
+.connection-delete-dialog h2{display:flex;align-items:center;gap:.6rem}.connection-delete-dialog p{line-height:1.7;overflow-wrap:anywhere}
+.connection-delete-models{list-style:none;padding:0;margin:1rem 0;max-height:36dvh;overflow:auto;border:1px solid var(--border);border-radius:14px}
+.connection-delete-models li{display:flex;justify-content:space-between;gap:1rem;padding:.8rem 1rem;border-bottom:1px solid var(--border)}.connection-delete-models li:last-child{border-bottom:0}
+.connection-delete-models strong,.connection-delete-models small{display:block;overflow-wrap:anywhere}.connection-delete-models small,.connection-delete-models span{font-size:.85rem;color:var(--muted)}
+.connection-delete-dialog .error{display:grid;gap:.7rem}.connection-delete-dialog .error button{justify-self:start}
+@media(max-width:640px){.connection-delete-dialog .ai-editor-actions{display:grid;grid-template-columns:1fr}.connection-delete-dialog .ai-editor-actions button{white-space:normal;height:auto;min-height:48px}.connection-delete-models li{flex-direction:column;gap:.2rem}}
+
+.connection-delete-titlebar{display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem}.connection-delete-titlebar h2{margin:0;min-width:0;font-size:clamp(20px,2vw,26px);line-height:1.4}.connection-delete-close{flex-shrink:0;min-width:40px;height:40px;padding:.25rem}

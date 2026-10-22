@@ -197,13 +197,16 @@ def handle(db,c,user_id,text,review_message_id=None,allow_model_dialogue=False):
             entry_id=result['replacement']['id']
         else: entry_id=post(db,c.workspace_id,user_id,TransactionInput(**p['transaction'])).id
         if image_id:
-            db.add(Proposal(workspace_id=c.workspace_id,source='ai_chat',description=p['transaction']['description'],amount=p['transaction']['amount'],kind=p['transaction']['kind'],status='confirmed',entry_id=entry_id,attachment_id=image_id))
+            db.add(Proposal(workspace_id=c.workspace_id,source='ai_chat',description=p['transaction']['description'],amount=p['transaction']['amount'],kind=p['transaction']['kind'],status='confirmed',entry_id=entry_id,attachment_id=image_id,receipt=p.get('receipt')))
         action.status='confirmed'; action.entry_id=entry_id
         c.capture_context={**(c.capture_context or {}),'last_entry_id':entry_id}
         db.flush()
         return ('แก้ไขและเก็บประวัติเดิมเรียบร้อยแล้ว' if p['target'] else 'บันทึกรายการเรียบร้อยแล้ว')+'\n'+p['after']
     if text.startswith(('ยืนยัน','ยกเลิก')):
         return 'พิมพ์แค่ ยืนยัน หรือ ยกเลิก สำหรับรายการที่ฉันเพิ่งทวนได้เลยค่ะ'
+    from .chat_dialogue import answer_clarification
+    selection=answer_clarification(db,c,user_id,text)
+    if selection is not None:return selection
     from .chat_batch import edit
     batch_reply=edit(db,c,user_id,text)
     if batch_reply is not None:return batch_reply
@@ -283,6 +286,9 @@ def review_text(action):
         if payload['target']:review+='\nเหตุผล: '+payload['reason']
     if payload.get('duplicate_warnings'):
         review+='\n\n⚠ อาจซ้ำ กรุณาตรวจสอบก่อนยืนยัน:\n'+'\n'.join(payload['duplicate_warnings'])
+    if payload.get('receipt'):
+        from .receipt_reader import notes
+        if notes(payload['receipt']):review+='\n\nอ่านจากสลิป:\n'+notes(payload['receipt'])
     # Retain the optional code for older clients and advanced use. Ordinary users only type ยืนยัน.
     return 'กรุณาตรวจสอบ — ยังไม่บันทึก\n\n'+review+f'\n\nถ้าถูกต้อง พิมพ์ ยืนยัน ได้เลยค่ะ หรือ ยกเลิก ถ้าไม่เอารายการนี้ (ไม่ต้องใส่เครื่องหมายคำพูดหรือรหัส)\nอยากเปลี่ยนอะไรบอกได้เลย ข้อเสนอนี้รอได้ 15 นาที\n\nรหัสทางเลือก:\nยืนยัน {action.code}\n'
 

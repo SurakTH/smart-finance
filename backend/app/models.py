@@ -92,6 +92,7 @@ class Proposal(Base):
     status: Mapped[str] = mapped_column(String(20), default='pending')
     entry_id: Mapped[str | None] = mapped_column(String(36), nullable=True, unique=True)
     attachment_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    receipt: Mapped[dict | None] = mapped_column(JSON,nullable=True)
     created_at: Mapped[int] = mapped_column(BigInteger, default=now)
     __table_args__ = (UniqueConstraint('id','workspace_id'),ForeignKeyConstraint(['entry_id','workspace_id'], ['entries.id','entries.workspace_id']), ForeignKeyConstraint(['attachment_id','workspace_id'], ['attachments.id','attachments.workspace_id'],name='fk_proposal_attachment_workspace'))
 

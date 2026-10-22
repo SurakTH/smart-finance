@@ -48,6 +48,7 @@ def test_picture_caption_model_review_and_plain_confirm(channel):
         db.scalar(select(Provider).where(Provider.workspace_id==w)).supports_images=True
     state['responses']=[tool('prepare_transaction',dict(intent='create',kind='expense',amount=21200,
         description='ค่าหนังสือ',account_id=wallet,category_id=cat,occurred_on='2026-09-30'))]
+    state['receipt_fields']=dict(paid_amount='212.00',date_text='2026-09-30')
     assert capture(1,'ค่าหนังสือ',receipt()[1])==ACK
     assert capture(1,'ค่าหนังสือ',receipt()[1])==ACK
     with SessionLocal() as db:

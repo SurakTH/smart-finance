@@ -1395,3 +1395,5 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding: 28px
 @media(max-width:640px){.connection-delete-dialog .ai-editor-actions{display:grid;grid-template-columns:1fr}.connection-delete-dialog .ai-editor-actions button{white-space:normal;height:auto;min-height:48px}.connection-delete-models li{flex-direction:column;gap:.2rem}}
 
 .connection-delete-titlebar{display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem}.connection-delete-titlebar h2{margin:0;min-width:0;font-size:clamp(20px,2vw,26px);line-height:1.4}.connection-delete-close{flex-shrink:0;min-width:40px;height:40px;padding:.25rem}
+
+.receipt-details p{font-size:12px;line-height:1.7;color:var(--muted);overflow-wrap:anywhere}.receipt-details .receipt-warning{color:#946320;background:#fff7e8;border-radius:8px;padding:8px 10px;margin-top:6px}

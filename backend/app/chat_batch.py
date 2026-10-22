@@ -50,8 +50,8 @@ def apply(db,c,user_id,action):
     # Deliberately no savepoint/catch: any failure rolls back the caller's entire
     # transaction, including every journal, proposal, message and action status.
     entries=[post(db,c.workspace_id,user_id,tx) for tx in transactions]
-    for tx,entry in zip(transactions,entries):
-        if image_id:db.add(Proposal(workspace_id=c.workspace_id,source='ai_chat',description=tx.description,amount=tx.amount,kind=tx.kind,status='confirmed',entry_id=entry.id,attachment_id=image_id))
+    for tx,entry,item in zip(transactions,entries,p['items']):
+        if image_id:db.add(Proposal(workspace_id=c.workspace_id,source='ai_chat',description=tx.description,amount=tx.amount,kind=tx.kind,status='confirmed',entry_id=entry.id,attachment_id=image_id,receipt=item.get('receipt')))
     action.status='confirmed';action.entry_id=entries[-1].id
     c.capture_context={**(c.capture_context or {}),'last_entry_id':entries[-1].id}
     db.flush()

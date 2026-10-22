@@ -1,5 +1,5 @@
 """Static validation metadata only; never include model input or unknown keys."""
-FIELDS={'resource','account_id','category_id','clear_filters','text','metric','reuse_previous_scope','compare_period','weekday','relation','bucket','group_by','order','question','period','mode','phrase','days','account','category','source_message_id','action','missing','queries','resource','q','kind','month','cursor','limit','operation','start','end','account_id','category_id','other_account_id','amount','intent','description','occurred_on','transactions','attachment_id','reply','toolkit','operations','changes','entry_id','reason','name','target','due_on','rationale'}
+FIELDS={'continue_draft','resource','account_id','category_id','clear_filters','text','metric','reuse_previous_scope','compare_period','weekday','relation','bucket','group_by','order','question','period','mode','phrase','days','account','category','source_message_id','action','missing','queries','resource','q','kind','month','cursor','limit','operation','start','end','account_id','category_id','other_account_id','amount','intent','description','occurred_on','transactions','attachment_id','reply','toolkit','operations','changes','entry_id','reason','name','target','due_on','rationale'}
 CODES={'missing','extra_forbidden','string_type','string_too_long','literal_error','uuid_parsing','int_type','greater_than','less_than_equal','greater_than_equal','string_pattern_mismatch','date_from_datetime_parsing','json_invalid','model_type'}
 
 def issues(error):
@@ -27,4 +27,7 @@ def feedback(error):
     field=getattr(error,'field',None)
     if not found and isinstance(field,str) and field in FIELDS:found=[dict(field=field,code='unknown_reference')]
     hints=list(dict.fromkeys(HELP[v['field'].split('.')[0]] for v in found if v['field'].split('.')[0] in HELP))
+    from .assistant_data import BalanceFilterConflict
+    if isinstance(error,BalanceFilterConflict):
+        return dict(issues=found,message='balances is the current accumulated wallet balance, not transactions in a period. Remove the listed transaction-only filters (including period/metric/category). Keep the requested wallet if any. For period spending use summary instead. Do not ask the user to rephrase.')
     return dict(issues=found,message=' '.join(hints[:3]) or 'แก้ argument ของเครื่องมือเองจากบริบทหรือค้นชื่อจริงก่อน ไม่ต้องให้ผู้ใช้กรอก format ห้ามเลือกผู้ใช้หรือ workspace อื่น')

@@ -270,9 +270,12 @@ def clarification(db,room,field):
 def claims_execution(text):
     # Spending that happened in the ledger is not a claim that the assistant
     # executed a write. Advice and references to existing records aren't either.
-    pattern=r'(?:บันทึก|แก้ไข|ลบ|สร้างบัญชี|สร้างหมวด|เพิ่มรายการ|โอนเงิน|เปลี่ยนยอด).{0,45}(?:สำเร็จ|เรียบร้อย|แล้ว)|\b(?:saved|updated|deleted|recorded|transferred|completed)\b'
-    for match in re.finditer(pattern,text,re.I):
+    verbs=r'บันทึก|แก้ไข|ลบ|สร้างบัญชี|สร้างหมวด|เพิ่มรายการ|โอนเงิน|เปลี่ยนยอด'
+    pattern=rf'(?:{verbs})(?:(?!(?:{verbs})|[.!?\n]).){{0,45}}(?:สำเร็จ|เรียบร้อย|แล้ว)|\b(?:saved|updated|deleted|recorded|transferred|completed)\b'
+    # Overlap matters: a negated verb must not swallow a later positive claim
+    # inside the bounded object phrase ("ยังไม่ได้...แต่ตอนนี้บันทึกแล้ว").
+    for match in re.finditer('(?=('+pattern+'))',text,re.I):
         prefix=text[max(0,match.start()-25):match.start()]
-        if re.search(r'(?:ลอง|ควร|ถ้า|แนะนำ|ค่อย|ก่อนจะ)[^.!?\n]{0,18}$|(?:รายการ|ข้อมูล)ที่$',prefix):continue
+        if re.search(r'(?:ลอง|ควร|ถ้า|แนะนำ|ค่อย|ก่อนจะ|สามารถ)[^.!?\n]{0,18}$|(?:รายการ|ข้อมูล)ที่(?:เคย|ยังไม่(?:ได้)?|ไม่ได้)?$|(?:ยังไม่ได้|ไม่ได้|ไม่เคย)$',prefix):continue
         return True
     return False

@@ -180,7 +180,8 @@ def test_picture_caption_is_not_taken_over_by_the_plain_text_read_path(assistant
     response=c.post(b+f'/conversations/{cid}/images',files={'file':receipt()},data={'text':'เมื่อวานเสียตังกับไรบ้าง'})
     assert response.status_code==200
     while run_once():pass
-    assert len(state['calls'])==1
+    assert len(state['calls'])==2
     assert any(isinstance(m.get('content'),list) and any(p.get('type')=='image_url' for p in m['content']) for m in state['calls'][0]['messages'])
+    assert 'data:image' not in str(state['calls'][1]['messages']) and 'receipt_reading' in str(state['calls'][1]['messages'])
     assert 'เห็นภาพแล้วค่ะ' in c.get(b+f'/conversations/{cid}/messages').json()[-1]['content']
     assert c.get(b+'/transactions').json()==[]

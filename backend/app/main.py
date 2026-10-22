@@ -7,7 +7,7 @@ from fastapi import FastAPI, Depends, HTTPException, Request, Response, UploadFi
 from fastapi.responses import Response as RawResponse
 from sqlalchemy import select, func, delete
 from sqlalchemy.orm import Session as DBSession
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 from . import config
 from .db import get_db
 from .models import User, Workspace, Membership, Session, Account, Entry, Line, Proposal, Attachment, Conversation, Message, Job, LinkCode, TelegramLink, now, message_time
@@ -313,7 +313,7 @@ def store_image(db, wid, data):
     try:
         with Image.open(io.BytesIO(data)) as img:
             if img.format not in ('JPEG','PNG','WEBP') or img.width*img.height>16_000_000: raise ValueError()
-            img = img.convert('RGB'); img.thumbnail((2000,2000))
+            img = ImageOps.exif_transpose(img).convert('RGB'); img.thumbnail((2000,2000))
             buf = io.BytesIO(); img.save(buf,format='JPEG',quality=90)
             clean = buf.getvalue()
     except (UnidentifiedImageError, ValueError, OSError, Image.DecompressionBombError): raise HTTPException(422,'รูปภาพไม่ถูกต้อง')

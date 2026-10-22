@@ -14,6 +14,20 @@ def batch(w,**changes):
     return {'intent':'create','transactions':[first,{**first,'description':'กาแฟ','amount':7500}],**changes}
 
 
+def test_one_item_model_batch_can_be_amended_without_item_number(actor,monkeypatch):
+    c,w,u,b,cid=setup(actor)
+    calls=mock_provider(monkeypatch,w,lambda:{'intent':'create','transactions':[suggestion(w)]})
+    review=run(c,w,b,cid,'จดกาแฟ200บาทเงินสด')
+    assert 'กรุณาตรวจสอบ' in review and '฿200.00' in review and count(w)==0
+    edited=say(c,b,cid,'เอาเป็น 85 บาทนะ')
+    assert '฿85.00' in edited and 'รายการที่เท่าไหร่' not in edited and count(w)==0
+    assert 'บันทึกรายการเรียบร้อย' in say(c,b,cid,'ยืนยัน')
+    assert 'ไม่มีการบันทึกซ้ำ' in say(c,b,cid,'ยืนยัน')
+    with SessionLocal() as db:
+        assert db.scalar(select(Entry.amount).where(Entry.workspace_id==w))==8500
+    assert count(w)==1 and len(calls)==1
+
+
 def test_one_model_call_batch_edit_remove_plain_confirm_replay(actor,monkeypatch):
     c,w,u,b,cid=setup(actor)
     calls=mock_provider(monkeypatch,w,lambda:batch(w))
@@ -93,7 +107,8 @@ def test_image_batch_evidence_one_call_and_repeated_image_blocked(actor,monkeypa
     with SessionLocal.begin() as db:ai.process_job(db,db.get(Job,result['job_id']))
     review=c.get(b+f'/conversations/{cid}/messages').json()[-1]
     assert review['attachment_id']==result['attachment_id'] and '2 รายการ' in review['content'] and count(w)==0
-    assert len(calls)==1
+    assert len(calls)==2
+    assert "tools" not in calls[0] and "data:image" not in str(calls[1]["messages"])
     say(c,b,cid,'ยืนยัน');assert count(w)==2
     with SessionLocal() as db:
         proposals=db.scalars(select(Proposal).where(Proposal.workspace_id==w)).all()

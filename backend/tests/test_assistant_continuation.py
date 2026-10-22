@@ -195,7 +195,7 @@ def test_upstream_protocol_diagnostics_never_save_raw_error_or_arbitrary_params(
 
 
 @pytest.mark.parametrize('stream',[False,True])
-def test_natural_answer_repair_preserves_private_assistant_state_too(assistant,stream):
+def test_natural_answer_repair_preserves_tool_state_without_rejected_prefill(assistant,stream):
     c,w,u,b,cid,wallet,cat,state,post,send=assistant;post(8000,on='2026-10-10')
     first={**fetch(period='สัปดาห์ที่แล้ว',metric='expense'),'reasoning_content':PRIVATE+'-read'}
     bad={**prose('คุณใช้ไป 999999 บาทค่ะ'),'reasoning_content':PRIVATE+'-repair'}
@@ -208,7 +208,9 @@ def test_natural_answer_repair_preserves_private_assistant_state_too(assistant,s
                 return httpx.Response(400,json={'error':{'message':'System messages must be at the beginning','param':'messages'}})
             seen_non_system=seen_non_system or message['role']!='system'
         messages=[m for m in body['messages'] if m['role']=='assistant']
-        assert [m.get('reasoning_content') for m in messages]==[PRIVATE+'-read',PRIVATE+'-repair']
+        assert [m.get('reasoning_content') for m in messages]==[PRIVATE+'-read']
+        assert body['messages'][-1]['role']=='tool'
+        assert '999999' not in json.dumps(body) and PRIVATE+'-repair' not in json.dumps(body)
         return prose('ใช้ไป 80 บาทค่ะ')
     state['responses']=[streamed(first) if stream else first,streamed(bad) if stream else bad,strict_repair]
     reply=send('สัปดาห์ที่แล้วใช้ไปเท่าไหร่')

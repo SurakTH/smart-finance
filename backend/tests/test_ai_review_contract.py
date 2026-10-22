@@ -19,7 +19,10 @@ def test_phantom_review_is_repaired_to_real_draft_then_plain_confirm(assistant):
     assert 'กรุณาตรวจสอบ' in value['content'] and count(w)==0 and len(state['calls'])==2
     messages=state['calls'][1]['messages']
     assert any(m['role']=='system' and 'ข้อความก่อนหน้ายังไม่ได้สร้างร่างจริง' in m['content'] for m in messages)
-    assert messages[-1]['role']=='assistant' and messages[-1]['content']==PHANTOM
+    # Ollama treats a trailing assistant message as a response prefill. Do not
+    # replay the rejected phantom as a prefill or as evidence for a new draft.
+    assert messages[-1]['role']=='user' and messages[-1]['content']=='ช่วยจดอาหาร 138.60 บาท เงินสด'
+    assert PHANTOM not in json.dumps(messages,ensure_ascii=False)
     first_data=next(i for i,m in enumerate(messages) if m['role']!='system')
     assert all(m['role']!='system' for m in messages[first_data:])
     assert c.post(b+f'/conversations/{cid}/messages',json={'text':'ยืนยัน','review_message_id':value['id']}).status_code==200

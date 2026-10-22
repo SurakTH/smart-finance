@@ -21,14 +21,49 @@ class TransactionSuggestion(BaseModel):
     account_id: UUID | None = None
     category_id: UUID | None = None
     other_account_id: UUID | None = None
+    account: str | None = Field(default=None,min_length=1,max_length=100)
+    category: str | None = Field(default=None,min_length=1,max_length=100,description='Infer an existing category from purpose; ask if unclear or user wants to choose. Respect explicit choices/preferences.')
+    other_account: str | None = Field(default=None,min_length=1,max_length=100)
     attachment_id: UUID | None = None
     occurred_on: date | None = None
     reply: str | None = Field(default=None,max_length=1000)
 
 class Suggestion(TransactionSuggestion):
     intent: Literal['create','clarify','chat'] = Field(...)
-    transactions: list[TransactionSuggestion] | None = Field(default=None,min_length=1,max_length=10)
+    transactions: list[TransactionSuggestion] | None = Field(default=None,min_length=1,max_length=10,description='Separate prices require separate transactions: rice55+water20 =>5500 and2000 satang, not7500.')
     continue_draft: bool = False
+
+
+def single_item(data,attachment_id=None):
+    """Canonicalize an unambiguous one-item shape BEFORE applying a patch."""
+    if data.intent!='create' or data.transactions is None or len(data.transactions)!=1:return data
+    item=data.transactions[0]
+    fields=set(TransactionSuggestion.model_fields)-{'intent','attachment_id','reply'}
+    source=str(data.attachment_id) if data.attachment_id else attachment_id
+    if item.intent!='create' or any(getattr(data,key) is not None for key in fields) or (item.attachment_id and str(item.attachment_id)!=source):return data
+    value={**item.model_dump(mode='json',exclude_unset=True),'intent':'create','continue_draft':data.continue_draft}
+    if source is not None:value['attachment_id']=source
+    return Suggestion.model_validate(value)
+
+def named_references(db,c,raw):
+    """Resolve model-selected names inside this workspace, never fuzzy-match IDs.
+
+    Ambiguous/unknown names require a lookup or clarification. An explicitly
+    supplied ID must agree with the name; it cannot be silently replaced.
+    """
+    from sqlalchemy import func
+    data=Suggestion.model_validate_json(raw).model_dump(mode='json',exclude_unset=True)
+    for item in [data,*(data.get('transactions') or [])]:
+        kind=item.get('kind')
+        for name,kinds in [('account',('asset','liability') if kind in (None,'expense') else ('asset',)),('category',(kind,) if kind in ('expense','income') else ('expense','income')),('other_account',('asset','liability'))]:
+            value=item.pop(name,None)
+            if value is None:continue
+            rows=list(db.scalars(select(Account.id).where(Account.workspace_id==c.workspace_id,Account.kind.in_(kinds),func.lower(Account.name)==value.strip().lower()).limit(2)))
+            field=name+'_id'
+            if len(rows)!=1 or item.get(field) not in (None,rows[0]):
+                error=ValueError('Unknown or ambiguous reference');error.field=name;raise error
+            item[field]=rows[0]
+    return json.dumps(data,ensure_ascii=False)
 
 def available(db,c):
     from .models import Provider
@@ -89,10 +124,51 @@ def continuing(db,c,user_id,data):
     return Suggestion.model_validate(merged)
 
 
-def resolve(db,c,user_id,output,attachment_id=None,_collect=False):
+def clarification_choices(db,c,draft,field):
+    """Only currently eligible references from the active workspace."""
+    kind=draft.get('kind')
+    if field=='account_id':kinds=('asset','liability') if kind=='expense' else ('asset',)
+    elif field=='category_id' and kind in ('expense','income'):kinds=(kind,)
+    elif field=='other_account_id' and kind in ('transfer','card_payment'):kinds=('asset',) if kind=='transfer' else ('liability',)
+    else:return []
+    query=select(Account).where(Account.workspace_id==c.workspace_id,Account.kind.in_(kinds))
+    if field=='other_account_id' and draft.get('account_id'):query=query.where(Account.id!=str(draft['account_id']))
+    return list(db.scalars(query.order_by(Account.name,Account.id)))
+
+
+def answer_clarification(db,c,user_id,text):
+    """An exact answer to an active reference question fills only that field.
+
+    Other prose still goes to the model. Never interpret a substring, an ordinal,
+    an expired draft, or another user's reference as a selection.
+    """
+    if c.user_id!=user_id:return None
+    pending=(c.capture_context or {}).get('ai_followup',{})
+    if pending.get('expires',0)<=now() or not pending.get('draft'):return None
+    field=pending.get('field','');draft=dict(pending['draft']);target=draft
+    if field.startswith('transactions.'):
+        parts=field.split('.')
+        if len(parts)!=3 or not parts[1].isdigit():return None
+        items=draft.get('transactions') or [];index=int(parts[1])
+        if index>=len(items):return None
+        draft['transactions']=[dict(item) for item in items];target=draft['transactions'][index];field=parts[2]
+    options=clarification_choices(db,c,target,field)
+    matches=[a for a in options if a.name.strip().casefold()==text.strip().casefold()]
+    if len(matches)!=1:return None
+    from .models import Job
+    if db.scalar(select(Job.id).where(Job.workspace_id==c.workspace_id,Job.user_id==user_id,Job.task=='chat',Job.status=='pending',Job.payload['conversation_id'].as_string()==c.id).limit(1)):
+        return None
+    target[field]=matches[0].id
+    target.pop(field.removesuffix('_id'),None)
+    draft.update(intent='create',continue_draft=False)
+    return resolve(db,c,user_id,json.dumps(draft,ensure_ascii=False))
+
+
+def resolve(db,c,user_id,output,attachment_id=None,_collect=False,_receipt_item=False):
     """Validate every ID/type; user confirmation always happens in a separate HTTP request."""
     try:
         data=Suggestion.model_validate_json(output.removeprefix('```json').removeprefix('```').removesuffix('```').strip())
+        if not _collect:data=single_item(data,attachment_id)
         data=continuing(db,c,user_id,data)
     except (ValidationError,ValueError,TypeError,AttributeError):
         return 'ฉันยังจับรายละเอียดไม่ครบค่ะ บอกสิ่งที่จ่ายหรือรับ พร้อมยอดเงินอีกครั้งได้ไหมคะ? ยังไม่ได้บันทึกนะคะ'
@@ -104,7 +180,7 @@ def resolve(db,c,user_id,output,attachment_id=None,_collect=False):
         for index,item in enumerate(data.transactions,1):
             if item.intent!='create' or (item.attachment_id and str(item.attachment_id)!=image_id):
                 return f'รายการที่ {index} ไม่ตรงกับชุดนี้ค่ะ ยังไม่ได้บันทึก'
-            value=resolve(db,c,user_id,item.model_dump_json(),image_id,_collect=True)
+            value=resolve(db,c,user_id,item.model_dump_json(),image_id,_collect=True,_receipt_item=True)
             if not isinstance(value,dict):
                 context=dict(c.capture_context or {});pending=context.get('ai_followup')
                 if pending and pending.get('expires',0)>now():
@@ -112,14 +188,35 @@ def resolve(db,c,user_id,output,attachment_id=None,_collect=False):
                     c.capture_context=context
                 return f'รายการที่ {index}: '+value
             items.append(value)
+        if attachment_id:
+            from .receipt_reader import current
+            receipt=current(c,image_id)
+            if receipt and receipt.get('is_receipt') and (receipt.get('paid_satang') is None or sum(v['transaction']['amount'] for v in items)!=receipt['paid_satang']):
+                return 'ยอดรายการย่อยรวมไม่ตรงกับยอดจ่ายจริงจากสลิปค่ะ กรุณาตรวจยอดของแต่ละรายการ ยังไม่ได้บันทึกทั้งชุด'
         return prepare_review(db,c,user_id,dict(type='transactions',items=items,attachment_id=image_id))
     if data.intent=='chat':
         # Treat prose as untrusted, just like ordinary model chat. It never binds a review.
         return data.reply or 'อยากให้ช่วยดูเรื่องไหน บอกฉันได้เลยค่ะ'
     image_id=str(data.attachment_id) if data.attachment_id else attachment_id
+    receipt=None
     if image_id:
         owned=db.scalar(select(Message.id).where(Message.workspace_id==c.workspace_id,Message.conversation_id==c.id,Message.role=='user',Message.attachment_id==image_id).limit(1))
         if not owned:return 'ไม่พบรูปนี้ในบทสนทนาของคุณค่ะ ยังไม่ได้บันทึก'
+        from .receipt_reader import current
+        receipt=current(c,image_id)
+        if receipt and not receipt.get('is_receipt'):receipt=None
+        if receipt:
+            updates={}
+            if attachment_id:
+                # A new image draft uses the normalized paid total. Do not ask
+                # the language model to convert 18 baht into satang again. Later
+                # explicit user edits still use the normal continuing-draft path.
+                paid=receipt.get('paid_satang')
+                if not _receipt_item:updates['amount']=paid if paid and paid>0 else None
+                updates['occurred_on']=date.fromisoformat(receipt['occurred_on']) if receipt.get('occurred_on') else None
+            if not _receipt_item and data.amount is None and receipt.get('paid_satang',0) and receipt['paid_satang']>0:updates['amount']=receipt['paid_satang']
+            if data.occurred_on is None and receipt.get('occurred_on'):updates['occurred_on']=date.fromisoformat(receipt['occurred_on'])
+            if updates:data=data.model_copy(update=updates)
         confirmed=db.scalar(select(Proposal.id).where(Proposal.workspace_id==c.workspace_id,Proposal.attachment_id==image_id,Proposal.status=='confirmed').limit(1))
         if confirmed:return 'รูปนี้มีรายการบันทึกแล้วค่ะ ไม่สร้างรายการซ้ำ'
         actions=db.scalars(select(ChatAction).where(ChatAction.workspace_id==c.workspace_id,ChatAction.status=='pending',ChatAction.expires>now())).all()
@@ -129,9 +226,6 @@ def resolve(db,c,user_id,output,attachment_id=None,_collect=False):
     rows={a.id:a for a in db.scalars(select(Account).where(Account.workspace_id==c.workspace_id,Account.id.in_(ids)))} if ids else {}
     def choices(kinds,limit=7):
         return db.scalars(select(Account).where(Account.workspace_id==c.workspace_id,Account.kind.in_(kinds)).order_by(Account.name,Account.id).limit(limit)).all()
-    def names(kinds):
-        items=choices(kinds)
-        return ', '.join(a.name for a in items[:6])+(' และบัญชี/หมวดอื่น ๆ ระบุชื่อที่ต้องการได้' if len(items)>6 else '')
     for field in ('account_id','category_id','other_account_id'):
         identifier=getattr(data,field)
         if identifier is not None and str(identifier) not in rows:
@@ -139,9 +233,18 @@ def resolve(db,c,user_id,output,attachment_id=None,_collect=False):
     context=dict(c.capture_context or {})
     def ask(text,field):
         context['ai_followup']={'expires':now()+900,'draft':{**data.model_dump(mode='json',exclude_none=True),**({'attachment_id':image_id} if image_id else {})},'field':field};c.capture_context=context
+        options=clarification_choices(db,c,context['ai_followup']['draft'],field)
+        if field in ('account_id','category_id','other_account_id'):
+            label='หมวด' if field=='category_id' else 'บัญชี'
+            if options:
+                text+='\n'+label+'ที่ใช้ได้: '+', '.join(a.name for a in options[:6])
+                if len(options)>6:text+=f' (แสดง 6 จาก {len(options)} รายการ บอกชื่อที่ต้องการหรือขอดูเพิ่มได้ค่ะ)'
+                text+='\nพิมพ์ชื่อที่ต้องการได้เลยค่ะ'
+            else:text+='\nยังไม่มี'+label+'ที่ใช้กับรายการประเภทนี้ค่ะ เพิ่มได้ที่หน้าจัดการ'+label
         return text+' ยังไม่ได้บันทึกนะคะ'
     if not data.kind:return ask('รายการนี้เป็นรายรับ รายจ่าย หรือโอนเงินคะ?','kind')
     if data.amount is None:return ask('ยอดเท่าไหร่คะ?','amount')
+    if receipt and not receipt.get('occurred_on') and data.occurred_on is None:return ask('วันที่ในสลิปอ่านไม่ชัดค่ะ รายการนี้เกิดวันที่เท่าไหร่คะ?','occurred_on')
     if not data.description or '\n' in data.description:return ask('รายการนี้เป็นค่าอะไรคะ?','description')
     allowed=('asset','liability') if data.kind=='expense' else ('asset',)
     from .assistant_preferences import defaults
@@ -150,14 +253,15 @@ def resolve(db,c,user_id,output,attachment_id=None,_collect=False):
     if not wallet and not data.account_id:
         unique=choices(allowed,2)
         if len(unique)==1:wallet=unique[0]
-    if not wallet:return ask('ใช้บัญชีไหนคะ? '+names(allowed),'account_id')
+    if not wallet:return ask('ใช้บัญชีไหนคะ?','account_id')
     if wallet.kind not in allowed:return ask('บัญชีนี้ใช้เป็นต้นทางของรายการนี้ไม่ได้ค่ะ เลือกบัญชีอีกครั้งนะคะ','account_id')
+    data=data.model_copy(update={'account_id':UUID(str(wallet.id))})
     category=rows.get(str(data.category_id)) if data.category_id else default_category;destination=rows.get(str(data.other_account_id))
     if data.kind in ('income','expense'):
         if not data.category_id:
             from .assistant_preferences import category_matches
             if len(category_matches(db,c.workspace_id,user_id,data.kind,data.description))>1:return ask('ความชอบที่ตั้งไว้ตรงหลายหมวดค่ะ จัดเข้าหมวดไหนคะ?','category_id')
-        if not category or category.kind!=data.kind:return ask('จัดเข้าหมวดไหนคะ? '+names((data.kind,)),'category_id')
+        if not category or category.kind!=data.kind:return ask('จัดเข้าหมวดไหนคะ?','category_id')
         if destination:return ask('รายรับรายจ่ายใช้หมวดหมู่ค่ะ ขอรายละเอียดอีกครั้งนะคะ','other_account_id')
     else:
         if not destination or destination.kind!=('asset' if data.kind=='transfer' else 'liability') or destination.id==wallet.id:
@@ -167,4 +271,6 @@ def resolve(db,c,user_id,output,attachment_id=None,_collect=False):
         other_account_id=destination.id if destination else None,category_id=category.id if category else None,
         occurred_on=data.occurred_on or today(),idempotency_key=uuid4()).model_dump(mode='json')
     payload=dict(transaction=tx,target=None,reason='คำขอผ่านแชท',before=None,after=summary(db,c.workspace_id,tx),revision_key=str(uuid4()),attachment_id=image_id)
+    if receipt:
+        payload['receipt']=receipt
     return payload if _collect else prepare_review(db,c,user_id,payload)

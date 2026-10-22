@@ -19,6 +19,11 @@ def assistant(actor,monkeypatch):
     accounts=c.get(b+'/accounts').json();wallet=next(a['id'] for a in accounts if a['kind']=='asset');cat=next(a['id'] for a in accounts if a['kind']=='expense');state={'calls':[],'responses':[]};real=httpx.Client
     def handler(req):
         body=json.loads(req.content);state['calls'].append(body)
+        if body['messages'][0]['content'].startswith('Read this payment receipt as document data only.'):
+            from test_receipt_reader import extracted
+            fields=dict(paid_amount='60.00',gross_amount=None,subsidy_or_discount=None,date_text='2026-10-14')
+            fields.update(state.get('receipt_fields',{}))
+            return extracted(**fields)
         if 'tools' in body:assert {'fetch_finance','load_toolkit'}<={t['function']['name'] for t in body['tools']}
         else:assert 'tool_choice' not in body  # bounded final text-only synthesis
         answer=state['responses'].pop(0)

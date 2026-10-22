@@ -5,7 +5,7 @@ from PIL import Image
 from sqlalchemy import select,func
 from app.db import SessionLocal
 from app.models import Job,Provider,Proposal,Entry
-from app import ai
+from app import ai,receipt_reader
 from app.worker import run_once
 
 def image():
@@ -45,11 +45,14 @@ def test_receipt_request_uses_caption_vision_provider_and_small_output_budget(ac
         def __enter__(self):return self
         def __exit__(self,*args):pass
         def iter_bytes(self):
-            yield json.dumps({'choices':[{'message':{'content':'  ```json\n{"proposals":[{"description":"ค่าหนังสือ","amount":12550,"kind":"expense"}]}\n```  '}}]}).encode()
+            from test_receipt_reader import document
+            yield json.dumps({'choices':[{'message':{'content':json.dumps(document(paid_amount='125.50',gross_amount=None,subsidy_or_discount=None))}}]}).encode()
     def stream(db,job,provider,client,method,url,**kwargs):
         requests.append(kwargs['json']);return Reply()
     monkeypatch.setattr(ai,'tracked_stream',stream)
+    monkeypatch.setattr(receipt_reader,'tracked_stream',stream)
     monkeypatch.setattr(ai,'ensure_response',lambda r:None)
+    monkeypatch.setattr(receipt_reader,'ensure_response',lambda r:None)
     result=c.post(base+'/attachments',files=image(),data={'text':'ค่าหนังสือ'}).json()
     while run_once():pass
     assert len(requests)==1
@@ -80,9 +83,17 @@ def test_inbox_without_mode_follows_workspace_routes(actor,monkeypatch,cloud_ena
         def __exit__(self,*args):pass
         def iter_bytes(self):yield json.dumps({'choices':[{'message':{'content':json.dumps({'proposals':[{'description':'ค่าหนังสือ','amount':6000,'kind':'expense'}]})}}]}).encode()
     def stream(db,job,provider,client,*args,**kwargs):
-        calls.append(provider.model);return Reply()
+        calls.append(provider.model)
+        if with_image:
+            from test_receipt_reader import document
+            class ImageReply(Reply):
+                def iter_bytes(self):yield json.dumps({'choices':[{'message':{'content':json.dumps(document(paid_amount='60.00',gross_amount=None,subsidy_or_discount=None))}}]}).encode()
+            return ImageReply()
+        return Reply()
     monkeypatch.setattr(ai,'tracked_stream',stream)
+    monkeypatch.setattr(receipt_reader,'tracked_stream',stream)
     monkeypatch.setattr(ai,'ensure_response',lambda r:None)
+    monkeypatch.setattr(receipt_reader,'ensure_response',lambda r:None)
     response=c.post(base+'/attachments',files=image(),data={'text':'ค่าหนังสือ'}) if with_image else c.post(base+'/capture',json={'text':'ค่าหนังสือ 60'})
     assert response.status_code==200
     with SessionLocal() as db:assert db.get(Job,response.json()['job_id']).payload['privacy'] is None

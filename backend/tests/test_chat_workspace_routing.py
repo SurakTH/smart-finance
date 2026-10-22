@@ -47,14 +47,22 @@ def test_queued_chat_image_uses_current_workspace_switch_and_vision_route(actor,
     calls=[];real=httpx.Client
     def handler(req):
         data=json.loads(req.content);calls.append(data['model'])
-        assert any(isinstance(m['content'],list) for m in data['messages'])
+        if data.get('response_format',{}).get('json_schema',{}).get('name')=='receipt_action':
+            assert data['model']=='local-vision'
+            assert not any(isinstance(m['content'],list) for m in data['messages'])
+            return httpx.Response(200,json={'choices':[{'message':{'content':json.dumps({'action':'answer'})}}]})
+        if 'tools' not in data:
+            assert any(isinstance(m['content'],list) for m in data['messages'])
+            from test_receipt_reader import extracted
+            return extracted()
+        assert not any(isinstance(m['content'],list) for m in data['messages'])
         return httpx.Response(200,json={'choices':[{'message':{'content':'เป็นรูปสลิปค่ะ ยังไม่ได้บันทึก'}}]})
     monkeypatch.setattr(ai.httpx,'Client',lambda **kw:real(transport=httpx.MockTransport(handler),**kw))
     c.post(b+f'/conversations/{cid}/images',files={'file':receipt()},data={'text':'รูปนี้คืออะไร'})
     while run_once():pass
-    assert calls==['cloud-vision'];calls.clear()
+    assert calls==['cloud-vision','cloud-vision'];calls.clear()
     c.post(b+f'/conversations/{cid}/images',files={'file':receipt()},data={'text':'ช่วยดูภาพอีกครั้ง'})
     c.put(b+'/ai/settings',json={'cloud_enabled':False})
     while run_once():pass
-    assert calls==['local-vision']
+    assert calls==['local-vision','local-vision','local-vision']
     assert c.get(b+'/transactions').json()==[]

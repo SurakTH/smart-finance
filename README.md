@@ -112,7 +112,7 @@ GitHub Actions ตรวจ backend, migrations, TypeScript, Docker build, brows
 | ผู้ช่วย AI และบริบทบทสนทนา | [AI Assistant](docs/AI_ASSISTANT.md) · [AI Runtime](docs/AI_RUNTIME.md) |
 | ตั้งค่า provider และโมเดล | [AI Settings Hub](docs/AI_SETTINGS_HUB.md) · [Model Settings](docs/MODEL_SETTINGS.md) |
 | นำเข้ารายการธนาคาร | [Statement / CSV](docs/STATEMENT_IMPORT.md) |
-| สลิปและหน้าแชท | [AI Inbox](docs/AI_INBOX.md) · [Chat UX](docs/CHAT_UX.md) |
+| สลิปและหน้าแชท | [AI Inbox](docs/AI_INBOX.md) · [Chat UX](docs/CHAT_UX.md) · [โมเดลเล็กและการอ่านสลิป](docs/SMALL_MODELS.md) |
 | ติดตั้งผ่าน reverse proxy | [Nginx](docs/NGINX.md) |
 | Build, publish และ deploy | [CI/CD](docs/CICD.md) |
 | สิ่งที่ทำแล้วและงานถัดไป | [Roadmap](docs/ROADMAP.md) · [Verification](docs/VERIFICATION.md) |

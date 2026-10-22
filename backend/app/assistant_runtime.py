@@ -8,7 +8,7 @@ import re
 import time
 import httpx
 from fastapi import HTTPException
-from .models import Conversation
+from .models import Conversation,Message
 from .ledger import get_scoped
 from .ai_parameters import parameters
 from .ai_usage import tracked_stream
@@ -27,6 +27,8 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
     if not sandbox:
         from .assistant_data import authorize
         authorize(db,job,room)
+    from sqlalchemy import select
+    room_has_image=True if sandbox else bool(db.scalar(select(Message.id).where(Message.workspace_id==room.workspace_id,Message.conversation_id==room.id,Message.role=='user',Message.attachment_id.is_not(None)).limit(1)))
     turns=list(messages)
     from . import assistant_evidence as evidence
     # The model owns intent and topic selection. Legacy keyword scopes are only
@@ -40,21 +42,42 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         from .semantic_assistant import general_reply
         return AssistantReply(general_reply(answer.content,job.payload.get('text','')))
     from .assistant_contract import claims_review,REPAIR,UNPREPARED
-    repaired=False;repairs=0;stage='thinking';active=set(getattr(job,'_assistant_toolkits',[]))
+    receipt_planned=False;capture_checked=False;repair_base=None;reference_ids=False;repaired=False;repairs=0;stage='thinking';active=set(getattr(job,'_assistant_toolkits',[]))
+    from .receipt_reader import current as receipt_current
+    receipt_document=(getattr(job,'_receipt_reading',None) or {}).get('document') or receipt_current(room,getattr(job,'_receipt_id',None))
+    if receipt_document and receipt_document.get('is_receipt'):active.add('receipt_answer')
     pending=(room.capture_context or {}).get('review_action_id')
     if pending:
         from .models import ChatAction
         action=db.get(ChatAction,pending)
         if action and action.workspace_id==room.workspace_id and action.conversation_id==room.id and action.status=='pending' and action.payload.get('type')=='management':active.add('management')
+    queued=[];batched_ids=set();merged_batches={};require_tool=False;structured=False;repair_batch=False
     def feedback(answer,result):
-        turns.extend([assistant_message(answer),{'role':'tool','tool_call_id':answer.call_id,'content':json.dumps(result,ensure_ascii=False)}])
+        batch=merged_batches.pop(answer.call_id,None)
+        if batch:
+            turns.append(assistant_message(batch))
+            for call in batch.calls:turns.append({'role':'tool','tool_call_id':call.call_id,'content':json.dumps(result,ensure_ascii=False)})
+            return
+        if answer.call_id not in batched_ids:turns.append(assistant_message(answer))
+        turns.append({'role':'tool','tool_call_id':answer.call_id,'content':json.dumps(result,ensure_ascii=False)})
     def invalid(answer,result):
-        nonlocal repairs,stage
+        nonlocal repairs,stage,require_tool,repair_base,repair_batch
         stage='repairing'
+        if answer.tool_name=='fetch_finance' and result.get('error')=='balance_filters':require_tool=True
+        if answer.tool_name=='prepare_transaction':
+            require_tool=True
+            try:
+                items=json.loads(answer.draft).get('transactions')
+                if isinstance(items,list) and 1<=len(items)<=10:repair_batch=True
+            except (ValueError,AttributeError,TypeError):pass
+            if not sandbox:
+                from .assistant_tools import repair_seed
+                repair_base=repair_seed(db,room,answer.draft,result) or repair_base
         repairs+=1;record(job,'tool',tool=answer.tool_name,status='invalid',issues=result.get('issues',[]))
         publish(job,'progress',stage='repairing')
         feedback(answer,result)
     def request(final=False):
+        nonlocal structured
         check_stop(job,True)
         remaining=deadline-time.monotonic()
         if remaining<=0:raise AIRequestError('timeout')
@@ -62,18 +85,42 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         if used>=REQUESTS:raise AIRequestError('turn_limit')
         job._assistant_requests=used+1
         body={'model':p.model,'messages':request_messages(turns),**parameters(p),'stream':True}
-        if not final:body.update(tools=sandbox.tools if sandbox else catalog(active),tool_choice='auto',parallel_tool_calls=False)
+        if p.kind=='ollama':body['stream_options']={'include_usage':True}
+        tools=sandbox.tools if sandbox else catalog(active)
+        if not sandbox and not reference_ids:
+            from .assistant_tools import name_first_tools
+            tools=name_first_tools(tools)
+        if not sandbox and not room_has_image:
+            from .assistant_tools import without_image_fields
+            tools=without_image_fields(tools)
+        if not final and p.kind=='ollama' and not sandbox and require_tool:structured=True
+        if not final and structured:
+            from .assistant_protocol import messages as protocol_messages,schema as protocol_schema
+            body['messages']=protocol_messages(turns,tools)
+            body['response_format']={'type':'json_schema','json_schema':{'name':'assistant_action','strict':True,'schema':protocol_schema(tools,require_tool,repair_batch)}}
+        elif not final:body.update(tools=tools,tool_choice='required' if require_tool else 'auto',parallel_tool_calls=False)
         publish(job,'start')
         publish(job,'progress',stage='summarizing' if final else stage)
-        with tracked_stream(db,job,p,client,'POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json=body,timeout=httpx.Timeout(min(p.timeout_seconds,remaining),connect=5)) as response:
-            ensure_response(response)
-            if 'text/event-stream' in response.headers.get('content-type',''):answer=read_stream(response,job)
-            else:
-                raw=b''
-                for chunk in response.iter_bytes():
-                    raw+=chunk
-                    if len(raw)>MAX_RESPONSE_BYTES:raise ValueError('Response too large')
-                answer=completion_choice(json.loads(raw)['choices'][0])
+        try:
+            with tracked_stream(db,job,p,client,'POST',url.rstrip('/')+'/chat/completions',headers=headers,extensions=extensions,json=body,timeout=httpx.Timeout(min(p.timeout_seconds,remaining),connect=5)) as response:
+                ensure_response(response)
+                if 'text/event-stream' in response.headers.get('content-type',''):answer=read_stream(response,job)
+                else:
+                    raw=b''
+                    for chunk in response.iter_bytes():
+                        raw+=chunk
+                        if len(raw)>MAX_RESPONSE_BYTES:raise ValueError('Response too large')
+                    answer=completion_choice(json.loads(raw)['choices'][0])
+        except (ValueError,KeyError,TypeError,IndexError) as error:
+            from .ai_usage import BudgetExceeded
+            eligible=not isinstance(error,(AIRequestError,BudgetExceeded)) or (isinstance(error,AIRequestError) and (error.http_status==500 or error.code=='invalid_response'))
+            if not eligible or final or structured or p.kind!='ollama' or sandbox or getattr(job,'_direct_evidence',None) or getattr(job,'_read_cache',None):raise
+            structured=True
+            record(job,'fallback',provider_id=p.id,status='limited',error=getattr(error,'code','invalid_response'))
+            return request(final)
+        if not final and structured:
+            from .assistant_protocol import reply as protocol_reply
+            answer=protocol_reply(answer,tools,require_tool,'structured_'+str(job._assistant_requests))
         return answer
     def finish():
         record(job,'synthesis',status='ok');publish(job,'progress',stage='summarizing')
@@ -84,8 +131,35 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         from .assistant_balance_reply import fallback as balance_fallback
         latest_balance=balance_fallback(dict([list(cache.items())[-1]])) if cache else None
         return AssistantReply(sandbox.finish('',cache) if sandbox else latest_balance or evidence.grounded(db,room,job,task,cache))
-    for _ in range(REQUESTS):
-        try:answer=request()
+    for _ in range(REQUESTS*3):
+        try:
+            if queued:answer=queued.pop(0)
+            else:
+                batched_ids.clear()
+                merged_batches.clear()
+                answer=request()
+            if answer.calls:
+                batch=answer
+                if all(c.tool_name=='prepare_transaction' for c in batch.calls):
+                    from .assistant_tools import merge_transaction_calls
+                    try:
+                        answer=AssistantReply('',merge_transaction_calls(batch.calls),'prepare_transaction',batch.calls[0].call_id)
+                        merged_batches[answer.call_id]=batch
+                    except (ValueError,ValidationError):answer=batch
+                if answer is not batch:pass
+                elif any(c.tool_name not in ('lookup_workspace','fetch_finance') for c in batch.calls):
+                    turns.append(assistant_message(batch))
+                    batched_ids.update(c.call_id for c in batch.calls)
+                    for call in answer.calls:
+                        feedback(call,dict(error='sequential_required',message='Read-only calls may be batched. Prepare exactly one draft after reading its references; do not combine prepare with other calls.'))
+                    repairs+=1
+                    if repairs>=2:return finish()
+                    continue
+                else:
+                    turns.append(assistant_message(batch))
+                    batched_ids.update(c.call_id for c in batch.calls)
+                    queued.extend(batch.calls)
+                    answer=queued.pop(0)
         except (httpx.HTTPError,ValueError,KeyError,TypeError) as error:
             # A failed language-model continuation does not invalidate a completed
             # authorized ledger read. Keep its exact scoped report and references.
@@ -105,17 +179,33 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             from .assistant_balance_reply import fallback as balance_fallback
             content=balance_fallback(cache) or evidence.grounded(db,room,job,evidence.Scope('query',''),cache)
             return AssistantReply(content)
+        if not answer.tool_name and not receipt_planned and p.kind=='ollama' and job.payload.get('attachment_id') and receipt_document and receipt_document.get('is_receipt'):
+            # A small model can ask for an already uploaded image or a choice
+            # without creating a real partial draft. Resolve the receipt intent
+            # once through the bounded structured adapter, not keyword routing.
+            from .receipt_reader import plan as receipt_plan,explain
+            receipt_planned=True
+            decision=receipt_plan(db,room,job,p,client,url,headers,extensions,receipt_document,deadline)
+            if decision.action=='answer':return AssistantReply(explain(receipt_document))
+            if decision.action=='prepare':
+                draft=decision.model_dump(mode='json',exclude_none=True,exclude={'action'})
+                draft.update(intent='create',attachment_id=job.payload['attachment_id'])
+                answer=AssistantReply('',json.dumps(draft,ensure_ascii=False),'prepare_transaction','receipt_plan_'+str(job._assistant_requests))
         if not answer.tool_name and claims_review(answer.content):
             if repaired:return AssistantReply(UNPREPARED)
-            repaired=True;record(job,'review_repair',status='invalid')
-            turns.extend([assistant_message(answer),{'role':'system','content':REPAIR}])
+            repaired=True;require_tool=True;record(job,'review_repair',status='invalid')
+            turns.append({'role':'system','content':REPAIR})
             continue
         if not sandbox and not answer.tool_name and not getattr(job,'_direct_evidence',None) and not getattr(job,'_read_cache',None):
             from .semantic_assistant import general_reply
             if general_reply(answer.content,job.payload.get('text',''))==evidence.UNVERIFIED:
                 repairs+=1
                 if repairs>=2:return AssistantReply(evidence.UNVERIFIED)
-                turns.extend([assistant_message(answer),{'role':'system','content':'ตัวเลขการเงินนี้ยังไม่มีหลักฐานจาก tools ถ้าเป็นข้อมูลของผู้ใช้ ให้เลือกเรียก fetch_finance/lookup_workspace ที่ตรงเจตนาเองก่อนตอบ ห้ามเดายอด ไม่ต้องให้ผู้ใช้เปลี่ยนรูปแบบคำพูด หากเป็นข้อมูลจากรูปที่ต้องบันทึกให้ prepare_transaction เพื่อเก็บร่าง'}])
+                # The answer claimed personalized figures without a read. Let
+                # the model choose the right tool, but require evidence now.
+                require_tool=True
+                turns.append({'role':'system','content':'ตัวเลขการเงินนี้ยังไม่มีหลักฐานจาก tools ถ้าเป็นข้อมูลของผู้ใช้ ให้เลือกเรียก fetch_finance/lookup_workspace ที่ตรงเจตนาเองก่อนตอบ ห้ามเดายอด ไม่ต้องให้ผู้ใช้เปลี่ยนรูปแบบคำพูด หากเป็นข้อมูลจากรูปที่ต้องบันทึกให้ prepare_transaction เพื่อเก็บร่าง'})
+                turns.append({'role':'user','content':'[Backend evidence check] คำตอบที่ยังไม่ได้ส่งให้ผู้ใช้ไม่มีข้อมูลจากเครื่องมือรองรับ โปรดเรียกเครื่องมือที่ตรงกับคำขอล่าสุดและบริบทก่อนตอบ ห้ามใช้ยอดในข้อความเก่ามาแทนการอ่านช่วงใหม่'})
                 continue
         if not answer.tool_name and getattr(job,'_direct_evidence',None) and (getattr(job,'_direct_finance_read',False) or task.error or task.kind in ('query','conversation')):
             from .assistant_data import natural,fallback
@@ -123,17 +213,29 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             except ValueError:
                 repairs+=1;record(job,'synthesis',status='invalid');publish(job,'progress',stage='repairing')
                 if repairs>=2:return AssistantReply(fallback(job))
-                turns.extend([assistant_message(answer),{'role':'system','content':'ปรับคำตอบให้ตรงข้อมูลที่อ่านจริง บอกผลที่ผู้ใช้ถามพร้อมยอดรวมที่เกี่ยวข้องก่อนเสนอคำถามต่อ อย่าตอบแค่ชวนคุย ตอบภาษาปกติได้ ไม่ต้องใช้แม่แบบ อย่าใส่ตัวเลขที่ไม่มีในข้อมูล และอย่าอ้างว่าได้บันทึก/แก้ไขข้อมูล ถ้าข้อมูลไม่พอเรียกเครื่องมืออ่านเพิ่ม'}])
+                turns.append({'role':'system','content':'ปรับคำตอบให้ตรงข้อมูลที่อ่านจริง บอกผลที่ผู้ใช้ถามพร้อมยอดรวมที่เกี่ยวข้องก่อนเสนอคำถามต่อ อย่าตอบแค่ชวนคุย ตอบภาษาปกติได้ ไม่ต้องใช้แม่แบบ อย่าใส่ตัวเลขที่ไม่มีในข้อมูล และอย่าอ้างว่าได้บันทึก/แก้ไขข้อมูล ถ้าข้อมูลไม่พอเรียกเครื่องมืออ่านเพิ่ม'})
                 continue
             record(job,'synthesis',status='ok')
             return AssistantReply(content)
         if not answer.tool_name and task.kind=='mutation' and not re.search(r'ไหน|อะไร|เท่าไร|เท่าไหร่|\?',answer.content):
             if repaired:return AssistantReply(UNPREPARED)
-            repaired=True;record(job,'review_repair',status='invalid')
-            turns.extend([assistant_message(answer),{'role':'system','content':REPAIR}])
+            repaired=True;require_tool=True;record(job,'review_repair',status='invalid')
+            turns.append({'role':'system','content':REPAIR})
             continue
         if answer.tool_name and answer.tool_name not in ('respond_finance','understand_request'):
+            require_tool=False
             job.__dict__.pop('_semantic_evidence',None)
+        if answer.tool_name=='render_receipt':
+            from .receipt_reader import explain
+            try:
+                if not receipt_document or json.loads(answer.draft)!={}:raise ValueError('No receipt in scope')
+                content=explain(receipt_document)
+            except (ValueError,TypeError):
+                invalid(answer,dict(error='invalid_arguments',message='render_receipt takes no arguments and requires a receipt in this room.'))
+                if repairs>=2:return finish()
+                continue
+            record(job,'tool',tool='render_receipt',status='ok')
+            return AssistantReply(content)
         if answer.tool_name=='render_finance':
             from .assistant_grounding import render
             try:
@@ -154,8 +256,9 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             except (ValidationError,ValueError,HTTPException,NeedInfo) as error:
                 from .tool_arguments import feedback as argument_feedback
                 from .assistant_calendar import argument_help
+                from .assistant_data import BalanceFilterConflict
                 if sandbox:sandbox.problem(error)
-                invalid(answer,dict(error='invalid_arguments',**argument_help(),**argument_feedback(error)))
+                invalid(answer,dict(error='balance_filters' if isinstance(error,BalanceFilterConflict) else 'invalid_arguments',**argument_help(),**argument_feedback(error)))
                 if repairs>=2:return AssistantReply(fallback(job)) if getattr(job,'_direct_evidence',None) else AssistantReply('ฉันยังค้นข้อมูลส่วนนี้ไม่สำเร็จค่ะ อยากให้ดูบัญชีหรือช่วงไหนเป็นพิเศษคะ?')
                 continue
             job._direct_finance_read=True
@@ -296,6 +399,23 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         if answer.tool_name not in ('query_finance','lookup_workspace'):
             if answer.tool_name:
                 publish(job,'progress',stage='checking_draft')
+                if answer.tool_name=='prepare_transaction' and not sandbox:
+                    from .chat_dialogue import named_references
+                    try:
+                        if repair_base:
+                            from .assistant_tools import merge_repair
+                            answer.draft=merge_repair(answer.draft,repair_base)
+                        answer.draft=named_references(db,room,answer.draft)
+                    except ValidationError as error:
+                        from .tool_arguments import issues
+                        invalid(answer,dict(error='invalid_arguments',issues=issues(error),message='Fix these fields using the tool schema. Never ask the user for JSON or satang.'))
+                        if repairs>=2:return AssistantReply(UNPREPARED)
+                        continue
+                    except ValueError as error:
+                        from .tool_arguments import feedback as argument_feedback
+                        invalid(answer,{**argument_feedback(error),'error':'invalid_reference','message':'Use existing names only. If unknown/ambiguous or user wants to choose, omit that reference and resubmit the remaining partial draft to retain it. Do not replace the draft with a prose question.'})
+                        if repairs>=2:return AssistantReply('ฉันยังจับคู่บัญชีหรือหมวดนี้ไม่ได้ค่ะ ช่วยระบุชื่อที่ต้องการอีกนิด ยังไม่ได้บันทึกข้อมูล')
+                        continue
                 problem=sandbox.validate(answer.tool_name,answer.draft) if sandbox else validate_draft(db,room,answer.tool_name,answer.draft)
                 if problem:
                     invalid(answer,problem)
@@ -306,6 +426,15 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
                 if answer.tool_name=='prepare_transaction':
                     from .chat_dialogue import Suggestion
                     value=Suggestion.model_validate_json(answer.draft)
+                    if (p.kind=='ollama' and not sandbox and not capture_checked and value.intent!='chat'
+                        and value.amount is None and value.transactions is None and not value.continue_draft
+                        and not job.payload.get('attachment_id')
+                        and re.search(r'(?:[0-9๐-๙][0-9๐-๙,.]*\s*(?:บาท|THB)|฿\s*[0-9๐-๙])',job.payload.get('text',''),re.I)):
+                        # Presence of currency text only triggers model review. It
+                        # never parses/inserts an amount or decides user intent.
+                        capture_checked=True
+                        invalid(answer,dict(error='check_missing_amount',issues=[dict(field='amount',code='missing')],message='The user message contains currency amounts but the draft omitted amount. Reread the actual request and current draft once. Include the stated transaction amount in satang if present; leave it absent if the numbers are not the requested amount. Never guess from dates or account numbers. Resubmit the draft, not prose.'))
+                        continue
                     if value.intent=='chat':
                         if claims_review(value.reply or ''):return AssistantReply(UNPREPARED)
                         return checked(AssistantReply(value.reply or 'อยากให้ช่วยดูเรื่องไหนคะ?'))
@@ -338,6 +467,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             continue
         from .assistant_data import remember_lookup
         if answer.tool_name=='lookup_workspace':
+            reference_ids=True
             bindings=remember_lookup(job,result)
             if bindings:
                 result={**result,**bindings}

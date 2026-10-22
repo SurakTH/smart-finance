@@ -22,7 +22,16 @@ def provider(w,**values):
 
 def transport(monkeypatch,handler):
     real=httpx.Client
-    monkeypatch.setattr(ai.httpx,'Client',lambda **kw:real(transport=httpx.MockTransport(handler),**kw))
+    def with_document_stage(request):
+        body=json.loads(request.content)
+        if body.get('response_format',{}).get('json_schema',{}).get('name')=='receipt_reading':
+            # These secretary scenarios test downstream actions using the same
+            # synthetic 200-baht receipt; reader transport has separate tests.
+            from test_receipt_reader import extracted
+            from app.reporting import today
+            return extracted(paid_amount='200.00',gross_amount=None,subsidy_or_discount=None,date_text=today().isoformat())
+        return handler(request)
+    monkeypatch.setattr(ai.httpx,'Client',lambda **kw:real(transport=httpx.MockTransport(with_document_stage),**kw))
 
 
 def reply(text):return httpx.Response(200,json={'choices':[{'message':{'content':text}}]})
@@ -57,8 +66,16 @@ def test_common_capture_uses_real_model_instead_of_regex_when_configured(actor,m
 
 def test_image_asks_then_uses_caption_followup_and_keeps_evidence(actor,monkeypatch):
     c,w,u,b,cid=setup(actor);provider(w,reasoning_effort='high',temperature=70);calls=[]
+    with SessionLocal.begin() as db:db.add(Account(workspace_id=w,name='ธนาคารสำรอง',kind='asset'))
+    decisions=[]
     def handler(req):
-        body=json.loads(req.content);calls.append(body)
+        body=json.loads(req.content)
+        if body.get('response_format',{}).get('json_schema',{}).get('name')=='receipt_action':
+            decisions.append(body)
+            assert not any(isinstance(m['content'],list) for m in body['messages'])
+            assert body['reasoning_effort']=='high' and body['temperature']==.7
+            return reply(json.dumps(dict(action='prepare',kind='expense',description='มื้อเที่ยง',account=None,category='อาหารและเครื่องดื่ม',other_account=None),ensure_ascii=False))
+        calls.append(body)
         assert body['reasoning_effort']=='high' and body['temperature']==.7
         images=[m for m in body['messages'] if isinstance(m.get('content'),list)]
         if len(calls)==1:return reply('เห็นยอดในสลิปแล้วค่ะ ใช้บัญชีไหนคะ?')
@@ -71,6 +88,8 @@ def test_image_asks_then_uses_caption_followup_and_keeps_evidence(actor,monkeypa
     transport(monkeypatch,handler)
     uploaded=c.post(b+f'/conversations/{cid}/images',files={'file':receipt()},data={'text':'มื้อเที่ยง ช่วยจดให้หน่อย'}).json()
     assert run_once();assert 'ใช้บัญชีไหน' in c.get(b+f'/conversations/{cid}/messages').json()[-1]['content']
+    assert len(decisions)==1
+    with SessionLocal() as db:assert db.get(Conversation,cid).capture_context['ai_followup']['field']=='account_id'
     say(c,b,cid,'เงินสดจ้า');assert run_once()
     reviewed=c.get(b+f'/conversations/{cid}/messages').json()[-1]
     assert reviewed['attachment_id']==uploaded['attachment_id'] and '฿200.00' in reviewed['content'] and count(w)==0
@@ -93,11 +112,16 @@ def test_vision_routes_skip_text_only_provider_before_applying_fallback_cap(acto
     with SessionLocal.begin() as db:
         db.add(Provider(workspace_id=w,kind='ollama',model='text-only',task='chat',supports_images=False,priority=0))
     calls=[]
-    def handler(req):calls.append(json.loads(req.content)['model']);return reply('ในรูปเป็นใบเสร็จค่ะ')
+    def handler(req):
+        body=json.loads(req.content);calls.append(body['model'])
+        if body.get('response_format',{}).get('json_schema',{}).get('name')=='receipt_action':
+            assert not any(isinstance(m['content'],list) for m in body['messages'])
+            return reply(json.dumps({'action':'answer'}))
+        return reply('ในรูปเป็นใบเสร็จค่ะ')
     transport(monkeypatch,handler)
     c.put(b+'/ai/settings',json={'max_attempted_providers':1})
     c.post(b+f'/conversations/{cid}/images',files={'file':receipt()},data={'text':'รูปนี้คืออะไร'})
-    assert run_once() and calls==['vision'] and count(w)==0
+    assert run_once() and calls==['vision','vision'] and count(w)==0
 
 
 def test_tool_arguments_and_reasoning_never_stream_and_partial_tools_never_commit(monkeypatch):

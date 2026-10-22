@@ -20,15 +20,15 @@ class Fetch(BaseModel):
     resource:Literal['balances','summary','transactions','analytics','budgets']
     period:Window|None=None
     compare_period:Window|None=None
-    account:str|None=Field(default=None,min_length=1,max_length=100)
-    category:str|None=Field(default=None,min_length=1,max_length=100)
+    account:str|None=Field(default=None,min_length=1,max_length=100,description='Filter ONE exact wallet name. Omit for all wallets; use group_by=account to rank wallets instead.')
+    category:str|None=Field(default=None,min_length=1,max_length=100,description='Filter ONE exact income/expense category. Omit for all categories.')
     account_id:UUID|None=None
     category_id:UUID|None=None
     q:str|None=Field(default=None,max_length=100)
     metric:Literal['income','expense','transfer','card_payment']|None=None
     operation:Literal['summary','average','compare','trend','ranking']='summary'
     bucket:Literal['day','week','month']|None=None
-    group_by:Literal['account','category','description']|None=None
+    group_by:Literal['account','category','description']|None=Field(default=None,description='For analytics operation=ranking: account ranks wallets, category ranks spending types, description ranks purchases. This is grouping, not a filter.')
     order:Literal['highest','lowest']='highest'
     limit:int=Field(default=5,ge=1,le=10,strict=True)
     cursor:UUID|None=None
@@ -117,6 +117,13 @@ def parse_fetch(raw,text=None,check_scope=True):
 class CalendarConflict(ValueError):pass
 
 
+class BalanceFilterConflict(ValueError):
+    """Current balances cannot be narrowed by transaction-only filters."""
+    def __init__(self,fields):
+        super().__init__('balance filters conflict')
+        self.issues=[dict(field=field,code='unsupported_filter') for field in fields]
+
+
 def read_context(room):
     return {key:deepcopy((room.capture_context or {}).get(key)) for key in ('verified_scope','finance_search','finance_selected')}
 
@@ -145,6 +152,11 @@ def read(db,room,job,raw):
     message=db.scalar(select(Message).where(Message.id==job.payload.get('user_message_id'),Message.workspace_id==room.workspace_id,Message.conversation_id==room.id,Message.role=='user'))
     text=message.content if message else ''
     value=followup_scope(db,room,job,parse_fetch(raw,text),text)
+    if value.resource=='balances':
+        fields=[key for key in ('period','compare_period','category','category_id','metric','bucket','group_by') if getattr(value,key) is not None]
+        if value.q:fields.append('q')
+        if value.operation!='summary':fields.append('operation')
+        if fields:raise BalanceFilterConflict(fields)
     if value.cursor and value.resource!='transactions':raise ValueError('cursor resource mismatch')
     account=named_id(db,room,value.account_id,value.account,('asset','liability'))
     category=named_id(db,room,value.category_id,value.category,('income','expense'))

@@ -54,12 +54,16 @@ def call_model(db, job):
             messages.append({'role':'system','content':assistant_instruction(db,job.workspace_id)})
             room=get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id'])
             messages.append({'role':'user','content':json.dumps({'type':'workspace_context','name':db.get(Workspace,job.workspace_id).name},ensure_ascii=False)})
+            from .assistant_context import reference_context
+            messages.append({'role':'user','content':reference_context(db,job.workspace_id)})
             from .assistant_management import pending_context
             pending=pending_context(db,get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id']))
-            if pending:messages.append({'role':'user','content':pending})
             from .assistant_context import clarification
             partial=clarification(get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id']))
-            if partial:messages.append({'role':'user','content':partial})
+            # Put current state next to the latest request, rather than before
+            # older assistant prose which can describe an obsolete draft.
+            from .assistant_context import report_context
+            state_context=[value for value in (pending,partial,report_context(room)) if value]
             from .assistant_finance import begin_turn
             search=begin_turn(get_scoped(db,Conversation,job.workspace_id,job.payload['conversation_id']),job.payload.get('text',''),job.payload.get('user_message_id'))
             if search:messages.append({'role':'user','content':search})
@@ -81,6 +85,10 @@ def call_model(db, job):
             from .assistant_images import receipt_context
             receipt_source=receipt_context(db,room,job,history)
             if receipt_source:messages.append({'role':'user','content':receipt_source})
+            from .receipt_reader import current as current_reading,message as reading_message
+            receipt_id=getattr(job,'_receipt_id',None)
+            document=current_reading(room,receipt_id) if receipt_id else None
+            if document:state_context.append(reading_message(document,receipt_id))
         if older_notes:messages.append({'role':'user','content':older_notes})
         if assistant:
             from .request_interpreter import context as request_context
@@ -90,6 +98,8 @@ def call_model(db, job):
             # eight user excerpts plus UUIDs here provided no additional context.
         sent_images=set()
         for m in reversed(history):
+            if assistant and m.id==job.payload.get('user_message_id'):
+                messages.extend({'role':'user','content':value} for value in state_context)
             content=re.sub(r'\n\nรหัสทางเลือก:\nยืนยัน [A-F0-9]{8}\n$','',m.content)[:4000]
             if m.role=='user' and m.attachment_id in image_ids and m.attachment_id not in sent_images:
                 sent_images.add(m.attachment_id)
@@ -137,6 +147,23 @@ def call_model(db, job):
             if remaining<=0:break
             try:
                 with httpx.Client(timeout=httpx.Timeout(min(p.timeout_seconds,remaining),connect=5),trust_env=False,follow_redirects=False) as client:
+                    if job.payload.get('attachment_id') and (assistant or job.task=='extract'):
+                        from . import receipt_reader
+                        if assistant and not db.scalar(select(Message.id).where(Message.workspace_id==job.workspace_id,Message.conversation_id==room.id,Message.role=='user',Message.attachment_id==job.payload['attachment_id']).limit(1)):
+                            raise ValueError('Receipt is not owned by this conversation')
+                        image=get_scoped(db,Attachment,job.workspace_id,job.payload['attachment_id'])
+                        caption=job.payload.get('text','')
+                        reading=receipt_reader.cached(room,image.id,p,caption) if assistant else None
+                        if reading is None:reading=receipt_reader.read(db,job,p,client,url,headers,extensions,image,deadline,caption)
+                        job._receipt_reading=reading
+                        document=reading['document']
+                        if assistant:
+                            context=receipt_reader.text_messages(messages,document,image.id) if document['is_receipt'] else messages
+                            return converse(db,job,p,client,url,headers,extensions,context,deadline,read_budget),False
+                        if not document['is_receipt']:return [],False
+                        description=caption.strip()[:300] or document['merchant'] or 'รายการจากสลิป'
+                        amount=document['paid_satang']
+                        return [ProposalInput(description=description,amount=amount if amount and amount>0 else None,kind='income' if document['kind']=='income' else 'expense')],False
                     if assistant:return converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budget),False
                     body={'model':p.model,'messages':messages,**parameters(p)}
                     if job.task=='extract' and job.payload.get('attachment_id'):
@@ -259,6 +286,8 @@ def _process_job(db,job):
         from .ai_fence import Invalidated
         raise Invalidated('context_changed')
     stop_fence(db,job)
+    if job.task=='chat' and getattr(job,'_receipt_reading',None):
+        c.capture_context={**(c.capture_context or {}),'receipt_reading':job._receipt_reading}
     trusted_review=False
     if isinstance(output,AssistantReply):
         if output.draft is not None:
@@ -293,7 +322,7 @@ def _process_job(db,job):
         c.capture_context=context
     if job.task=='extract':
         for p in output:
-            db.add(Proposal(workspace_id=job.workspace_id,source='demo' if demo else 'ai',attachment_id=job.payload.get('attachment_id'),**p.model_dump()))
+            db.add(Proposal(workspace_id=job.workspace_id,source='demo' if demo else 'ai',attachment_id=job.payload.get('attachment_id'),receipt=getattr(job,'_receipt_reading',{}).get('document'),**p.model_dump()))
         if job.payload.get('conversation_id'):
             reply = ('รูปนี้มีรายการอยู่ใน AI Inbox แล้ว จึงไม่สร้างรายการซ้ำ' if duplicate else
                 'รับรูปแล้ว โหมดสาธิตยังไม่ได้อ่านยอดจากรูป กรุณาเปิด AI Inbox และกรอกยอดเงินจริงด้วยตนเอง' if demo else

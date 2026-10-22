@@ -108,7 +108,7 @@ def proposal_list(db,wid):
     # Due proposals retain their original date/account/category even after editing a rule.
     records=db.execute(select(Proposal,RecurringOccurrence).outerjoin(RecurringOccurrence,(RecurringOccurrence.proposal_id==Proposal.id)&(RecurringOccurrence.workspace_id==Proposal.workspace_id)).where(Proposal.workspace_id==wid).order_by(case((Proposal.status=='pending',0),else_=1),Proposal.created_at.desc(),Proposal.id).limit(100)).all()
     return [dict(id=p.id,description=p.description,amount=p.amount,kind=p.kind,status=p.status,source=p.source,attachment_id=p.attachment_id,
-                 occurred_on=o.scheduled_on if o else None,account_id=o.account_id if o else None,category_id=o.category_id if o else None) for p,o in records]
+                 occurred_on=o.scheduled_on if o else (p.receipt or {}).get('occurred_on'),receipt=p.receipt,account_id=o.account_id if o else None,category_id=o.category_id if o else None) for p,o in records]
 
 
 def history(db,wid,rid,page):

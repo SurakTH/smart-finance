@@ -1,4 +1,5 @@
 "use client";
+import {ReceiptDetails,type ReceiptInfo} from "./receipt-details";
 import {imageInputError,transferredFiles} from "../lib/chat-images";
 import {ChatEvidence,type Evidence} from "./chat-evidence";
 import {ChatMarkdown} from "./chat-markdown";
@@ -78,6 +79,7 @@ type Entry = {
   occurred_on: string;
 };
 type Proposal = {
+  receipt?: ReceiptInfo | null;
   id: string;
   kind: string;
   description: string;
@@ -823,7 +825,7 @@ export default function Finance() {
                 </form>
 
                   <p className="chat-input-hint">{compact?"แนบหรือวางรูปได้ · ครั้งละ 1 รูป":"วางรูปด้วย ⌘V / Ctrl+V หรือลากมาที่นี่ · Enter ส่ง · Shift+Enter ขึ้นบรรทัดใหม่"}</p>
-                  <div className="composer-meta"><span><ShieldCheck size={13} />ใช้ AI ตามการตั้งค่าของ workspace นี้</span><details><summary>เกี่ยวกับรูปและข้อมูล</summary><p>รูปสลิปจะเข้า AI Inbox ของ workspace สมาชิกจะเห็นข้อเสนอและรูปหลักฐานเมื่ออ่านเสร็จ คุณต้องตรวจสอบและยืนยันเองทุกครั้ง AI อาจให้ข้อมูลผิดพลาด ประวัติเก็บบนเซิร์ฟเวอร์ของคุณ โหมดสาธิตยังอ่านยอดจากรูปไม่ได้</p></details></div>
+                  <div className="composer-meta"><span><ShieldCheck size={13} />ใช้ AI ตามการตั้งค่าของ workspace นี้</span><details><summary>เกี่ยวกับรูปและข้อมูล</summary><p>รูปในแชทจะอยู่ในห้องนี้ก่อน เมื่อยืนยันบันทึกแล้ว สมาชิก workspace จะเห็นรายการและรูปหลักฐาน คุณต้องตรวจสอบและยืนยันเองทุกครั้ง AI อาจให้ข้อมูลผิดพลาด ประวัติเก็บบนเซิร์ฟเวอร์ของคุณ โหมดสาธิตยังอ่านยอดจากรูปไม่ได้</p></details></div>
                 </div>
               </section>
             </div>
@@ -1036,6 +1038,7 @@ function TransactionDialog({
             ))}
           </select>
         </label>
+        {proposal !== "new" && <ReceiptDetails receipt={proposal.receipt}/>}
         <div className="form-grid">
           <label>
             จำนวนเงิน (บาท)
@@ -1057,7 +1060,7 @@ function TransactionDialog({
             <input
               name="occurred_on"
               type="date"
-              defaultValue={proposal !== "new" && proposal.occurred_on ? proposal.occurred_on : today()}
+              defaultValue={proposal !== "new" && proposal.occurred_on ? proposal.occurred_on : proposal !== "new" && proposal.receipt?.warnings?.includes("date_unreadable") ? "" : today()}
               required
             />
           </label>

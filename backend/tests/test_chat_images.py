@@ -83,6 +83,9 @@ def test_vision_caption_reviews_in_chat_and_preserves_confirmed_evidence(actor,m
     calls=[];real=httpx.Client
     def handler(req):
         body=json.loads(req.content);calls.append(body)
+        if body.get('response_format',{}).get('json_schema',{}).get('name')=='receipt_reading':
+            from test_receipt_reader import extracted
+            return extracted(paid_amount='200.00',gross_amount=None,subsidy_or_discount=None)
         return httpx.Response(200,json={'choices':[{'message':{'content':None,'tool_calls':[{'type':'function','function':{'name':'prepare_transaction','arguments':json.dumps(suggestion(w))}}]}}]})
     monkeypatch.setattr(ai.httpx,'Client',lambda **kw:real(transport=httpx.MockTransport(handler),**kw))
     cid=c.post(root+'/conversations',json={}).json()['id']

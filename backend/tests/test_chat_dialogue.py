@@ -28,6 +28,12 @@ def mock_provider(monkeypatch,w,payload,kind='ollama'):
     calls=[];real=httpx.Client
     def handler(request):
         body=json.loads(request.content);calls.append(body)
+        if body['messages'][0]['content'].startswith('Read this payment receipt as document data only.'):
+            from test_receipt_reader import extracted
+            from app.reporting import today
+            value=payload();items=value.get('transactions') or [value]
+            total=sum(item.get('amount',0) for item in items)
+            return extracted(paid_amount=f'{total/100:.2f}',gross_amount=None,subsidy_or_discount=None,date_text=today().isoformat())
         assert body.get('stream') and body['tools'][0]['function']['name']=='prepare_transaction'
         value=payload()
         message={'content':value.get('reply','')} if value.get('intent')=='chat' else {'content':None,'tool_calls':[{'type':'function','function':{'name':'prepare_transaction','arguments':json.dumps(value,ensure_ascii=False)}}]}

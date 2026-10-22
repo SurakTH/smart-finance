@@ -17,7 +17,7 @@ def draft_variants(parameters):
     single=deepcopy(parameters)
     single['properties'].pop('transactions',None)
     batch=deepcopy(parameters)
-    batch['properties']={k:v for k,v in batch['properties'].items() if k in ('intent','transactions','attachment_id','continue_draft')}
+    batch['properties']={k:v for k,v in batch['properties'].items() if k in ('intent','transactions','attachment_id','continue_draft','category_choice')}
     batch['required']=list(dict.fromkeys([*batch.get('required',[]),'transactions']))
     return {'anyOf':[single,batch]}
 

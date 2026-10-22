@@ -15,7 +15,7 @@ def test_structured_drafts_separate_batch_shape_without_changing_native_catalog(
     draft=next(v for v in variants if v['properties']['tool']['enum']==['prepare_transaction'])
     single,batch=draft['properties']['arguments']['anyOf']
     assert 'transactions' not in single['properties']
-    assert set(batch['properties'])=={'intent','transactions','attachment_id','continue_draft'}
+    assert set(batch['properties'])=={'intent','transactions','attachment_id','continue_draft','category_choice'}
     assert 'transactions' in batch['required']
     assert single['additionalProperties'] is False and batch['additionalProperties'] is False
     assert batch['properties']['transactions']['items']['properties']['amount']['type']=='integer'

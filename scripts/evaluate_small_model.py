@@ -31,7 +31,7 @@ def main():
     parser.add_argument('--receipt',action='append',nargs=3,metavar=('PATH','PAID_BAHT','DATE'),help='Receipt-only evaluation; repeat for more images. Expected printed date is YYYY-MM-DD. Private image/reply content is not written to artifacts.')
     parser.add_argument('--thinking',choices=['none','default'],default='default')
     parser.add_argument('--extract-thinking',choices=['none','default'],help='Optional receipt Inbox profile override; chat keeps --thinking. Used only with --receipt.')
-    parser.add_argument('--focus',choices=['full','tool-repair'],default='full',help='tool-repair runs balance, independently priced batches and explicit category choice only; not a full-suite result.')
+    parser.add_argument('--focus',choices=['full','tool-repair','clarifications'],default='full',help='Focused suites are not full-suite results. clarifications tests category deferral with saved preferences and receipt follow-ups.')
     parser.add_argument('--temperature',type=float,default=0.1)
     parser.add_argument('--max-tokens',type=int,default=4096)
     parser.add_argument('--output',type=Path,default=Path(tempfile.gettempdir())/'smart-finance-live-eval.json')
@@ -146,6 +146,38 @@ def main():
             save()
         print(json.dumps(save(),ensure_ascii=False),flush=True)
         client.close()
+        raise SystemExit(0 if all(c['passed'] for c in checks) else 1)
+    if args.focus=='clarifications':
+        call('PUT',base+'/ai/preferences',json={'expense_account_id':cash,'rules':[{'keyword':'กาแฟ','category_id':food}]})
+        cases=[('ช่วยจดค่ากาแฟ75บาทจากเงินสด หมวดฉันเลือกเอง',7500,True),
+               ('กินข้าว55บาทเงินสด ยังไม่ต้องใส่หมวด เดี๋ยวเลือกทีหลัง',5500,True),
+               ('กาแฟ60บาทเงินสด ขอคิดเรื่องหมวดก่อน ยังไม่ต้องจัดให้',6000,True),
+               ('ขนม40บาทเงินสด ไม่ต้องถามหมวด เลือกให้เลย',4000,False)]
+        for text,cents,ask in cases:
+            cid=room();reply=say(cid,text)
+            if ask:
+                check('asks real categories instead of preference: '+text,'จัดเข้าหมวดไหน' in reply and 'อาหารและเครื่องดื่ม' in reply and 'กรุณาตรวจสอบ' not in reply)
+                reply=say(cid,'อาหารและเครื่องดื่ม')
+            check('complete draft with retained price: '+text,'กรุณาตรวจสอบ' in reply and has_money(reply,cents) and 'หมวด: อาหารและเครื่องดื่ม' in reply)
+            say(cid,'ยกเลิก')
+        from PIL import Image,ImageDraw,ImageFont
+        import io
+        picture=Image.new('RGB',(900,600),'white');draw=ImageDraw.Draw(picture)
+        draw.multiline_text((50,50),'SYNTHETIC TEST RECEIPT\nPAYMENT SUCCESS\n'+today.isoformat()+'\nCOFFEE SHOP\nTOTAL THB 125.00\nNOT A REAL BANK RECEIPT',font=ImageFont.load_default(size=36),fill='black',spacing=20)
+        raw=io.BytesIO();picture.save(raw,format='PNG');cid=room()
+        reply=say(cid,'ค่ากาแฟ จ่ายเงินสด ช่วยจดให้หน่อย',raw.getvalue())
+        ready=True
+        for text in (None,'รายจ่ายนะ','เปลี่ยนหมวดเป็นเดินทาง'):
+            if text:reply=say(cid,text)
+            valid='กรุณาตรวจสอบ' in reply and has_money(reply,12500) and today.isoformat() in reply and 'หลักฐาน:' in reply
+            if text=='เปลี่ยนหมวดเป็นเดินทาง':valid=valid and 'หมวด: เดินทาง' in reply
+            check('receipt review retains fields: '+str(text),valid);ready=ready and valid
+        if ready:
+            before=report();say(cid,'ยืนยัน');after=report()
+            check('confirmed receipt after follow-ups',after['total']==before['total']+1 and after['expense']==before['expense']+12500)
+            say(cid,'ยืนยัน');check('receipt replay after follow-ups',report()['total']==after['total'])
+        else:say(cid,'ยกเลิก')
+        print(json.dumps(save(),ensure_ascii=False),flush=True);client.close()
         raise SystemExit(0 if all(c['passed'] for c in checks) else 1)
     if args.focus=='tool-repair':
         check('current balances',has_money(say(room(),'ตอนนี้ฉันมีเงินเท่าไร'),1578900))

@@ -206,6 +206,7 @@ class Decision(BaseModel):
     description:str|None=Field(max_length=300)
     account:str|None=Field(max_length=100,description='The exact bookkeeping wallet name explicitly supplied by the user, e.g. เงินสด. Return that name when present; null only when absent or ambiguous.')
     category:str|None=Field(max_length=100,description='Choose the best existing category by the meaning of the caption/purpose, even if the user did not name it. Null only if unclear, no suitable category exists, or user explicitly wants to choose it.')
+    category_choice:Literal['auto','ask']=Field(default='auto',description='ask if user wants to choose the category; bypass saved defaults and leave category null.')
     other_account:str|None=Field(max_length=100)
 
 
@@ -226,7 +227,7 @@ def plan(db,room,job,p,client,url,headers,extensions,document,deadline):
     if remaining<=0:raise AIRequestError('timeout')
     instruction=('Choose the next action for a newly uploaded receipt from the user meaning. '
         'prepare: user asks to record money, or supplies a receipt with a spending description; create a draft ONLY. '
-        'A request to record while asking the user to choose account/category is still prepare; leave only the explicitly reserved choices null. '
+        'A request to record while asking the user to choose account/category is still prepare; leave only the explicitly reserved choices null. If the user will choose category, set category_choice=ask so saved defaults cannot override this; otherwise auto. '
         'answer: user asks to read/explain this receipt, not record it. continue: request needs other tools such as ledger reports. '
         'Return JSON. Choose exact account/category names from the untrusted workspace data. '
         'Infer category from the spending/income purpose in the caption: coffee/meals belong to อาหารและเครื่องดื่ม when available. '

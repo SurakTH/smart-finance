@@ -68,7 +68,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
             require_tool=True
             try:
                 items=json.loads(answer.draft).get('transactions')
-                if isinstance(items,list) and 1<=len(items)<=10:repair_batch=True
+                if isinstance(items,list) and 2<=len(items)<=10:repair_batch=True
             except (ValueError,AttributeError,TypeError):pass
             if not sandbox:
                 from .assistant_tools import repair_seed
@@ -420,6 +420,10 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
                 if problem:
                     invalid(answer,problem)
                     if repairs>=2:
+                        if problem.get('error')=='invalid_source':
+                            if any(issue.get('code')=='unknown_reference' for issue in problem.get('issues',[])):
+                                return AssistantReply('ไม่พบรูปนี้ในบทสนทนาของคุณค่ะ ยังไม่ได้บันทึก')
+                            return AssistantReply('แหล่งรูปของร่างยังไม่ตรงกันค่ะ ยังไม่ได้บันทึกข้อมูล กรุณาเลือกหรือส่งรูปที่ต้องการอีกครั้ง')
                         prefix={'prepare_correction':'ยังเตรียมการแก้ไขไม่ได้','prepare_management_plan':'ยังเตรียมแผนนี้ไม่ได้'}.get(answer.tool_name,'ยังเตรียมรายการนี้ไม่ได้')
                         return AssistantReply(prefix+'ค่ะ ข้อมูลร่างยังไม่ครบหรือไม่ตรง ช่วยระบุบัญชี หมวด หรือรายละเอียดที่ต้องการอีกครั้งได้ไหมคะ? ยังไม่ได้เปลี่ยนข้อมูล')
                     continue

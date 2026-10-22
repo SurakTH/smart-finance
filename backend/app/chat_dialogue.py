@@ -23,6 +23,7 @@ class TransactionSuggestion(BaseModel):
     other_account_id: UUID | None = None
     account: str | None = Field(default=None,min_length=1,max_length=100)
     category: str | None = Field(default=None,min_length=1,max_length=100,description='Infer an existing category from purpose; ask if unclear or user wants to choose. Respect explicit choices/preferences.')
+    category_choice: Literal['auto','ask'] = Field(default='auto',description='ask=user will choose; auto=may infer/use preferences.')
     other_account: str | None = Field(default=None,min_length=1,max_length=100)
     attachment_id: UUID | None = None
     occurred_on: date | None = None
@@ -38,10 +39,11 @@ def single_item(data,attachment_id=None):
     """Canonicalize an unambiguous one-item shape BEFORE applying a patch."""
     if data.intent!='create' or data.transactions is None or len(data.transactions)!=1:return data
     item=data.transactions[0]
-    fields=set(TransactionSuggestion.model_fields)-{'intent','attachment_id','reply'}
-    source=str(data.attachment_id) if data.attachment_id else attachment_id
+    fields=set(TransactionSuggestion.model_fields)-{'intent','attachment_id','reply','category_choice'}
+    source=str(data.attachment_id) if data.attachment_id else attachment_id or (str(item.attachment_id) if item.attachment_id else None)
     if item.intent!='create' or any(getattr(data,key) is not None for key in fields) or (item.attachment_id and str(item.attachment_id)!=source):return data
     value={**item.model_dump(mode='json',exclude_unset=True),'intent':'create','continue_draft':data.continue_draft}
+    if data.category_choice=='ask':value['category_choice']='ask'
     if source is not None:value['attachment_id']=source
     return Suggestion.model_validate(value)
 
@@ -117,6 +119,7 @@ def continuing(db,c,user_id,data):
             original.update(attachment_id=action.payload.get('attachment_id'))
     if not original:raise ValueError('No current draft')
     patch=data.model_dump(mode='json',exclude_unset=True)
+    if patch.get('category_id') and 'category_choice' not in patch:patch['category_choice']='auto'
     merged={**original,**patch,'continue_draft':False}
     if patch.get('kind') and patch['kind']!=original.get('kind'):
         for key in ('category_id','other_account_id'):
@@ -159,6 +162,7 @@ def answer_clarification(db,c,user_id,text):
     if db.scalar(select(Job.id).where(Job.workspace_id==c.workspace_id,Job.user_id==user_id,Job.task=='chat',Job.status=='pending',Job.payload['conversation_id'].as_string()==c.id).limit(1)):
         return None
     target[field]=matches[0].id
+    if field=='category_id':target['category_choice']='auto'
     target.pop(field.removesuffix('_id'),None)
     draft.update(intent='create',continue_draft=False)
     return resolve(db,c,user_id,json.dumps(draft,ensure_ascii=False))
@@ -176,6 +180,8 @@ def resolve(db,c,user_id,output,attachment_id=None,_collect=False,_receipt_item=
         if _collect or data.intent!='create' or any(getattr(data,k) is not None for k in ('kind','description','amount','account_id','category_id','other_account_id','occurred_on')):
             return 'ข้อมูลชุดรายการไม่ชัดค่ะ กรุณาส่งรายละเอียดใหม่ ยังไม่ได้บันทึก'
         image_id=str(data.attachment_id) if data.attachment_id else attachment_id
+        if data.category_choice=='ask':
+            data=data.model_copy(update={'category_choice':'auto','transactions':[item.model_copy(update={'category_choice':'ask'}) for item in data.transactions]})
         items=[]
         for index,item in enumerate(data.transactions,1):
             if item.intent!='create' or (item.attachment_id and str(item.attachment_id)!=image_id):
@@ -256,8 +262,11 @@ def resolve(db,c,user_id,output,attachment_id=None,_collect=False,_receipt_item=
     if not wallet:return ask('ใช้บัญชีไหนคะ?','account_id')
     if wallet.kind not in allowed:return ask('บัญชีนี้ใช้เป็นต้นทางของรายการนี้ไม่ได้ค่ะ เลือกบัญชีอีกครั้งนะคะ','account_id')
     data=data.model_copy(update={'account_id':UUID(str(wallet.id))})
-    category=rows.get(str(data.category_id)) if data.category_id else default_category;destination=rows.get(str(data.other_account_id))
+    category=None if data.category_choice=='ask' else rows.get(str(data.category_id)) if data.category_id else default_category;destination=rows.get(str(data.other_account_id))
     if data.kind in ('income','expense'):
+        if data.category_choice=='ask':
+            data=data.model_copy(update={'category_id':None})
+            return ask('จัดเข้าหมวดไหนคะ?','category_id')
         if not data.category_id:
             from .assistant_preferences import category_matches
             if len(category_matches(db,c.workspace_id,user_id,data.kind,data.description))>1:return ask('ความชอบที่ตั้งไว้ตรงหลายหมวดค่ะ จัดเข้าหมวดไหนคะ?','category_id')

@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       COMPOSE_FILE: compose.yaml:compose.nginx.yaml
@@ -39,17 +39,21 @@ jobs:
         run: docker compose up -d --build --wait --wait-timeout 180
       - name: PostgreSQL tests and migration checks
         run: python3 scripts/test_docker.py
-      - name: Frontend types and browser runtime
+      - name: Frontend typecheck
         working-directory: frontend
         run: |
           npm ci
           npm run typecheck
-          npx playwright install --with-deps chromium
       - name: Seed disposable browser account
         run: python3 scripts/seed_demo.py
       - name: Desktop and mobile browser tests
         working-directory: frontend
-        run: npx playwright test
+        run: |
+          # Ubuntu 24.04 runners ship Chrome and its system dependencies.
+          SF_CHROME_PATH="$(command -v google-chrome)"
+          "$SF_CHROME_PATH" --version
+          export SF_CHROME_PATH
+          npx playwright test
       - name: Backup and restore verification
         run: |
           sh scripts/backup.sh

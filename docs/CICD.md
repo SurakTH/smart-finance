@@ -1,14 +1,14 @@
 # GitHub CI/CD
 
-## อัตโนมัติบน Ubuntu ในบ้าน — ตั้งครั้งเดียว
+## Deploy อัตโนมัติบน Ubuntu หรือ VPS
 
 หลังเปิดใช้: push main → ทดสอบบน GitHub → publish images → runner บน Ubuntu ดึง images ของ commit เดียวกัน → สำรองฐานข้อมูล → migrate/เปิดแอป → ตรวจ health ไม่ build บน server และไม่ต้อง pull เอง ไม่มีการเปิด SSH จากอินเทอร์เน็ต; runner เป็นตัวเชื่อมออกไป GitHub
 
-1. เปิด repo → Settings → Actions → Runners → New self-hosted runner → Linux / x64 แล้วคัดลอกคำสั่ง Download และ Configure จาก GitHub ไปรันบน Ubuntu ด้วย user `surak` ที่เรียก Docker ได้ ใช้โฟลเดอร์ runner แยก เช่น `~/actions-runner` ไม่ติดตั้งในโฟลเดอร์แอป เมื่อ Configure ถาม additional labels ให้ใส่ **`smart-finance`** ไม่ต้องส่ง registration token ให้ผู้อื่น
+1. เปิด repo → Settings → Actions → Runners → New self-hosted runner → Linux / ARM64 หรือ x64 ตามเครื่อง แล้วคัดลอกคำสั่ง Download และ Configure จาก GitHub ไปรันบน Ubuntu ด้วย user ที่เรียก Docker ได้ เช่น `ubuntu` บน VPS ใช้โฟลเดอร์ runner แยก เช่น `~/actions-runner` ไม่ติดตั้งในโฟลเดอร์แอป เมื่อ Configure ถาม additional labels ให้ใส่ **`smart-finance`** ไม่ต้องส่ง registration token ให้ผู้อื่น
 2. ในโฟลเดอร์ runner ที่ Configure เสร็จแล้ว เปิดเป็น service:
 
    ```sh
-   sudo ./svc.sh install surak
+   sudo ./svc.sh install "$(whoami)"
    sudo ./svc.sh start
    ```
 
@@ -17,8 +17,9 @@
 
    | Name | Value |
    |---|---|
-   | `LOCAL_DEPLOY_PATH` | `/home/surak/my_docker/smart-finance` |
+   | `LOCAL_DEPLOY_PATH` | `/home/ubuntu/docker/smart-finance` |
    | `AUTO_DEPLOY` | `true` |
+   | `LOCAL_DEPLOY_ARCH` | `arm64` (ค่าเริ่มต้น) หรือ `x64` |
 
    ใช้ path ของแอปเดิมที่มี `.env` และ compose.yaml; ไม่ใส่ `~` หากใช้ gateway ภายในแอปเป็น Nginx (compose.nginx.yaml) ให้เพิ่ม `LOCAL_DEPLOY_GATEWAY=nginx` ค่าเริ่มต้น `caddy` ตรงกับการติดตั้งเดิม ส่วน Nginx Proxy Manager อีก VM ใช้ค่าเดิมต่อได้ ทั้ง IP, LAN, Tailscale และ HTTPS ใช้ `.env` เดิม ไม่มีการบังคับเปลี่ยน domain/cookie/network
 4. ครั้งแรกเลือก Actions → Smart Finance → Run workflow → main → ติ๊ก **deploy** → Run หลังจากนั้น push main ที่ผ่านจะ deploy อัตโนมัติ หาก production environment มี required reviewer จะยังรออนุมัติตามการตั้งค่านั้น
@@ -100,7 +101,7 @@ Actions → Smart Finance → Run workflow → เลือก main → เป�
 - หยุด API/worker และ Telegram ถ้ารันอยู่ก่อน backup เพื่อพักการเขียน สำรองฐานข้อมูลก่อน migration แล้วเปิด stack จาก images โดยไม่ build บนเซิร์ฟเวอร์
 - เปิด Telegram กลับถ้าเคยรันอยู่ ตรวจ health ของ API และเว็บ แล้วบันทึก SHA ลง current-commit
 
-GitHub-hosted runner เผยแพร่ images สำหรับ linux/amd64 ตาม Ubuntu Server/Hyper-V ในแผนนี้ ยังไม่มี multi-architecture ARM publish
+GitHub Actions สร้าง images บน runner ของแต่ละสถาปัตยกรรม แล้วเผยแพร่ทั้ง `linux/amd64` และ `linux/arm64` ใต้ tag ของ commit เดียวกัน Docker บนเซิร์ฟเวอร์จะเลือก image ที่ตรงกับเครื่อง
 
 ไม่มีการ deploy อัตโนมัติทุก push; ไม่มี SSH action จาก third party และไม่แก้ Nginx/ใบรับรองของ host การจัดการ Secrets/Environment และการเชื่อมเซิร์ฟเวอร์จริงต้องตั้งเองก่อน CD ทำงานได้
 

@@ -210,6 +210,23 @@ def handle(db,c,user_id,text,review_message_id=None,allow_model_dialogue=False):
     from .chat_batch import edit
     batch_reply=edit(db,c,user_id,text)
     if batch_reply is not None:return batch_reply
+    # Treat an explicit category selection like a form edit on the current
+    # reviewed draft. Free-form requests still go through the assistant.
+    category_change=re.fullmatch(r'(?:เปลี่ยน|แก้)\s*หมวด(?:หมู่)?\s*(?:เป็น|ไปเป็น)\s*(.{1,100})',text)
+    if category_change and not (partial.get('expires',0)>now() and partial.get('draft')):
+        action=db.scalar(select(ChatAction).where(*scope,ChatAction.id==context.get('review_action_id'),
+            ChatAction.status=='pending',ChatAction.expires>now()).with_for_update())
+        tx=action.payload.get('transaction') if action and not action.payload.get('target') else None
+        if tx and tx['kind'] in ('expense','income'):
+            matches=db.scalars(select(Account).where(Account.workspace_id==c.workspace_id,
+                Account.kind==tx['kind'],Account.name==category_change[1].strip()).limit(2)).all()
+            if len(matches)==1:
+                updated=TransactionInput(**{**tx,'category_id':matches[0].id,
+                    'idempotency_key':str(uuid4())}).model_dump(mode='json')
+                try:after=summary(db,c.workspace_id,updated)
+                except HTTPException:return 'ข้อมูลบัญชีเปลี่ยนไปแล้วค่ะ ขอเริ่มรายการใหม่อีกครั้ง'
+                return prepare_review(db,c,user_id,{**action.payload,'transaction':updated,
+                    'after':after,'revision_key':str(uuid4())})
     # An explicit short correction changes only the pending draft, never the ledger.
     change=re.fullmatch(r'(?:จริง\s*ๆ|แก้ยอด|เปลี่ยนยอด|เอาเป็น|เปลี่ยนเป็น|แก้เป็น|ยอดจริง)(?:\s*(?:เป็น|คือ))?\s*([\d,.]+)\s*(?:บาท)?\s*(?:นะ|ค่ะ|ครับ|จ้า)?',text)
     if change:

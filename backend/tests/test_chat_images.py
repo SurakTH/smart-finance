@@ -97,6 +97,11 @@ def test_vision_caption_reviews_in_chat_and_preserves_confirmed_evidence(actor,m
     review=c.get(root+f'/conversations/{cid}/messages').json()[-1]
     assert 'กรุณาตรวจสอบ' in review['content'] and review['attachment_id']==r['attachment_id']
     assert c.get(root+'/transactions').json()==[] and c.get(root+'/proposals').json()==[]
+    model_requests=len(calls)
+    assert 'หมวด: เดินทาง' in say(c,root,cid,'เปลี่ยนหมวดเป็นเดินทาง')
+    edited=c.get(root+f'/conversations/{cid}/messages').json()[-1]
+    assert edited['attachment_id']==r['attachment_id'] and '฿200.00' in edited['content']
+    assert len(calls)==model_requests and c.get(root+'/transactions').json()==[]
     assert 'บันทึกรายการเรียบร้อย' in say(c,root,cid,'ยืนยัน')
     proposal=c.get(root+'/proposals').json()[0]
     assert proposal['amount']==20000 and proposal['status']=='confirmed'

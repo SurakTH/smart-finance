@@ -208,6 +208,12 @@ def call_model(db, job):
                 if attempt<p.retries: time.sleep(0.3)
     if getattr(job,'_budget_blocked',False) and job.task=='chat':return 'ยังเรียก Cloud AI ไม่ได้ค่ะ วงเงิน AI เดือนนี้ไม่พอ หรือยังไม่ได้ตั้งราคาครบ ตรวจได้ที่ตั้งค่า AI → การใช้งานและงบ ยังไม่ได้เปลี่ยนข้อมูลการเงิน',False
     if job.task=='chat' and getattr(job,'_last_ai_error',None):
+        receipt=getattr(job,'_receipt_reading',None) or {}
+        document=receipt.get('document') or {}
+        if assistant and receipt.get('attachment_id')==job.payload.get('attachment_id') and document.get('is_receipt'):
+            from .receipt_reader import explain
+            return (explain(document)+'\n\nอ่านข้อมูลจากรูปได้แล้ว แต่ยังเตรียมร่างไม่เสร็จค่ะ '
+                'ถ้าต้องการจดรายการจากรูปนี้ คุยต่อได้เลยโดยไม่ต้องส่งรูปซ้ำ'),False
         return error_message(job._last_ai_error)+' ยังไม่ได้บันทึกหรือแก้ข้อมูลจากคำขอนี้ค่ะ',False
     if not options['demo_fallback']:
         raise ValueError('No available AI provider')
@@ -303,7 +309,7 @@ def _process_job(db,job):
             elif output.tool_name=='prepare_management_plan':
                 from .assistant_management import resolve as management_resolve
                 output=management_resolve(db,c,job.user_id,output.draft)
-            else:output=resolve(db,c,job.user_id,output.draft,job.payload.get('attachment_id'))
+            else:output=resolve(db,c,job.user_id,output.draft,job.payload.get('attachment_id'),source_message_id=job.payload.get('user_message_id'))
             trusted_review=(c.capture_context or {}).get('review_action_id')!=previous
         else:output=output.content
     elif dialogue and not demo:

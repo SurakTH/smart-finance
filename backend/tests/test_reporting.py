@@ -75,6 +75,7 @@ def test_dashboard_month_recent_previous_breakdowns(actor):
 def test_report_chat_real_data_no_model_no_posting_and_context(actor,monkeypatch):
     c,w,_=actor;a=ids(c,w);b=f'/workspaces/{w}'
     monkeypatch.setattr(finance_chat,'today',lambda:date(2026,10,10))
+    monkeypatch.setattr('app.reporting.today',lambda:date(2026,10,10))
     def forbidden(*args,**kw): raise AssertionError('report must not call a provider')
     monkeypatch.setattr(ai.httpx,'Client',forbidden)
     record(c,w,a,amount=7550,description='ข้าว',day='2026-09-10')

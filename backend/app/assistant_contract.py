@@ -11,6 +11,23 @@ def claims_review(text):
     plain=re.sub(r'[*_`“”"\'‘’]','',text)
     return bool(re.search(r'(?:พิมพ์|ตอบ|ส่ง)\s*(?:คำว่า\s*)?ยืนยัน|(?:รายการ|แผน|ข้อเสนอ)(?:ที่)?\s*รอ(?:การ)?ยืนยัน|(?:รายการ|แผน|ข้อเสนอ)(?:ที่)?\s*รอ(?:การ)?การยืนยัน',plain))
 
+PARTIAL_REPAIR=(
+    'คำตอบที่กำลังจะส่งสัญญาว่าจะทำร่าง แต่ยังไม่มีร่างในระบบ '
+    'ถ้าคำขอเดิมให้จดรายการ ให้เรียก prepare_transaction ตอนนี้ด้วยเฉพาะข้อมูลที่ผู้ใช้ให้ '
+    'เก็บรายละเอียดและหมวดที่ทราบไว้ เว้น amount ถ้าผู้ใช้ยังไม่บอกยอด ระบบจะถามเฉพาะช่องที่ขาด '
+    'ไม่ต้องบังคับถามวันที่ถ้าผู้ใช้ไม่ได้ขอวันที่อื่น และห้ามเดายอดหรือบันทึกเอง'
+)
+
+
+def promises_partial_draft(text):
+    plain=re.sub(r'[*_`]', '', re.sub(r'```.*?```','',text,flags=re.S))
+    promise=re.search(r'(?:จะ|เดี๋ยว(?:ผม|ฉัน)?)\s*(?:(?:สร้าง|เตรียม|ทำ)\s*ร่าง(?:รายการ)?|ร่าง\s*รายการ)'
+                      r'|\b(?:I will|I’ll|I\'ll) (?:create|prepare) (?:a |the )?draft\b',plain,re.I)
+    capture_question=(re.search(r'(?:จด|บันทึก)(?:รายการ|ค่า)[^\n.!?]{0,60}ให้(?:เลย|ก่อน)',plain)
+                      and re.search(r'(?:ยอด|จำนวนเงิน|ราคา|เงิน)(?:[^\n.!?]{0,16})เท่าไหร่|กี่บาท',plain))
+    return bool(promise or capture_question)
+
+
 def recovery_request(db,c,user_id,text):
     """Recover a legacy phantom review by preparing anew, never by posting prose."""
     if text.strip()!='ยืนยัน':return None

@@ -8,7 +8,7 @@ from copy import deepcopy
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
-from pydantic import BaseModel,ConfigDict,Field,field_validator,ValidationError
+from pydantic import BaseModel,ConfigDict,Field,field_validator,model_validator,ValidationError
 from sqlalchemy import select
 from .models import Conversation,Membership,Workspace,Account,Message,now
 from .ai_fence import Invalidated
@@ -35,6 +35,19 @@ class Fetch(BaseModel):
     reuse_previous_scope:bool=False
     clear_filters:bool=False
     purpose:Literal['answer','context']='answer'
+
+    @model_validator(mode='before')
+    @classmethod
+    def same_scope(cls,data):
+        # Small models sometimes put a reference to the previous answer in the
+        # date slot. Only exact reference markers are aliases, never unknown dates.
+        from .assistant_calendar import key
+        if isinstance(data,dict) and isinstance(data.get('period'),str) and key(data['period']) in {
+            'same','same_period','same_as_previous','same_as_before','previous_scope','ช่วงเดิม','ช่วงเดียวกัน'
+        }:
+            if data.get('clear_filters') is True:raise ValueError('conflicting previous scope')
+            return {**data,'period':None,'reuse_previous_scope':True}
+        return data
 
     @field_validator('period','compare_period',mode='before')
     @classmethod
@@ -167,8 +180,10 @@ def read(db,room,job,raw):
         for key in ('operation','bucket','group_by','order','limit'):args.pop(key,None)
     if intent!='balances' and args.get('period') is None:
         previous=(room.capture_context or {}).get('verified_scope',{})
-        if not value.reuse_previous_scope or not previous.get('start') or previous.get('expires',0)<=now():
-            args['reuse_previous_scope']=False
+        if value.reuse_previous_scope and (not previous.get('start') or not previous.get('end') or previous.get('expires',0)<=now()):
+            from .request_interpreter import NeedInfo
+            raise NeedInfo('period')
+        if not value.reuse_previous_scope:
             args['period']=dict(mode='current_month' if intent=='budget' else 'last_days' if intent=='transactions' else 'month_to_date',**({'days':30} if intent=='transactions' else {}))
     task,_,_=plan(db,room,job,json.dumps(args),resolved={k:v for k,v in {'account':account,'category':category}.items() if v is not None})
     key=json.dumps(dict(resource=value.resource,start=str(task.start),end=str(task.end),
@@ -201,7 +216,15 @@ def read(db,room,job,raw):
         total=totals(db,room.workspace_id,task,task.start,task.end)
         evidence['facts']={k:v for k,v in evidence['facts'].items() if not k.startswith('item_')}
         for i,item in enumerate(page['items']):evidence['facts'].update({f'item_{i}_description':item['description'],f'item_{i}_amount':money(item['amount'])+' บาท',f'item_{i}_date':str(item['occurred_on'])})
-        evidence['fallback']='\n'.join([evidence['scope'],f"รายจ่าย {money(total['expense'])} บาท · รายรับ {money(total['income'])} บาท · {total['count']} รายการทั้งหมด",*[transaction_line(item,i) for i,item in enumerate(page['items'],1)],*(['ยังมีรายการหน้าถัดไป ยอดรวมคำนวณครบแล้ว'] if page['has_more'] else [])])
+        if task.transaction_kind in ('transfer','card_payment'):
+            subtotals=[f"ยอดรวม {money(total['amount'])} บาท"]
+        else:
+            subtotals=[f"{label} {money(total[key])} บาท" for key,label in
+                (('expense','รายจ่าย'),('income','รายรับ')) if task.transaction_kind in (None,key)]
+        subtotals.append(f"{total['count']} รายการทั้งหมด")
+        evidence['fallback']='\n'.join([evidence['scope'],' · '.join(subtotals),
+            *[transaction_line(item,i) for i,item in enumerate(page['items'],1)],
+            *(['ยังมีรายการหน้าถัดไป ยอดรวมคำนวณครบแล้ว'] if page['has_more'] else [])])
         job._finance_refs=[];collect(job,{**total,'items':page['items']})
         result.update(items=page['items'],has_more=page['has_more'],next_cursor=page['next_cursor'],total=total['count'])
     if intent=='balances':
@@ -211,7 +234,7 @@ def read(db,room,job,raw):
     job._finance_refs=list(refs.values())[-24:]
     remember(job,evidence)
     result['dataset_id']=job._direct_evidence['latest']+1
-    result.update(facts=evidence['facts'],notice='Use render_finance with dataset_id and relevant fact keys, including the requested total (net for balances). Backend owns figures, labels and signs. Read more only if necessary. No invented arithmetic or user command format.')
+    result.update(facts=evidence['facts'],notice='Answer naturally from these facts, or call render_finance with {} for the verified report. Read again only if information is missing.')
     result['purpose']=value.purpose
     cache[key]=(result,evidence,read_context(room))
     if value.purpose=='context':restore_context(room,context_before)

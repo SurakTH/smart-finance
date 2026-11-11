@@ -265,7 +265,7 @@ Web Chat ที่ตั้ง Chat provider แล้วเริ่มจา�
 เจ้าของพื้นที่เพิ่ม/แก้โมเดลในศูนย์ตั้งค่า AI ได้โดยไม่แก้ `.env`:
 
 - Ollama: ใส่ **Ollama Base URL** แยกแต่ละตัว เช่น `http://192.168.1.20:11434/v1` หรือ `http://100.90.1.2:11434/v1` เพิ่มหลายตัวแล้วจัดลำดับสำรองได้ เว้นว่างใช้ `OLLAMA_URL` เดิมของเซิร์ฟเวอร์
-- Custom API: ใช้ OpenAI-compatible Base URL แบบ HTTP/HTTPS รวม LAN/Tailscale/ชื่อ Docker และพอร์ตอื่นได้ เช่น `http://192.168.1.30:8081/v1` ไม่ต่อ `/chat/completions` เอง ยังคงใช้สวิตช์ Cloud AI ตามเดิม
+- Custom API: ใช้ OpenAI-compatible Base URL แบบ HTTP/HTTPS รวม LAN/Tailscale/ชื่อ Docker และพอร์ตอื่นได้ เช่น `http://192.168.1.30:8081/v1` วาง Base URL หรือ URL เต็มที่ลงท้ายด้วย `/chat/completions` ได้ ยังคงใช้สวิตช์ Cloud AI ตามเดิม
 - ปุ่มดึงโมเดล ทดสอบ และงานจริงใช้ URL ของตัวนั้นเหมือนกัน URL ต้องเข้าถึงได้จาก container backend; `localhost` หมายถึง container ไม่ใช่คอมหรือมือถือที่เปิดเว็บ ใช้ IP ของเครื่องปลายทางหรือ `host.docker.internal` ตามเครือข่าย
 - Ollama ที่ตั้ง URL ไว้ยังเรียกได้แม้ปิด Cloud AI ปุ่มนี้จำกัดชนิด provider ไม่ได้รับรองว่าปลายทาง Ollama อยู่เครื่องเดียวกัน HTTP ส่งข้อมูล/คีย์โดยไม่เข้ารหัส เหมาะกับเครือข่ายที่ไว้ใจหรือ Tailscale
 

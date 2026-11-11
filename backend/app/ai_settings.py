@@ -47,7 +47,12 @@ def custom_endpoint(value):
         try:ip=ipaddress.ip_address(host)
         except ValueError:ip=None
         if ip is not None and not allowed_ip(str(ip)):raise ValueError()
-        return value.rstrip('/')
+        base=value.rstrip('/')
+        # Accept copied OpenAI-compatible chat URLs as well as base URLs.
+        # Match only a literal terminal route, after validating the entire URL.
+        suffix='/chat/completions'
+        if u.path.rstrip('/').endswith(suffix):base=base[:-len(suffix)]
+        return base
     except (ValueError,UnicodeError):
         raise HTTPException(422,'URL ต้องเป็น HTTP หรือ HTTPS พร้อมพอร์ตที่ถูกต้อง ไม่มีรหัสผ่าน query หรือ fragment และไม่ใช่ metadata/link-local')
 
@@ -105,11 +110,15 @@ def apply(p,data,creating=False):
         values['endpoint']=custom_endpoint(data.endpoint) if data.endpoint else ''
         if values['endpoint'] and urlsplit(values['endpoint']).path in ('','/'):values['endpoint']+='/v1'
     elif data.endpoint:raise HTTPException(422,'ตั้ง URL ได้เฉพาะ Ollama และ Custom API')
-    if data.api_key and any(ord(c)<32 or ord(c)>126 for c in data.api_key):raise HTTPException(422,'รูปแบบ API key ไม่ถูกต้อง')
-    if data.clear_key and data.api_key:raise HTTPException(422,'เลือกล้างคีย์หรือใส่คีย์ใหม่อย่างใดอย่างหนึ่ง')
-    if not creating and (p.kind!=data.kind or (data.kind in ('compatible','ollama') and (p.endpoint or (config.OLLAMA_URL if p.kind=='ollama' else config.COMPATIBLE_URL)).rstrip('/')!=(values['endpoint'] or config.OLLAMA_URL))) and not data.api_key:p.encrypted_key=''
+    # Copy/paste can include a line ending, BOM or invisible edge spacing.
+    # Never rewrite characters inside the credential or treat blank paste as clearing it.
+    api_key=data.api_key.strip(' \t\r\n\u00a0\u200b\ufeff')
+    if data.api_key and (not api_key or any(ord(c)<32 or ord(c)>126 for c in api_key)):
+        raise HTTPException(422,'รูปแบบ API key ไม่ถูกต้อง: วางเฉพาะคีย์บรรทัดเดียว ไม่รวม URL หรือข้อความอื่น')
+    if data.clear_key and api_key:raise HTTPException(422,'เลือกล้างคีย์หรือใส่คีย์ใหม่อย่างใดอย่างหนึ่ง')
+    if not creating and (p.kind!=data.kind or (data.kind in ('compatible','ollama') and custom_endpoint(p.endpoint or (config.OLLAMA_URL if p.kind=='ollama' else config.COMPATIBLE_URL))!=custom_endpoint(values['endpoint'] or config.OLLAMA_URL))) and not api_key:p.encrypted_key=''
     if data.clear_key:p.encrypted_key=''
-    if data.api_key:p.encrypted_key=config.cipher().encrypt(data.api_key.encode()).decode()
+    if api_key:p.encrypted_key=config.cipher().encrypt(api_key.encode()).decode()
     if data.kind in ENDPOINTS and not p.encrypted_key:raise HTTPException(422,'ต้องระบุ API key')
     for key,value in values.items():setattr(p,key,value)
 

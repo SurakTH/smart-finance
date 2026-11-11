@@ -41,7 +41,7 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
         if getattr(job,'_read_cache',None):return AssistantReply(evidence.finish(db,room,job,task,answer.content,job._read_cache))
         from .semantic_assistant import general_reply
         return AssistantReply(general_reply(answer.content,job.payload.get('text','')))
-    from .assistant_contract import claims_review,REPAIR,UNPREPARED
+    from .assistant_contract import claims_review,promises_partial_draft,PARTIAL_REPAIR,REPAIR,UNPREPARED
     receipt_planned=False;capture_checked=False;repair_base=None;reference_ids=False;repaired=False;repairs=0;stage='thinking';active=set(getattr(job,'_assistant_toolkits',[]))
     from .receipt_reader import current as receipt_current
     receipt_document=(getattr(job,'_receipt_reading',None) or {}).get('document') or receipt_current(room,getattr(job,'_receipt_id',None))
@@ -191,10 +191,11 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
                 draft=decision.model_dump(mode='json',exclude_none=True,exclude={'action'})
                 draft.update(intent='create',attachment_id=job.payload['attachment_id'])
                 answer=AssistantReply('',json.dumps(draft,ensure_ascii=False),'prepare_transaction','receipt_plan_'+str(job._assistant_requests))
-        if not answer.tool_name and claims_review(answer.content):
+        partial_promise=not sandbox and not answer.tool_name and promises_partial_draft(answer.content)
+        if not answer.tool_name and (claims_review(answer.content) or partial_promise):
             if repaired:return AssistantReply(UNPREPARED)
             repaired=True;require_tool=True;record(job,'review_repair',status='invalid')
-            turns.append({'role':'system','content':REPAIR})
+            turns.append({'role':'system','content':PARTIAL_REPAIR if partial_promise else REPAIR})
             continue
         if not sandbox and not answer.tool_name and not getattr(job,'_direct_evidence',None) and not getattr(job,'_read_cache',None):
             from .semantic_assistant import general_reply
@@ -242,7 +243,18 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
                 if sandbox:raise ValueError('Unexpected sandbox renderer')
                 content=render(job,answer.draft)
             except (ValueError,ValidationError) as error:
-                invalid(answer,dict(error='invalid_arguments',message='Use dataset_id and quantity fact keys returned by reads. Include the requested total. Commentary has no figures or execution claims.'))
+                from .tool_arguments import feedback as argument_feedback
+                datasets=(getattr(job,'_direct_evidence',None) or {}).get('datasets',[])
+                if not sandbox and any(d.get('purpose','answer')=='answer' for d in datasets):
+                    # The model already chose to show the report. Bad formatting
+                    # cannot invalidate an authorized read or justify another call.
+                    check_stop(job,True)
+                    record(job,'tool',tool='render_finance',status='invalid',issues=argument_feedback(error).get('issues',[]))
+                    record(job,'synthesis',status='limited')
+                    from .assistant_data import fallback
+                    return AssistantReply(fallback(job))
+                invalid(answer,dict(error='invalid_arguments',issues=argument_feedback(error)['issues'],
+                    message='Read an answering dataset first. Use {} to show the verified report.'))
                 if repairs>=2:return finish()
                 continue
             record(job,'tool',tool='render_finance',status='ok')
@@ -430,6 +442,12 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
                 if answer.tool_name=='prepare_transaction':
                     from .chat_dialogue import Suggestion
                     value=Suggestion.model_validate_json(answer.draft)
+                    if p.kind=='ollama' and not sandbox:
+                        from .assistant_amount_source import without_unsourced_amounts
+                        grounded=without_unsourced_amounts(db,room,job,value)
+                        if grounded is not value:
+                            value=grounded
+                            answer.draft=value.model_dump_json(exclude_unset=True,exclude_none=True)
                     if (p.kind=='ollama' and not sandbox and not capture_checked and value.intent!='chat'
                         and value.amount is None and value.transactions is None and not value.continue_draft
                         and not job.payload.get('attachment_id')
@@ -439,6 +457,13 @@ def converse(db,job,p,client,url,headers,extensions,messages,deadline,read_budge
                         capture_checked=True
                         invalid(answer,dict(error='check_missing_amount',issues=[dict(field='amount',code='missing')],message='The user message contains currency amounts but the draft omitted amount. Reread the actual request and current draft once. Include the stated transaction amount in satang if present; leave it absent if the numbers are not the requested amount. Never guess from dates or account numbers. Resubmit the draft, not prose.'))
                         continue
+                    if p.kind=='ollama' and not sandbox:
+                        from .assistant_draft_completion import complete_draft
+                        patch=complete_draft(db,room,job,p,client,url,headers,extensions,value,deadline)
+                        if patch:
+                            proposed=json.dumps({**json.loads(answer.draft),**patch})
+                            if not validate_draft(db,room,answer.tool_name,proposed):
+                                answer.draft=proposed
                     if value.intent=='chat':
                         if claims_review(value.reply or ''):return AssistantReply(UNPREPARED)
                         return checked(AssistantReply(value.reply or 'อยากให้ช่วยดูเรื่องไหนคะ?'))

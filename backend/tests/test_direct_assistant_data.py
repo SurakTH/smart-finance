@@ -294,3 +294,22 @@ def test_balance_answer_must_include_net_instead_of_only_zero_debt():
     remember(job,dict(facts={'net':'800.00 บาท','assets':'900.00 บาท','liabilities':'100.00 บาท'},scope='ยอดปัจจุบัน',fallback='800 บาท'))
     with pytest.raises(ValueError,match='missing requested total'):natural(job,'มีสินทรัพย์ 900 บาท หนี้ 100 บาทค่ะ')
     assert '฿800' in natural(job,'ยอดสุทธิ **฿800** ค่ะ')
+
+
+def test_same_period_alias_keeps_scoped_dates_for_followup_breakdown(assistant):
+    c,w,u,b,cid,wallet,cat,state,post,send=assistant
+    post(8000,'เมื่อวาน','2026-10-13');post(190000,'วันอื่น','2026-10-01')
+    state['responses']=[fetch(period='เมื่อวาน',metric='expense'),tool('render_finance',{})]
+    assert '80.00 บาท' in send('เมื่อวานใช้ไปเท่าไหร่')['content']
+    state['responses']=[fetch('analytics',period='same as previous',operation='ranking',group_by='account'),tool('render_finance',{})]
+    text=send('แยกตามบัญชีให้หน่อย')['content']
+    assert '2026-10-13 ถึง 2026-10-13' in text and 'เงินสด' in text
+    assert '80.00 บาท' in text and '1,900.00' not in text
+
+
+def test_same_period_without_previous_read_does_not_default_to_month(assistant):
+    c,w,u,b,cid,wallet,cat,state,post,send=assistant
+    post(8000,'กาแฟ','2026-10-13')
+    state['responses']=[fetch(period='same period',metric='expense')]*2
+    reply=send('ดูช่วงเดิมให้หน่อย')
+    assert '80.00' not in reply['content'] and not reply['references']

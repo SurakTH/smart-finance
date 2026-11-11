@@ -133,3 +133,23 @@ def test_draft_tool_requires_explicit_new_or_continue_decision_before_details():
     assert 'continue_draft' in draft['required'] and list(draft['properties']).index('continue_draft')<list(draft['properties']).index('amount')
     structured=next(v['properties']['arguments'] for v in schema(tools,True)['anyOf'] if v['properties']['tool']['enum']==['prepare_transaction'])
     assert all('continue_draft' in variant['required'] for variant in structured['anyOf'])
+
+
+
+def test_continuation_nulls_cannot_erase_category_date_or_receipt(assistant):
+    c,w,u,b,cid,wallet,cat,state,post,send=assistant
+    with SessionLocal.begin() as db:
+        room=db.get(Conversation,cid);aid=attach(db,w,cid)
+        raw=json.dumps(dict(intent='create',kind='expense',description='ข้าว',occurred_on='2026-10-12',
+            category_id=cat,attachment_id=aid))
+        assert 'ยอดเท่าไหร่' in resolve(db,room,u.id,raw)
+        patch=json.dumps(dict(intent='create',continue_draft=True,amount=7000,account_id=wallet,
+            description=None,category_id=None,attachment_id=None,occurred_on=None))
+        assert validate_draft(db,room,'prepare_transaction',patch) is None
+        assert 'กรุณาตรวจสอบ' in resolve(db,room,u.id,patch)
+        review=db.scalar(select(ChatAction).where(ChatAction.conversation_id==cid))
+        tx=review.payload['transaction']
+        assert tx['amount']==7000 and tx['category_id']==cat
+        assert tx['description']=='ข้าว' and tx['occurred_on']=='2026-10-12'
+        assert review.payload['attachment_id']==aid
+    assert c.get(b+'/transaction-report').json()['total']==0

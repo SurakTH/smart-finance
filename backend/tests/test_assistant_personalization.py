@@ -160,7 +160,7 @@ def test_stream_usage_and_failed_job_accounting_survive_savepoint(actor,monkeypa
 
 def test_evidence_from_real_report_and_history_pagination(actor):
     c,w,u,b,cid=setup(actor);say(c,b,cid,CREATE);say(c,b,cid,'ยืนยัน')
-    say(c,b,cid,'เดือนนี้ใช้เท่าไหร่ มีอะไรบ้าง');assert run_once()
+    say(c,b,cid,'2026-10-01 ถึง 2026-10-31 ใช้เท่าไหร่ มีอะไรบ้าง');assert run_once()
     message=c.get(b+f'/conversations/{cid}/messages').json()[-1]
     refs=message['references'];assert refs[0]['type']=='summary' and refs[0]['expense']==7525
     entry=next(r for r in refs if r['type']=='entry');assert entry['amount']==7525

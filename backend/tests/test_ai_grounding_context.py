@@ -215,3 +215,40 @@ def test_supporting_reads_do_not_replace_followup_scope_and_cache_is_room_bound(
         other_message=Message(workspace_id=w,conversation_id=other,role='user',content='เมื่อวานใช้เยอะไหม');db.add(other_message);db.flush()
         forged=SimpleNamespace(workspace_id=w,user_id=u.id,payload={'conversation_id':other,'user_message_id':other_message.id,'text':other_message.content},_fetch_cache=job._fetch_cache,_fetch_cache_actor=job._fetch_cache_actor)
         with pytest.raises(Invalidated):read(db,db.get(Conversation,other),forged,json.dumps(primary))
+
+
+def test_default_renderer_keeps_requested_transaction_breakdown(assistant,monkeypatch):
+    monkeypatch.setattr('app.reporting.today',lambda:date(2026,10,14))
+    monkeypatch.setattr('app.semantic_assistant.today',lambda:date(2026,10,14))
+    c,w,u,b,cid,wallet,cat,state,post,send=assistant
+    post(8000,'กาแฟ','2026-10-13');post(12000,'ข้าว','2026-10-13')
+    state['responses']=[
+        tool('fetch_finance',dict(resource='transactions',period='เมื่อวาน',metric='expense')),
+        tool('render_finance',{}),
+    ]
+    text=send('เมื่อวานจ่ายอะไรบ้าง')['content']
+    assert 'รายจ่าย 200.00 บาท' in text and 'รายรับ' not in text
+    assert 'กาแฟ · 80.00 บาท' in text and 'ข้าว · 120.00 บาท' in text
+    assert len(state['calls'])==2 and count(w)==2
+
+
+def test_default_renderer_excludes_supporting_only_results():
+    job=evidence(dict(expense='80.00 บาท'))
+    from app.assistant_data import remember
+    remember(job,dict(scope='ข้อมูลประกอบ',facts={'expense':'999.00 บาท'},
+                      fallback='999.00 บาท',purpose='context'))
+    assert render(job,'{}')==job._direct_evidence['datasets'][0]['fallback']
+    with pytest.raises(ValueError):render(job,'{"intro":"จ่ายไป 999 บาท"}')
+    job._direct_evidence['datasets'].pop(0)
+    with pytest.raises(ValueError,match='missing answering scope'):render(job,'{}')
+
+
+def test_invalid_presentation_does_not_spend_another_model_call(assistant):
+    c,w,u,b,cid,wallet,cat,state,post,send=assistant;post(8000)
+    state['responses']=[
+        tool('fetch_finance',dict(resource='summary',metric='expense')),
+        tool('render_finance',dict(intro='รายจ่าย 999 บาท',reports=[dict(dataset_id=1,facts=['expense'])])),
+    ]
+    text=send('เดือนนี้ใช้ไปเท่าไหร่')['content']
+    assert '80.00 บาท' in text and '999' not in text
+    assert len(state['calls'])==2 and count(w)==1

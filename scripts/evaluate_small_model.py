@@ -31,7 +31,7 @@ def main():
     parser.add_argument('--receipt',action='append',nargs=3,metavar=('PATH','PAID_BAHT','DATE'),help='Receipt-only evaluation; repeat for more images. Expected printed date is YYYY-MM-DD. Private image/reply content is not written to artifacts.')
     parser.add_argument('--thinking',choices=['none','default'],default='default')
     parser.add_argument('--extract-thinking',choices=['none','default'],help='Optional receipt Inbox profile override; chat keeps --thinking. Used only with --receipt.')
-    parser.add_argument('--focus',choices=['full','tool-repair','clarifications'],default='full',help='Focused suites are not full-suite results. clarifications tests category deferral with saved preferences and receipt follow-ups.')
+    parser.add_argument('--focus',choices=['full','reads','breakdown','draft-followup','tool-repair','clarifications'],default='full',help='Focused suites are not full-suite results. reads covers balances, period follow-ups and account ranking; clarifications covers draft choices and receipt follow-ups.')
     parser.add_argument('--temperature',type=float,default=0.1)
     parser.add_argument('--max-tokens',type=int,default=4096)
     parser.add_argument('--output',type=Path,default=Path(tempfile.gettempdir())/'smart-finance-live-eval.json')
@@ -147,6 +147,39 @@ def main():
         print(json.dumps(save(),ensure_ascii=False),flush=True)
         client.close()
         raise SystemExit(0 if all(c['passed'] for c in checks) else 1)
+    if args.focus=='breakdown':
+        day=(today-timedelta(days=1)).isoformat()
+        for amount,description in ((8100,'รายการธนาคาร A'),(5600,'รายการธนาคาร B')):
+            call('POST',base+'/transactions',json=dict(kind='expense',amount=amount,occurred_on=day,
+                description=description,account_id=bank,category_id=food,idempotency_key=str(uuid.uuid4())))
+        cid=room()
+        check('read yesterday combined total',has_money(say(cid,'เมื่อวานเสียตังกับไรบ้าง'),37200))
+        reply=say(cid,'แยกตามบัญชีให้หน่อย')
+        check('breakdown keeps the prior date',day in reply)
+        def bound(name,cents):
+            return any(name in row and has_money(row,cents) for row in reply.splitlines())
+        check('cash subtotal, not individual items',bound('เงินสด',23500))
+        check('bank subtotal, not individual items',bound('ธนาคารทดสอบ',13700))
+        print(json.dumps(save(),ensure_ascii=False),flush=True);client.close()
+        raise SystemExit(0 if all(c['passed'] for c in checks) else 1)
+    if args.focus=='draft-followup':
+        cases=[
+            ('กินข้าวเมื่อกี้ ช่วยจดหน่อย','70 บาท จ่ายเงินสด',7000,'อาหารและเครื่องดื่ม'),
+            ('ค่าแท็กซี่ขากลับ ช่วยลงให้หน่อย','ทั้งหมด 95 บาท ใช้เงินสด',9500,'เดินทาง'),
+            ('ซื้อกาแฟ ช่วยจดไว้ แต่หมวดขอเลือกเอง','65 บาท เงินสด',6500,None),
+        ]
+        for first,second,amount,category in cases:
+            cid=room()
+            question=say(cid,first)
+            check('asks for amount: '+first,any(hint in question for hint in ('ยอดเท่าไหร่','จำนวนเงิน','กี่บาท','เงินเท่าไหร่','ราคาเท่าไหร่')))
+            reply=say(cid,second)
+            if category is None:
+                check('user category choice survives follow-up','จัดเข้าหมวดไหน' in reply)
+                reply=say(cid,'อาหารและเครื่องดื่ม');category='อาหารและเครื่องดื่ม'
+            check('completed draft with category: '+first,'กรุณาตรวจสอบ' in reply and has_money(reply,amount) and 'หมวด: '+category in reply)
+            say(cid,'ยกเลิก')
+        print(json.dumps(save(),ensure_ascii=False),flush=True);client.close()
+        raise SystemExit(0 if all(c['passed'] for c in checks) else 1)
     if args.focus=='clarifications':
         call('PUT',base+'/ai/preferences',json={'expense_account_id':cash,'rules':[{'keyword':'กาแฟ','category_id':food}]})
         cases=[('ช่วยจดค่ากาแฟ75บาทจากเงินสด หมวดฉันเลือกเอง',7500,True),
@@ -212,6 +245,9 @@ def main():
     top=max(month_wallets,key=month_wallets.get);top_name='เงินสด' if top==cash else 'ธนาคารทดสอบ'
     reply=say(room(),'เดือนนี้บัญชีไหนใช้เงินเยอะที่สุด')
     check('rank by account with bound amount',top_name in reply and has_money(reply,month_wallets[top]))
+    if args.focus=='reads':
+        print(json.dumps(save(),ensure_ascii=False),flush=True);client.close()
+        raise SystemExit(0 if all(c['passed'] for c in checks) else 1)
     cid=room();reply=say(cid,'เมื่อกี้ซื้อกาแฟ 80 บาท จ่ายเงินสด ช่วยจดให้หน่อย')
     check('real draft', 'กรุณาตรวจสอบ' in reply and has_money(reply,8000))
     reply=say(cid,'เอาเป็น 85 บาทนะ');check('draft correction',has_money(reply,8500) and 'กรุณาตรวจสอบ' in reply)

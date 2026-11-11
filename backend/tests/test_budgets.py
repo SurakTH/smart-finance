@@ -80,6 +80,7 @@ def test_budget_copy_previous_only_missing_and_year_boundary(actor):
 def test_budget_chat_read_only_no_provider(actor,monkeypatch):
     c,w,_=actor;a=ids(c,w);b=f'/workspaces/{w}'
     monkeypatch.setattr(finance_chat,'today',lambda:date(2026,10,11))
+    monkeypatch.setattr('app.reporting.today',lambda:date(2026,10,11))
     def forbidden(*args,**kw):raise AssertionError('Budget reports must stay local')
     monkeypatch.setattr(ai.httpx,'Client',forbidden)
     c.put(b+'/budgets/2026-10/'+a['expense'],json={'amount':10000});record(c,w,a,amount=2500)

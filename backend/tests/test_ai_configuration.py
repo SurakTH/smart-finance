@@ -260,3 +260,42 @@ def test_model_default_budget_persists_without_changing_other_settings(configure
     row=c.post(b+'/providers',json={**payload(),'max_tokens':0,'reasoning_effort':'high'}).json()
     assert row['max_tokens']==0 and row['reasoning_effort']=='high'
     assert c.get(b+'/providers').json()[0]['max_tokens']==0
+
+
+@pytest.mark.parametrize('suffix',['','/'])
+def test_copied_chat_url_keeps_api_prefix_and_pins_destination(monkeypatch,suffix):
+    monkeypatch.setattr(ai_settings.socket,'getaddrinfo',lambda *a,**k:[(2,1,6,'',('93.184.216.34',443))])
+    p=SimpleNamespace(kind='compatible',endpoint='https://api.example.com/api/v1/chat/completions'+suffix)
+    url,headers,extensions=ai_settings.target(p)
+    assert url+'/chat/completions'=='https://93.184.216.34/api/v1/chat/completions'
+    assert url+'/models'=='https://93.184.216.34/api/v1/models'
+    assert headers=={'Host':'api.example.com'} and extensions=={'sni_hostname':'api.example.com'}
+
+
+def test_same_custom_route_keeps_key_when_switching_url_forms(configured):
+    c,b,*_=configured
+    base='https://api.example.com/api/v1'
+    row=c.post(b+'/providers',json={**payload(),'endpoint':base+'/chat/completions'}).json()
+    assert row['endpoint']==base and row['has_key']
+    with SessionLocal.begin() as db:
+        db.get(Provider,row['id']).endpoint=base+'/chat/completions'
+    edited=c.put(b+'/providers/'+row['id'],json={**payload(),'endpoint':base,'api_key':''}).json()
+    assert edited['endpoint']==base and edited['has_key']
+
+
+def test_pasted_key_trims_only_copy_artifacts(configured):
+    c,b,*_=configured
+    synthetic='example_01-test_key'
+    response=c.post(b+'/providers',json={**payload(),'api_key':'\ufeff\u200b '+synthetic+'\r\n\u00a0'})
+    assert response.status_code==200 and synthetic not in response.text
+    with SessionLocal() as db:
+        assert config.cipher().decrypt(db.get(Provider,response.json()['id']).encrypted_key.encode()).decode()==synthetic
+
+
+@pytest.mark.parametrize('pasted',['https://api.example.com/v1\nexample_test-key','test\u200bkey',' \r\n'])
+def test_invalid_pasted_key_is_rejected_without_echo(configured,pasted):
+    c,b,*_=configured
+    response=c.post(b+'/providers',json={**payload(),'api_key':pasted})
+    assert response.status_code==422
+    assert 'รูปแบบ API key ไม่ถูกต้อง' in response.json()['detail']
+    assert 'example_test-key' not in response.text and 'test\u200bkey' not in response.text

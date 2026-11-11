@@ -97,12 +97,12 @@ class Selection(BaseModel):
 class Answer(BaseModel):
     model_config=ConfigDict(extra='forbid')
     intro:str=Field(default='',max_length=500)
-    reports:list[Selection]=Field(min_length=1,max_length=6)
+    reports:list[Selection]|None=Field(default=None,min_length=1,max_length=6)
     advice:str=Field(default='',max_length=1000)
 
 
 def tool():
-    return dict(type='function',function=dict(name='render_finance',description='Answer using read dataset_id and quantity fact keys. Backend renders amounts, account labels, periods and decrease signs. Include the requested total from an answering dataset. intro/advice use natural words without digits, URLs or execution claims. No writes.',parameters=Answer.model_json_schema()))
+    return dict(type='function',function=dict(name='render_finance',description='Call with {} to show the verified answer, including totals and any requested breakdown. Optional reports selects exact dataset_id and quantity keys for a custom layout. intro/advice are optional and contain no numbers, URLs or claims of writes.',parameters=Answer.model_json_schema()))
 
 
 LABELS={'income':'รายรับ','expense':'รายจ่าย','assets':'สินทรัพย์','liabilities':'หนี้สิน','net':'ยอดสุทธิ',
@@ -120,10 +120,14 @@ def render(job,raw):
     data=getattr(job,'_direct_evidence',None)
     if not data or data['actor']!=identity(job):raise Invalidated('membership_revoked')
     answer=Answer.model_validate_json(raw);lines=[]
-    selected=[data['datasets'][r.dataset_id-1] for r in answer.reports if r.dataset_id<=len(data['datasets'])]
-    if not any(d.get('purpose','answer')=='answer' for d in selected):raise ValueError('missing answering scope')
     for prose in (answer.intro,answer.advice):
         if claims_review(prose) or re.search(r'\d|[๐-๙]|https?://',prose) or general_reply(prose) in (UNVERIFIED,NO_WRITE):raise ValueError('unverified commentary')
+    if answer.reports is None:
+        from .assistant_data import fallback
+        if not any(d.get('purpose','answer')=='answer' for d in data['datasets']):raise ValueError('missing answering scope')
+        return '\n\n'.join(part for part in (answer.intro,fallback(job),answer.advice) if part)[:16000]
+    selected=[data['datasets'][r.dataset_id-1] for r in answer.reports if r.dataset_id<=len(data['datasets'])]
+    if not any(d.get('purpose','answer')=='answer' for d in selected):raise ValueError('missing answering scope')
     if answer.intro:lines.append(answer.intro)
     for selection in answer.reports:
         if selection.dataset_id>len(data['datasets']):raise ValueError('unknown dataset')

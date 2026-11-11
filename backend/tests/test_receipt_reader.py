@@ -44,6 +44,8 @@ def test_no_guess_for_conflicting_or_unclear_amount(patch,warning):
 @pytest.mark.parametrize('raw,expected',[
     ('20 ต.ค. 2569 12:10','2026-10-20'),('๒๐ ตุลาคม ๒๕๖๙','2026-10-20'),
     ('2026-10-20T12:10:00','2026-10-20'),('20/10/2569','2026-10-20'),
+    ('31 ต.ค. 69 14:10 น.','2026-10-31'),('๓๑ ตุลาคม ๖๙','2026-10-31'),
+    ('31 Oct 69',None),('31 พ.ย. 69',None),
     ('20 Oct 2026','2026-10-20'),('29/02/2025',None),('20/10/69',None),('not readable',None),
 ])
 def test_calendar_is_independent_of_bank_layout(raw,expected):assert printed_date(raw)==expected

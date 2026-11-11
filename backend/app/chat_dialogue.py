@@ -23,7 +23,7 @@ class TransactionSuggestion(BaseModel):
     other_account_id: UUID | None = None
     account: str | None = Field(default=None,min_length=1,max_length=100)
     category: str | None = Field(default=None,min_length=1,max_length=100,description='Infer an existing category from purpose; ask if unclear or user wants to choose. Respect explicit choices/preferences.')
-    category_choice: Literal['auto','ask'] = Field(default='auto',description='ask=user will choose; auto=may infer/use preferences.')
+    category_choice: Literal['auto','ask'] = Field(default='auto',description='ask only if user explicitly chooses; otherwise auto.')
     other_account: str | None = Field(default=None,min_length=1,max_length=100)
     attachment_id: UUID | None = None
     occurred_on: date | None = None
@@ -118,7 +118,10 @@ def continuing(db,c,user_id,data):
             original={k:v for k,v in action.payload['transaction'].items() if k in TransactionSuggestion.model_fields}
             original.update(attachment_id=action.payload.get('attachment_id'))
     if not original:raise ValueError('No current draft')
-    patch=data.model_dump(mode='json',exclude_unset=True)
+    # A null sent by a model filling an optional slot means no change.
+    # Intentional category deferral uses category_choice=ask; a kind change
+    # clears incompatible fields below. Null must never detach receipt evidence.
+    patch=data.model_dump(mode='json',exclude_unset=True,exclude_none=True)
     if patch.get('category_id') and 'category_choice' not in patch:patch['category_choice']='auto'
     merged={**original,**patch,'continue_draft':False}
     if patch.get('kind') and patch['kind']!=original.get('kind'):
@@ -165,14 +168,18 @@ def answer_clarification(db,c,user_id,text):
     if field=='category_id':target['category_choice']='auto'
     target.pop(field.removesuffix('_id'),None)
     draft.update(intent='create',continue_draft=False)
-    return resolve(db,c,user_id,json.dumps(draft,ensure_ascii=False))
+    return resolve(db,c,user_id,json.dumps(draft,ensure_ascii=False),source_message_id=pending.get('source_message_id'))
 
 
-def resolve(db,c,user_id,output,attachment_id=None,_collect=False,_receipt_item=False):
+def resolve(db,c,user_id,output,attachment_id=None,_collect=False,_receipt_item=False,*,source_message_id=None):
     """Validate every ID/type; user confirmation always happens in a separate HTTP request."""
     try:
         data=Suggestion.model_validate_json(output.removeprefix('```json').removeprefix('```').removesuffix('```').strip())
         if not _collect:data=single_item(data,attachment_id)
+        if data.continue_draft:
+            prior=(c.capture_context or {}).get('ai_followup',{})
+            if prior.get('expires',0)>now():
+                source_message_id=prior.get('source_message_id')
         data=continuing(db,c,user_id,data)
     except (ValidationError,ValueError,TypeError,AttributeError):
         return 'ฉันยังจับรายละเอียดไม่ครบค่ะ บอกสิ่งที่จ่ายหรือรับ พร้อมยอดเงินอีกครั้งได้ไหมคะ? ยังไม่ได้บันทึกนะคะ'
@@ -186,7 +193,7 @@ def resolve(db,c,user_id,output,attachment_id=None,_collect=False,_receipt_item=
         for index,item in enumerate(data.transactions,1):
             if item.intent!='create' or (item.attachment_id and str(item.attachment_id)!=image_id):
                 return f'รายการที่ {index} ไม่ตรงกับชุดนี้ค่ะ ยังไม่ได้บันทึก'
-            value=resolve(db,c,user_id,item.model_dump_json(),image_id,_collect=True,_receipt_item=True)
+            value=resolve(db,c,user_id,item.model_dump_json(),image_id,_collect=True,_receipt_item=True,source_message_id=source_message_id)
             if not isinstance(value,dict):
                 context=dict(c.capture_context or {});pending=context.get('ai_followup')
                 if pending and pending.get('expires',0)>now():
@@ -238,7 +245,7 @@ def resolve(db,c,user_id,output,attachment_id=None,_collect=False,_receipt_item=
             return 'บัญชีหรือหมวดยังไม่ตรงกับพื้นที่นี้ค่ะ ขอชื่อที่ใช้อีกครั้งนะคะ ยังไม่ได้บันทึก'
     context=dict(c.capture_context or {})
     def ask(text,field):
-        context['ai_followup']={'expires':now()+900,'draft':{**data.model_dump(mode='json',exclude_none=True),**({'attachment_id':image_id} if image_id else {})},'field':field};c.capture_context=context
+        context['ai_followup']={'expires':now()+900,'draft':{**data.model_dump(mode='json',exclude_none=True),**({'attachment_id':image_id} if image_id else {})},'field':field,**({'source_message_id':source_message_id} if source_message_id else {})};c.capture_context=context
         options=clarification_choices(db,c,context['ai_followup']['draft'],field)
         if field in ('account_id','category_id','other_account_id'):
             label='หมวด' if field=='category_id' else 'บัญชี'

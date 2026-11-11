@@ -27,13 +27,20 @@ export async function signIn(page:Page,forceLogin=false){
  await page.goto('/');
  await page.getByLabel('อีเมล',{exact:true}).fill(credentials.email);
  await page.getByLabel('รหัสผ่าน',{exact:true}).fill(credentials.password);
- await page.getByRole('button',{name:'เข้าสู่ระบบ',exact:true}).click();
- await expect(page.getByRole('heading',{name:'การเงินของคุณ',exact:true})).toBeVisible().catch(async error=>{
+ try{
+  const [response]=await Promise.all([
+   page.waitForResponse(response=>new URL(response.url()).pathname==='/api/auth/login'&&response.request().method()==='POST'),
+   page.getByRole('button',{name:'เข้าสู่ระบบ',exact:true}).click(),
+  ]);
+  expect(response.ok(),`Demo login returned HTTP ${response.status()}`).toBe(true);
+  await expect(page.getByRole('heading',{name:'การเงินของคุณ',exact:true})).toBeVisible();
+ }catch(error){
   // Playwright captures the page on failure; never retain a password in that snapshot.
   const password=page.getByLabel('รหัสผ่าน',{exact:true});
   if(await password.isVisible())await password.fill('');
   throw error;
- });
- cookies=await page.context().cookies();
+ }
+ // Tests exercising logout must not revoke the shared fixture session.
+ if(!forceLogin)cookies=await page.context().cookies();
  await openDemo(page);
 }

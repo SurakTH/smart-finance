@@ -8,7 +8,8 @@ test('category budgets use posted spending, persist edits, copy safely and stay 
  expect(created.ok()).toBe(true);const workspace=await created.json();
  const accountResponse=await page.request.get(`/api/workspaces/${workspace.id}/accounts`);const accounts=await accountResponse.json();
  const category=accounts.find((a:any)=>a.kind==='expense');const wallet=accounts.find((a:any)=>a.kind==='asset');
- const posted=await page.request.post(`/api/workspaces/${workspace.id}/transactions`,{headers:{'X-SF-Request':'1'},data:{kind:'expense',account_id:wallet.id,category_id:category.id,amount:7500,description:'ข้าวทดสอบงบ',occurred_on:'2026-10-11',idempotency_key:crypto.randomUUID()}});
+ const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Bangkok',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ const posted=await page.request.post(`/api/workspaces/${workspace.id}/transactions`,{headers:{'X-SF-Request':'1'},data:{kind:'expense',account_id:wallet.id,category_id:category.id,amount:7500,description:'ข้าวทดสอบงบ',occurred_on:today,idempotency_key:crypto.randomUUID()}});
  expect(posted.ok()).toBe(true);
  await page.goto('/services');
  const compact=(page.viewportSize()?.width||1440)<=900;

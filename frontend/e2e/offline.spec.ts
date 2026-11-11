@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {signIn} from './auth';
 test('encrypted offline snapshot and drafts require explicit online review and typed confirmation',async({page,context},info)=>{
- await signIn(page);const headers={'X-SF-Request':'1'},ws=await(await page.request.post('/api/workspaces',{headers,data:{name:'พื้นที่ออฟไลน์ '+crypto.randomUUID()}})).json();
+ await signIn(page,true);const headers={'X-SF-Request':'1'},ws=await(await page.request.post('/api/workspaces',{headers,data:{name:'พื้นที่ออฟไลน์ '+crypto.randomUUID()}})).json();
  const base='/api/workspaces/'+ws.id,accounts=await(await page.request.get(base+'/accounts')).json();
  await page.request.post(base+'/transactions',{headers,data:{kind:'expense',account_id:accounts.find((a:any)=>a.kind==='asset').id,category_id:accounts.find((a:any)=>a.kind==='expense').id,amount:2000,description:'ข้อมูลลับในภาพออฟไลน์',occurred_on:'2026-10-11',idempotency_key:crypto.randomUUID()}});
  await page.goto('/settings');await page.getByLabel((page.viewportSize()?.width||1440)<=900?'เลือก workspace บนมือถือ':'เลือก workspace',{exact:true}).selectOption(ws.id);

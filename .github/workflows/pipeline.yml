@@ -21,7 +21,7 @@ jobs:
     env:
       COMPOSE_FILE: compose.yaml:compose.nginx.yaml
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-node@v6
@@ -75,7 +75,7 @@ jobs:
       backend: ${{ steps.images.outputs.backend }}
       web: ${{ steps.images.outputs.web }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Name images by exact commit
@@ -121,7 +121,7 @@ jobs:
       BACKEND_IMAGE: ${{ needs.publish.outputs.backend }}
       WEB_IMAGE: ${{ needs.publish.outputs.web }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Transfer exact source and deploy through verified SSH
@@ -139,7 +139,7 @@ jobs:
       group: production-deploy
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Deploy tested images on the home server
